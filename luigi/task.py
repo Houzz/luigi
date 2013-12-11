@@ -299,7 +299,7 @@ class Task(object):
 
         if cls is None:
             cls = self.__class__
-        
+
         new_k = {}
         for param_name, param_class in cls.get_nonglobal_params():
             if param_name in k:
@@ -347,6 +347,9 @@ class Task(object):
         the superclass.
         '''
         return flatten(self.requires())  # base impl
+
+    def resources(self):
+        return {}  # default impl
 
     def input(self):
         return getpaths(self.requires())

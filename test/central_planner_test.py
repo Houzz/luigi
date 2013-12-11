@@ -13,7 +13,7 @@
 # the License.
 
 import time
-from luigi.scheduler import CentralPlannerScheduler, DONE, FAILED
+from luigi.scheduler import CentralPlannerScheduler, DONE, FAILED, RUNNING
 import unittest
 import luigi.notifications
 luigi.notifications.DEBUG = True
@@ -156,6 +156,32 @@ class CentralPlannerTest(unittest.TestCase):
         s = r['running_tasks'][0]
         self.assertEqual(s['task_id'], 'A')
         self.assertEqual(s['worker'], 'X')
+
+    def test_scheduler_resources_none(self):
+        self.sch.add_task(worker='X', task_id='A', resources={'R1': 1})
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+
+    def test_scheduler_with_insufficient_resources(self):
+        self.sch.add_task(worker='X', task_id='A', resources={'R1': 2})
+        self.sch.update_resources(R1=1)
+        self.assertIsNone(self.sch.get_work(worker='X')['task_id'])
+
+    def test_scheduler_with_sufficient_resources(self):
+        self.sch.add_task(worker='X', task_id='A', resources={'R1': 2})
+        self.sch.update_resources(R1=2)
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+
+    def test_scheduler_with_resources_used(self):
+        self.sch.add_task(worker='X', task_id='A', resources={'R1': 1}, status=RUNNING)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R1': 1})
+        self.sch.update_resources(R1=1)
+        self.assertIsNone(self.sch.get_work(worker='Y')['task_id'])
+
+    def test_scheduler_overprovisioned_on_other_resource(self):
+        self.sch.add_task(worker='X', task_id='A', resources={'R1': 2}, status=RUNNING)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R2': 2})
+        self.sch.update_resources(R1=1, R2=2)
+        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'B')
 
 class TestParameterSplit(unittest.TestCase):
     task_id_examples = [

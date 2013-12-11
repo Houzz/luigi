@@ -217,7 +217,8 @@ class Worker(object):
 
         deps = [d.task_id for d in deps]
         self.__scheduler.add_task(self.__id, task.task_id, status=PENDING,
-                                  deps=deps, runnable=True)
+                                  deps=deps, runnable=True,
+                                  resources=task.resources())
         logger.info('Scheduled %s', task.task_id)
 
         for task_2 in task.deps():

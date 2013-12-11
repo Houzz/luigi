@@ -72,7 +72,8 @@ class RemoteScheduler(Scheduler):
         # just one attemtps, keep-alive thread will keep trying anyway
         self._request('/api/ping', {'worker': worker}, attempts=1)
 
-    def add_task(self, worker, task_id, status=PENDING, runnable=False, deps=None, expl=None):
+    def add_task(self, worker, task_id, status=PENDING, runnable=False, deps=None, expl=None,
+                 resources={}):
         self._request('/api/add_task', {
             'task_id': task_id,
             'worker': worker,
@@ -80,6 +81,7 @@ class RemoteScheduler(Scheduler):
             'runnable': runnable,
             'deps': deps,
             'expl': expl,
+            'resources': resources,
         })
 
     def get_work(self, worker, host=None):
@@ -112,7 +114,7 @@ class RemoteScheduler(Scheduler):
 
 class RemoteSchedulerResponder(object):
     """ Use on the server side for responding to requests
-    
+
     The kwargs are there for forwards compatibility in case workers add
     new (optional) arguments. That way there's no dependency on the server
     component when upgrading Luigi on the worker side.
@@ -124,8 +126,8 @@ class RemoteSchedulerResponder(object):
     def __init__(self, scheduler):
         self._scheduler = scheduler
 
-    def add_task(self, worker, task_id, status, runnable, deps, expl, **kwargs):
-        return self._scheduler.add_task(worker, task_id, status, runnable, deps, expl)
+    def add_task(self, worker, task_id, status, runnable, deps, expl, resources, **kwargs):
+        return self._scheduler.add_task(worker, task_id, status, runnable, deps, expl, resources)
 
     def get_work(self, worker, host=None, **kwargs):
         return self._scheduler.get_work(worker, host)

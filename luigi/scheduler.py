@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import collections
 import os
 import logging
 import time
@@ -41,7 +42,8 @@ STATUS_TO_UPSTREAM_MAP = {FAILED: UPSTREAM_FAILED, RUNNING: UPSTREAM_RUNNING, PE
 
 
 class Task(object):
-    def __init__(self, status, deps):
+    def __init__(self, status, deps, resources):
+        self.resources = resources
         self.stakeholders = set()  # workers that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
@@ -66,7 +68,8 @@ class CentralPlannerScheduler(Scheduler):
     '''
 
     def __init__(self, retry_delay=900.0, remove_delay=600.0, worker_disconnect_delay=60.0,
-                 state_path='/var/lib/luigi-server/state.pickle', task_history=None):
+                 state_path='/var/lib/luigi-server/state.pickle', task_history=None,
+                 resources=None):
         '''
         (all arguments are in seconds)
         Keyword Arguments:
@@ -82,6 +85,7 @@ class CentralPlannerScheduler(Scheduler):
         self._worker_disconnect_delay = worker_disconnect_delay
         self._active_workers = {}  # map from id to timestamp (last updated)
         self._task_history = task_history or history.NopHistory()
+        self._resources = resources
         # TODO: have a Worker object instead, add more data to it
 
     def dump(self):
@@ -152,7 +156,8 @@ class CentralPlannerScheduler(Scheduler):
         # of whenever the worker was last active
         self._active_workers[worker] = time.time()
 
-    def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None):
+    def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None,
+                 resources=None):
         """
         * Add task identified by task_id if it doesn't exist
         * If deps is not None, update dependency list
@@ -161,7 +166,7 @@ class CentralPlannerScheduler(Scheduler):
         """
         self.update(worker)
 
-        task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps))
+        task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps, resources=resources))
 
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
@@ -184,10 +189,33 @@ class CentralPlannerScheduler(Scheduler):
             task.expl = expl
         self._update_task_history(task_id, status)
 
+    def update_resources(self, **resources):
+        if self._resources is None:
+            self._resources = {}
+        self._resources.update(resources)
+
+    def _has_resources(self, needed_resources, used_resources):
+        if self._resources is None or needed_resources is None:
+            return True
+
+        for resource, amount in needed_resources.items():
+            if amount + used_resources[resource] > self._resources.get(resource, 0):
+                return False
+        return True
+
+    def _used_resources(self):
+        used_resources = collections.defaultdict(int)
+        if self._resources is not None:
+            for task in self._tasks.itervalues():
+                if task.status == RUNNING and task.resources:
+                    for resource, amount in task.resources.items():
+                        used_resources[resource] += amount
+        return used_resources
+
     def get_work(self, worker, host=None):
         # TODO: remove any expired nodes
 
-        # Algo: iterate over all nodes, find first node with no dependencies
+        # Algo: iterate over all nodes, find first node with no dependencies and available resources
 
         # TODO: remove tasks that can't be done, figure out if the worker has absolutely
         # nothing it can wait for
@@ -198,6 +226,7 @@ class CentralPlannerScheduler(Scheduler):
         best_task = None
         locally_pending_tasks = 0
         running_tasks = []
+        used_resources = self._used_resources()
 
         for task_id, task in self._tasks.iteritems():
             if worker not in task.workers:
@@ -207,6 +236,9 @@ class CentralPlannerScheduler(Scheduler):
                 running_tasks.append({'task_id': task_id, 'worker': task.worker_running})
 
             if task.status != PENDING:
+                continue
+
+            if not self._has_resources(task.resources, used_resources):
                 continue
 
             locally_pending_tasks += 1
