@@ -74,6 +74,8 @@ class EnvironmentParamsContainer(task.Task):
                                       description='Do not run if the task is already running')
     lock_pid_dir = parameter.Parameter(is_global=True, default='/var/tmp/luigi',
                                        description='Directory to store the pid file')
+    lock_size = parameter.IntParameter(is_global=True, default=1,
+                                            description="Maximum number of workers running the same command")
     workers = parameter.IntParameter(is_global=True, default=1,
                                      description='Maximum number of parallel tasks to run')
     logging_conf_file = parameter.Parameter(is_global=True, default=None,
@@ -135,7 +137,7 @@ class Interface(object):
         if not configuration.get_config().getboolean('core', 'no_configure_logging', False):
             setup_interface_logging(logging_conf)
 
-        if env_params.lock and not(lock.acquire_for(env_params.lock_pid_dir)):
+        if env_params.lock and not(lock.acquire_for(env_params.lock_pid_dir, env_params.lock_size)):
             sys.exit(1)
 
         if env_params.local_scheduler:

@@ -51,3 +51,6 @@ class LockTest(unittest.TestCase):
 
         acquired = luigi.lock.acquire_for(self.pid_dir)
         self.assertFalse(acquired)
+
+if __name__ == '__main__':
+    unittest.main()
