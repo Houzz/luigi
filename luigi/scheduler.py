@@ -222,11 +222,18 @@ class CentralPlannerScheduler(Scheduler):
 
         # Return remaining tasks that have no FAILED descendents
         self.update(worker)
-        best_t = float('inf')
+        best_t = (1, float('inf')) # first entry of these is always negative, so (1, x) is greater
         best_task = None
         locally_pending_tasks = 0
         running_tasks = []
         used_resources = self._used_resources()
+
+        dependents = collections.defaultdict(int)
+        for task_id, task in self._tasks.iteritems():
+            if task.status != DONE:
+                num_deps = float(len(task.deps))
+                for dep in task.deps:
+                    dependents[dep] += 1.0 / num_deps
 
         for task_id, task in self._tasks.iteritems():
             if worker not in task.workers:
@@ -249,9 +256,11 @@ class CentralPlannerScheduler(Scheduler):
                 elif self._tasks[dep].status != DONE:
                     ok = False
 
+
             if ok:
-                if task.time < best_t:
-                    best_t = task.time
+                cur_t = (-dependents[task_id], task.time)
+                if cur_t < best_t:
+                    best_t = cur_t
                     best_task = task_id
 
         if best_task:
