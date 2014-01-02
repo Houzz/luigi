@@ -58,7 +58,7 @@ def send_email(subject, message, sender, recipients, image_png=None):
 
     msg_root = email.mime.multipart.MIMEMultipart('related')
 
-    msg_text = email.mime.text.MIMEText(message, 'plain')
+    msg_text = email.mime.text.MIMEText(message, 'html')
     msg_text.set_charset('utf-8')
     msg_root.attach(msg_text)
 

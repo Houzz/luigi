@@ -142,12 +142,12 @@ class Worker(object):
     def _email_complete_error(self, task, formatted_traceback):
           # like logger.exception but with WARNING level
         subject = "Luigi: {task} failed scheduling".format(task=task)
-        message = "Will not schedule {task} or any dependencies due to error in complete() method:\n{traceback}".format(task=task, traceback=formatted_traceback)
+        message = "Will not schedule {task} or any dependencies due to error in complete() method:\n<pre>{traceback}</pre>".format(task=task, traceback=formatted_traceback)
         notifications.send_error_email(subject, message)
 
     def _email_unexpected_error(self, task, formatted_traceback):
         subject = "Luigi: Framework error while scheduling {task}".format(task=task)
-        message = "Luigi framework error:\n{traceback}".format(traceback=formatted_traceback)
+        message = "Luigi framework error:\n<pre>{traceback}</pre>".format(traceback=formatted_traceback)
         notifications.send_error_email(subject, message)
 
     def add(self, task):

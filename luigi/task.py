@@ -371,7 +371,7 @@ class Task(object):
         """
 
         traceback_string = traceback.format_exc()
-        return "Runtime error:\n%s" % traceback_string
+        return "Runtime error:\n<pre>%s</pre>" % traceback_string
 
     def on_success(self):
         """ Override for doing custom completion handling for a larger class of tasks
