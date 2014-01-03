@@ -53,7 +53,7 @@ class Worker(object):
 
     def __init__(self, scheduler=CentralPlannerScheduler(), worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
-                 wait_interval=None):
+                 wait_interval=None, keep_alive_uniques=None):
         if not worker_id:
             worker_id = 'worker-%09d' % random.randrange(0, 999999999)
 
@@ -70,6 +70,10 @@ class Worker(object):
             if wait_interval is None:
                 wait_interval = config.getint('core', 'worker-wait-interval', 1)
             self.__wait_interval = wait_interval
+
+            if keep_alive_uniques is None:
+                keep_alive_uniques = config.getint('core', 'worker-keep-alive-uniques', 0)
+            self.__keep_alive_uniques = keep_alive_uniques
 
         self.__id = worker_id
         self.__scheduler = scheduler
@@ -287,11 +291,13 @@ class Worker(object):
         if isinstance(r, tuple) or isinstance(r, list):
             n_pending_tasks, task_id = r
             running_tasks = []
+            unique_tasks = 0
         else:
             n_pending_tasks = r['n_pending_tasks']
             task_id = r['task_id']
             running_tasks = r['running_tasks']
-        return task_id, running_tasks, n_pending_tasks
+            unique_tasks = r['unique_tasks']
+        return task_id, running_tasks, n_pending_tasks, unique_tasks
 
     def _fork_task(self, children, task_id):
         child_pid = os.fork()
@@ -319,12 +325,12 @@ class Worker(object):
             while len(children) >= self.worker_processes:
                 self._reap_children(children)
 
-            task_id, running_tasks, n_pending_tasks = self._get_work()
+            task_id, running_tasks, n_pending_tasks, unique_tasks = self._get_work()
 
             if task_id is None:
                 self._log_remote_tasks(running_tasks, n_pending_tasks)
                 if not children:
-                    if self.__keep_alive and running_tasks and n_pending_tasks:
+                    if self.__keep_alive and running_tasks and n_pending_tasks and unique_tasks >= self.__keep_alive_uniques:
                         sleeper.next()
                         continue
                     else:

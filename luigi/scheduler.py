@@ -235,6 +235,7 @@ class CentralPlannerScheduler(Scheduler):
                 for dep in task.deps:
                     dependents[dep] += 1.0 / num_deps
 
+        unique_tasks = 0
         for task_id, task in self._tasks.iteritems():
             if worker not in task.workers:
                 continue
@@ -244,6 +245,9 @@ class CentralPlannerScheduler(Scheduler):
 
             if task.status != PENDING:
                 continue
+
+            if len(task.workers) == 1:
+                unique_tasks += 1
 
             if not self._has_resources(task.resources, used_resources):
                 continue
@@ -271,7 +275,9 @@ class CentralPlannerScheduler(Scheduler):
 
         return {'n_pending_tasks': locally_pending_tasks,
                 'task_id': best_task,
-                'running_tasks': running_tasks}
+                'running_tasks': running_tasks,
+                'unique_tasks': unique_tasks,
+               }
 
     def ping(self, worker):
         self.update(worker)
