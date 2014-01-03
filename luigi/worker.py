@@ -296,7 +296,8 @@ class Worker(object):
             n_pending_tasks = r['n_pending_tasks']
             task_id = r['task_id']
             running_tasks = r['running_tasks']
-            unique_tasks = r['unique_tasks']
+            # support old version of scheduler
+            unique_tasks = r.get('unique_tasks', 0)
         return task_id, running_tasks, n_pending_tasks, unique_tasks
 
     def _fork_task(self, children, task_id):
