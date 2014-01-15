@@ -75,12 +75,30 @@ class Worker(object):
                 keep_alive_uniques = config.getint('core', 'worker-keep-alive-uniques', 0)
             self.__keep_alive_uniques = keep_alive_uniques
 
+        self.__save_status = config.getboolean('core', 'worker-save-status', False)
+
         self.__id = worker_id
         self.__scheduler = scheduler
         if (isinstance(scheduler, CentralPlannerScheduler)
                 and worker_processes != 1):
             warnings.warn("Will only use one process when running with local in-process scheduler")
             worker_processes = 1
+
+        if (isinstance(scheduler, CentralPlannerScheduler)):
+            self.__save_status = False
+
+        if self.__save_status:
+            import pymysql
+            host = config.get('core', 'worker-status-host', 'localhost')
+            port = config.getint('core', 'worker-status-port', 3306)
+            user = config.get('core', 'worker-status-user', 'user')
+            passwd = config.get('core', 'worker-status-pass', '')
+            db = config.get('core', 'worker-status-db', 'luigi')
+            table = config.get('core', 'worker-status-table', 'table_name')
+            self.__db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
+            self.__db_cursor = self.__db_conn.cursor()
+            self.__db_table = table
+
 
         self.worker_processes = worker_processes
         self.host = socket.gethostname()
@@ -178,6 +196,8 @@ class Worker(object):
         try:
             is_complete = task.complete()
             self._check_complete_value(is_complete)
+            if self.__save_status:
+                is_complete &= self._db_check_complete(task)
         except KeyboardInterrupt:
             raise
         except:
@@ -223,10 +243,44 @@ class Worker(object):
         self.__scheduler.add_task(self.__id, task.task_id, status=PENDING,
                                   deps=deps, runnable=True,
                                   resources=task.resources())
+        self._db_schedule_task(task)
         logger.info('Scheduled %s', task.task_id)
 
         for task_2 in task.deps():
             yield task_2  # return additional tasks to add
+
+    def _db_schedule_task(self, task):
+        if self.__save_status:
+            # mark complete
+            sql = """INSERT INTO `%s` (task_id, status, created, modified)
+                    VALUES('%s', 0, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE status=0, modified=NOW()
+                    """ % (self.__db_table, task.task_id)
+            self.__db_cursor.execute(sql)
+            self.__db_conn.commit()
+
+    def _db_complete_task(self, task):
+        if self.__save_status:
+            # mark complete
+            sql = """INSERT INTO `%s` (task_id, status, created, modified)
+                    VALUES('%s', 1, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE status=1, modified=NOW()
+                    """ % (self.__db_table, task.task_id)
+            self.__db_cursor.execute(sql)
+            self.__db_conn.commit()
+
+    def _db_check_complete(self, task):
+        sql = """SELECT status FROM `%s` WHERE task_id = '%s'
+                """ % (self.__db_table, task.task_id)
+        rows = self.__db_cursor.execute(sql)
+        if rows < 1:
+            return False
+        else:
+            r = self.__db_cursor.fetchone()
+            if r[0] == 1:
+                return True
+            else:
+                return False
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
@@ -249,6 +303,7 @@ class Worker(object):
                 raise RuntimeError('Unfulfilled dependency %r at run time!\nPrevious tasks: %r' % (missing_dep.task_id, self._previous_tasks))
             task.run()
             error_message = json.dumps(task.on_success())
+            self._db_complete_task(task)
             logger.info('[pid %s] Done      %s', os.getpid(), task_id)
             task.trigger_event(Event.SUCCESS, task)
             status = DONE
