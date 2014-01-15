@@ -23,6 +23,7 @@ import traceback
 import logging
 import warnings
 import notifications
+import pymysql
 from target import Target
 from task import Task
 
@@ -88,7 +89,6 @@ class Worker(object):
             self.__save_status = False
 
         if self.__save_status:
-            import pymysql
             host = config.get('core', 'worker-status-host', 'localhost')
             port = config.getint('core', 'worker-status-port', 3306)
             user = config.get('core', 'worker-status-user', 'user')
