@@ -274,6 +274,7 @@ class Worker(object):
             self.__db_conn.commit()
 
     def _db_check_complete(self, task):
+        return True
         sql = """SELECT status FROM `%s` WHERE task_id = '%s'
                 """ % (self.__db_table, task.task_id)
         rows = self.__db_cursor.execute(sql)
