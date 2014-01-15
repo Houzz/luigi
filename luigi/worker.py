@@ -200,8 +200,8 @@ class Worker(object):
         try:
             is_complete = task.complete()
             self._check_complete_value(is_complete)
-            if self.__save_status:
-                is_complete &= self._db_check_complete(task)
+            if self.__save_status and is_complete:
+                is_complete = self._db_check_complete(task)
         except KeyboardInterrupt:
             raise
         except:
