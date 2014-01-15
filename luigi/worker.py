@@ -95,9 +95,13 @@ class Worker(object):
             passwd = config.get('core', 'worker-status-pass', '')
             db = config.get('core', 'worker-status-db', 'luigi')
             table = config.get('core', 'worker-status-table', 'table_name')
-            self.__db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
-            self.__db_cursor = self.__db_conn.cursor()
-            self.__db_table = table
+            try:
+                self.__db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
+                self.__db_cursor = self.__db_conn.cursor()
+                self.__db_table = table
+            except:
+                warnings.warn("Cannot connect to status DB.")
+                self.__save_status = False
 
 
         self.worker_processes = worker_processes
