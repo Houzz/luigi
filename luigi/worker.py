@@ -307,7 +307,7 @@ class Worker(object):
             task.run()
             error_message = json.dumps(task.on_success())
 
-            if self.__dirty_jobs_enabled:
+            if self.__dirty_jobs_enabled and pre_run_dirty:
                 self._db_complete_task(task, pre_run_dirty_created)
             logger.info('[pid %s] Done      %s', os.getpid(), task_id)
             task.trigger_event(Event.SUCCESS, task)
