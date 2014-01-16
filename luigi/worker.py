@@ -76,7 +76,6 @@ class Worker(object):
                 keep_alive_uniques = config.getint('core', 'worker-keep-alive-uniques', 0)
             self.__keep_alive_uniques = keep_alive_uniques
 
-        self.__dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
 
         self.__id = worker_id
         self.__scheduler = scheduler
@@ -85,9 +84,7 @@ class Worker(object):
             warnings.warn("Will only use one process when running with local in-process scheduler")
             worker_processes = 1
 
-        if (isinstance(scheduler, CentralPlannerScheduler)):
-            self.__dirty_jobs_enabled = False
-
+        self.__dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
         if self.__dirty_jobs_enabled:
             host = config.get('core', 'worker-dirty-jobs-host', 'localhost')
             port = config.getint('core', 'worker-dirty-jobs-port', 3306)
