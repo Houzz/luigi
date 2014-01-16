@@ -198,7 +198,7 @@ class Worker(object):
             is_complete = task.complete()
             self._check_complete_value(is_complete)
             if self.__dirty_jobs_enabled and is_complete:
-                (dirty, _) = self._db_check_dirty(task)
+                dirty, _ = self._db_check_dirty(task)
                 is_complete = not dirty
         except KeyboardInterrupt:
             raise
@@ -261,10 +261,10 @@ class Worker(object):
         sql = "SELECT created FROM `%s` WHERE task_id = '%s'" % (self.__db_table, task.task_id)
         rows = self.__db_cursor.execute(sql)
         if rows < 1:
-            return (False, -1)
+            return False, None
         else:
             r = self.__db_cursor.fetchone()
-            return (True, r[0])
+            return True, r[0]
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
@@ -287,12 +287,12 @@ class Worker(object):
                 raise RuntimeError('Unfulfilled dependency %r at run time!\nPrevious tasks: %r' % (missing_dep.task_id, self._previous_tasks))
 
             if self.__dirty_jobs_enabled:
-                (pre_run_dirty, pre_run_dirty_created) = self._db_check_dirty(task)
+                pre_run_dirty, pre_run_dirty_created = self._db_check_dirty(task)
 
                 # Verify that all the tasks are not dirty!
                 ok = True
                 for task_2 in task.deps():
-                    (dirty, _) = self._db_check_dirty(task_2)
+                    dirty, _ = self._db_check_dirty(task_2)
                     if dirty:
                         ok = False
                         missing_dep = task_2
