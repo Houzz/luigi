@@ -76,7 +76,7 @@ class Worker(object):
                 keep_alive_uniques = config.getint('core', 'worker-keep-alive-uniques', 0)
             self.__keep_alive_uniques = keep_alive_uniques
 
-        self.__save_status = config.getboolean('core', 'worker-save-status', False)
+        self.__dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
 
         self.__id = worker_id
         self.__scheduler = scheduler
@@ -86,22 +86,22 @@ class Worker(object):
             worker_processes = 1
 
         if (isinstance(scheduler, CentralPlannerScheduler)):
-            self.__save_status = False
+            self.__dirty_jobs_enabled = False
 
-        if self.__save_status:
-            host = config.get('core', 'worker-status-host', 'localhost')
-            port = config.getint('core', 'worker-status-port', 3306)
-            user = config.get('core', 'worker-status-user', 'user')
-            passwd = config.get('core', 'worker-status-pass', '')
-            db = config.get('core', 'worker-status-db', 'luigi')
-            table = config.get('core', 'worker-status-table', 'table_name')
+        if self.__dirty_jobs_enabled:
+            host = config.get('core', 'worker-dirty-jobs-host', 'localhost')
+            port = config.getint('core', 'worker-dirty-jobs-port', 3306)
+            user = config.get('core', 'worker-dirty-jobs-user', 'user')
+            passwd = config.get('core', 'worker-dirty-jobs-pass', '')
+            db = config.get('core', 'worker-dirty-jobs-db', 'luigi')
+            table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
             try:
                 self.__db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
                 self.__db_cursor = self.__db_conn.cursor()
                 self.__db_table = table
             except:
                 warnings.warn("Cannot connect to status DB.")
-                self.__save_status = False
+                self.__dirty_jobs_enabled = False
 
 
         self.worker_processes = worker_processes
@@ -200,8 +200,9 @@ class Worker(object):
         try:
             is_complete = task.complete()
             self._check_complete_value(is_complete)
-            if self.__save_status and is_complete:
-                is_complete = self._db_check_complete(task)
+            if self.__dirty_jobs_enabled and is_complete:
+                (dirty, _) = self._db_check_dirty(task)
+                is_complete = not dirty
         except KeyboardInterrupt:
             raise
         except:
@@ -247,45 +248,26 @@ class Worker(object):
         self.__scheduler.add_task(self.__id, task.task_id, status=PENDING,
                                   deps=deps, runnable=True,
                                   resources=task.resources())
-        self._db_schedule_task(task)
         logger.info('Scheduled %s', task.task_id)
 
         for task_2 in task.deps():
             yield task_2  # return additional tasks to add
 
-    def _db_schedule_task(self, task):
-        if self.__save_status:
-            # mark complete
-            sql = """INSERT INTO `%s` (task_id, status, created, modified)
-                    VALUES('%s', 0, NOW(), NOW())
-                    ON DUPLICATE KEY UPDATE status=0, modified=NOW()
-                    """ % (self.__db_table, task.task_id)
-            self.__db_cursor.execute(sql)
-            self.__db_conn.commit()
+    def _db_complete_task(self, task, created):
+        # Whenever we mark a task dirty, we always update the created timestamp. If a task is marked dirty again
+        # when it is running,  it needs to be re-run
+        sql = "DELETE FROM `%s` where task_id='%s' and created = '%s' LIMIT 1" % (self.__db_table, task.task_id, created)
+        self.__db_cursor.execute(sql)
+        self.__db_conn.commit()
 
-    def _db_complete_task(self, task):
-        if self.__save_status:
-            # mark complete
-            sql = """INSERT INTO `%s` (task_id, status, created, modified)
-                    VALUES('%s', 1, NOW(), NOW())
-                    ON DUPLICATE KEY UPDATE status=1, modified=NOW()
-                    """ % (self.__db_table, task.task_id)
-            self.__db_cursor.execute(sql)
-            self.__db_conn.commit()
-
-    def _db_check_complete(self, task):
-        return True
-        sql = """SELECT status FROM `%s` WHERE task_id = '%s'
-                """ % (self.__db_table, task.task_id)
+    def _db_check_dirty(self, task):
+        sql = "SELECT created FROM `%s` WHERE task_id = '%s'" % (self.__db_table, task.task_id)
         rows = self.__db_cursor.execute(sql)
         if rows < 1:
-            return False
+            return (False, -1)
         else:
             r = self.__db_cursor.fetchone()
-            if r[0] == 1:
-                return True
-            else:
-                return False
+            return (True, r[0])
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
@@ -306,9 +288,27 @@ class Worker(object):
             if not ok:
                 # TODO: possibly try to re-add task again ad pending
                 raise RuntimeError('Unfulfilled dependency %r at run time!\nPrevious tasks: %r' % (missing_dep.task_id, self._previous_tasks))
+
+            if self.__dirty_jobs_enabled:
+                (pre_run_dirty, pre_run_dirty_created) = self._db_check_dirty(task)
+
+                # Verify that all the tasks are not dirty!
+                ok = True
+                for task_2 in task.deps():
+                    (dirty, _) = self._db_check_dirty(task_2)
+                    if dirty:
+                        ok = False
+                        missing_dep = task_2
+
+                if not ok:
+                    raise RuntimeError('Dirty dependency %r at run time!\nPrevious tasks: %r'
+                            % (missing_dep.task_id, self._previous_tasks))
+
             task.run()
             error_message = json.dumps(task.on_success())
-            self._db_complete_task(task)
+
+            if self.__dirty_jobs_enabled:
+                self._db_complete_task(task, pre_run_dirty_created)
             logger.info('[pid %s] Done      %s', os.getpid(), task_id)
             task.trigger_event(Event.SUCCESS, task)
             status = DONE
