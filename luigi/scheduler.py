@@ -195,11 +195,12 @@ class CentralPlannerScheduler(Scheduler):
         self._resources.update(resources)
 
     def _has_resources(self, needed_resources, used_resources):
-        if self._resources is None or needed_resources is None:
+        if needed_resources is None:
             return True
 
+        available_resources = self._resources or {}
         for resource, amount in needed_resources.items():
-            if amount + used_resources[resource] > self._resources.get(resource, 0):
+            if amount + used_resources[resource] > available_resources.get(resource, 1):
                 return False
         return True
 
