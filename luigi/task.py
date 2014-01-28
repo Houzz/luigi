@@ -21,6 +21,8 @@ import pymysql
 import warnings
 import traceback
 
+from functools import wraps
+
 Parameter = parameter.Parameter
 logger = logging.getLogger('luigi-interface')
 
@@ -49,6 +51,11 @@ def id_to_name_and_params(task_id):
         param_list = []
     return task_family, dict(param_list)
 
+def modified_complete(complete_fn, dirty_fn):
+    @wraps(complete_fn)
+    def wrapped_complete():
+        return complete_fn() and not dirty_fn()
+    return wrapped_complete
 
 
 class Register(abc.ABCMeta):
@@ -272,6 +279,9 @@ class Task(object):
 
         self.task_id = '%s(%s)' % (self.task_family, ', '.join(task_id_parts))
         self.__hash = hash(self.task_id)
+
+        # overwrite complete() function
+        self.complete = modified_complete(self.complete, self.is_dirty)
 
     def initialized(self):
         return hasattr(self, 'task_id')
