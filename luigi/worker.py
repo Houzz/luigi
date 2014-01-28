@@ -178,9 +178,8 @@ class Worker(object):
         logger.debug("Checking if %s is complete", task)
         is_complete = False
         try:
-            is_complete = task.complete()
+            is_complete = task.actual_complete()
             self._check_complete_value(is_complete)
-            is_complete &= not task.is_dirty()
         except KeyboardInterrupt:
             raise
         except:

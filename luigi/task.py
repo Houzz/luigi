@@ -51,12 +51,6 @@ def id_to_name_and_params(task_id):
         param_list = []
     return task_family, dict(param_list)
 
-def modified_complete(complete_fn, dirty_fn):
-    @wraps(complete_fn)
-    def wrapped_complete():
-        return complete_fn() and not dirty_fn()
-    return wrapped_complete
-
 
 class Register(abc.ABCMeta):
     # 1. Cache instances of objects so that eg. X(1, 2, 3) always returns the same object
@@ -280,9 +274,6 @@ class Task(object):
         self.task_id = '%s(%s)' % (self.task_family, ', '.join(task_id_parts))
         self.__hash = hash(self.task_id)
 
-        # overwrite complete() function
-        self.complete = modified_complete(self.complete, self.is_dirty)
-
     def initialized(self):
         return hasattr(self, 'task_id')
 
@@ -342,6 +333,12 @@ class Task(object):
                 return False
         else:
             return True
+
+    def actual_complete(self):
+        """Check if a task is complete and also not dirty.
+
+        """
+        return self.complete() and not self.is_dirty()
 
     def output(self):
         return []  # default impl
@@ -453,7 +450,7 @@ class ExternalTask(Task):
 class WrapperTask(Task):
     """Use for tasks that only wrap other tasks and that by definition are done if all their requirements exist. """
     def complete(self):
-        return all(r.complete() for r in flatten(self.requires()))
+        return all(r.actual_complete() for r in flatten(self.requires()))
 
 
 def getpaths(struct):
