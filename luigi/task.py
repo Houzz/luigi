@@ -13,8 +13,11 @@
 # the License.
 
 import abc
+import configuration
+import contextlib
 import logging
 import parameter
+import pymysql
 import warnings
 import traceback
 
@@ -360,6 +363,52 @@ class Task(object):
 
     def run(self):
         pass  # default impl
+
+    @contextlib.contextmanager
+    def _dirty_jobs_db_cursor(self):
+        config = configuration.get_config()
+        host = config.get('core', 'worker-dirty-jobs-host', 'localhost')
+        port = config.getint('core', 'worker-dirty-jobs-port', 3306)
+        user = config.get('core', 'worker-dirty-jobs-user', 'user')
+        passwd = config.get('core', 'worker-dirty-jobs-pass', '')
+        db = config.get('core', 'worker-dirty-jobs-db', 'luigi')
+        table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
+        db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
+        db_cursor = db_conn.cursor()
+
+        yield db_cursor
+
+        db_conn.commit()
+        db_conn.close()
+
+    def is_dirty(self):
+        config = configuration.get_config()
+        dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
+        if not dirty_jobs_enabled:
+            return False
+
+        with self._dirty_jobs_db_cursor() as cursor:
+            table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
+            sql = "SELECT created FROM `%s` WHERE task_id = '%s'" % (table, self.task_id)
+            rows = cursor.execute(sql)
+            if rows < 1:
+                return False
+            else:
+                r = cursor.fetchone()
+                self._dirty_created = r[0]
+                return True
+
+    def mark_undirty(self):
+        config = configuration.get_config()
+        dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
+        if not dirty_jobs_enabled or self._dirty_created is None:
+            return
+
+        with self._dirty_jobs_db_cursor() as cursor:
+            table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
+            sql = "DELETE FROM `%s` where task_id='%s' and created = '%s' LIMIT 1" % (table, self.task_id, self._dirty_created)
+            rows = cursor.execute(sql)
+
 
     def on_failure(self, exception):
         """ Override for custom error handling

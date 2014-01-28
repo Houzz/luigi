@@ -23,7 +23,6 @@ import traceback
 import logging
 import warnings
 import notifications
-import pymysql
 from target import Target
 from task import Task
 
@@ -83,22 +82,6 @@ class Worker(object):
                 and worker_processes != 1):
             warnings.warn("Will only use one process when running with local in-process scheduler")
             worker_processes = 1
-
-        self.__dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
-        if self.__dirty_jobs_enabled:
-            host = config.get('core', 'worker-dirty-jobs-host', 'localhost')
-            port = config.getint('core', 'worker-dirty-jobs-port', 3306)
-            user = config.get('core', 'worker-dirty-jobs-user', 'user')
-            passwd = config.get('core', 'worker-dirty-jobs-pass', '')
-            db = config.get('core', 'worker-dirty-jobs-db', 'luigi')
-            table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
-            try:
-                self.__db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
-                self.__db_cursor = self.__db_conn.cursor()
-                self.__db_table = table
-            except:
-                warnings.warn("Cannot connect to status DB.")
-                self.__dirty_jobs_enabled = False
 
 
         self.worker_processes = worker_processes
@@ -197,9 +180,7 @@ class Worker(object):
         try:
             is_complete = task.complete()
             self._check_complete_value(is_complete)
-            if self.__dirty_jobs_enabled and is_complete:
-                dirty, _ = self._db_check_dirty(task)
-                is_complete = not dirty
+            is_complete &= not task.is_dirty()
         except KeyboardInterrupt:
             raise
         except:
@@ -250,22 +231,6 @@ class Worker(object):
         for task_2 in task.deps():
             yield task_2  # return additional tasks to add
 
-    def _db_complete_task(self, task, created):
-        # Whenever we mark a task dirty, we always update the created timestamp. If a task is marked dirty again
-        # when it is running,  it needs to be re-run
-        sql = "DELETE FROM `%s` where task_id='%s' and created = '%s' LIMIT 1" % (self.__db_table, task.task_id, created)
-        self.__db_cursor.execute(sql)
-        self.__db_conn.commit()
-
-    def _db_check_dirty(self, task):
-        sql = "SELECT created FROM `%s` WHERE task_id = '%s'" % (self.__db_table, task.task_id)
-        rows = self.__db_cursor.execute(sql)
-        if rows < 1:
-            return False, None
-        else:
-            r = self.__db_cursor.fetchone()
-            return True, r[0]
-
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
             raise Exception("Return value of Task.complete() must be boolean (was %r)" % is_complete)
@@ -286,26 +251,24 @@ class Worker(object):
                 # TODO: possibly try to re-add task again ad pending
                 raise RuntimeError('Unfulfilled dependency %r at run time!\nPrevious tasks: %r' % (missing_dep.task_id, self._previous_tasks))
 
-            if self.__dirty_jobs_enabled:
-                pre_run_dirty, pre_run_dirty_created = self._db_check_dirty(task)
+            pre_run_dirty = task.is_dirty()
 
-                # Verify that all the tasks are not dirty!
-                ok = True
-                for task_2 in task.deps():
-                    dirty, _ = self._db_check_dirty(task_2)
-                    if dirty:
-                        ok = False
-                        missing_dep = task_2
+            # Verify that all the tasks are not dirty!
+            ok = True
+            for task_2 in task.deps():
+                if task_2.is_dirty():
+                    ok = False
+                    missing_dep = task_2
 
-                if not ok:
-                    raise RuntimeError('Dirty dependency %r at run time!\nPrevious tasks: %r'
-                            % (missing_dep.task_id, self._previous_tasks))
+            if not ok:
+                raise RuntimeError('Dirty dependency %r at run time!\nPrevious tasks: %r'
+                        % (missing_dep.task_id, self._previous_tasks))
 
             task.run()
             error_message = json.dumps(task.on_success())
 
-            if self.__dirty_jobs_enabled and pre_run_dirty:
-                self._db_complete_task(task, pre_run_dirty_created)
+            if pre_run_dirty:
+                task.mark_undirty()
             logger.info('[pid %s] Done      %s', os.getpid(), task_id)
             task.trigger_event(Event.SUCCESS, task)
             status = DONE
