@@ -67,12 +67,12 @@ class RemoteContext(object):
         prefixed_cmd = self._prepare_cmd(cmd)
         return subprocess.Popen(prefixed_cmd, **kwargs)
 
-    def check_output(self, cmd):
+    def check_output(self, cmd, **kwargs):
         """ Execute a shell command remotely and return the output
 
         Simplified version of Popen when you only want the output as a string and detect any errors
         """
-        p = self.Popen(cmd, stdout=subprocess.PIPE)
+        p = self.Popen(cmd, stdout=subprocess.PIPE, **kwargs)
         output, _ = p.communicate()
         if p.returncode != 0:
             raise subprocess.CalledProcessError(p.returncode, cmd)
