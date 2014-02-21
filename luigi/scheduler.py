@@ -250,10 +250,11 @@ class CentralPlannerScheduler(Scheduler):
             if len(task.workers) == 1:
                 unique_tasks += 1
 
+            locally_pending_tasks += 1
+
             if not self._has_resources(task.resources, used_resources):
                 continue
 
-            locally_pending_tasks += 1
             ok = True
             for dep in task.deps:
                 if dep not in self._tasks:
