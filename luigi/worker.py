@@ -350,7 +350,8 @@ class Worker(object):
             if task_id is None:
                 self._log_remote_tasks(running_tasks, n_pending_tasks)
                 if not children:
-                    if self.__keep_alive and running_tasks and n_pending_tasks and unique_tasks >= self.__keep_alive_uniques:
+                    has_uniques = unique_tasks >= self.__keep_alive_uniques
+                    if self.__keep_alive and (running_tasks or has_uniques) and n_pending_tasks
                         sleeper.next()
                         continue
                     else:
