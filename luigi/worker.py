@@ -315,13 +315,15 @@ class Worker(object):
             n_pending_tasks, task_id = r
             running_tasks = []
             unique_tasks = 0
+            uniques_waiting = 0
         else:
             n_pending_tasks = r['n_pending_tasks']
             task_id = r['task_id']
             running_tasks = r['running_tasks']
             # support old version of scheduler
             unique_tasks = r.get('unique_tasks', 0)
-        return task_id, running_tasks, n_pending_tasks, unique_tasks
+            uniques_waiting = r.get('uniques_waiting', 0)
+        return task_id, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting
 
     def _fork_task(self, children, task_id):
         child_pid = os.fork()
@@ -349,13 +351,14 @@ class Worker(object):
             while len(children) >= self.worker_processes:
                 self._reap_children(children)
 
-            task_id, running_tasks, n_pending_tasks, unique_tasks = self._get_work()
+            task_id, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting = self._get_work()
 
             if task_id is None:
                 self._log_remote_tasks(running_tasks, n_pending_tasks)
                 if not children:
-                    has_uniques = unique_tasks >= self.__keep_alive_uniques
-                    if self.__keep_alive and (running_tasks or has_uniques) and n_pending_tasks:
+                    pending_run = n_pending_tasks and running_tasks and unique_tasks >= self.__keep_alive_uniques
+                    waiting_for_unique = uniques_waiting > 0
+                    if self.__keep_alive and (pending_run or uniques_waiting):
                         sleeper.next()
                         continue
                     else:
