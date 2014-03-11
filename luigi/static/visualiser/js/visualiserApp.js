@@ -27,6 +27,7 @@ function visualiserApp(luigi) {
             taskId: task.taskId,
             taskName: taskName,
             taskParams: taskParams,
+            priority: task.priority,
             displayTime: displayTime,
             displayTimestamp : task.start_time,
             trackingUrl: task.trackingUrl,
