@@ -221,8 +221,6 @@ class Worker(object):
         deps = task.deps()
         for d in deps:
             self._validate_dependency(d)
-            # update dependency priority
-            d.priority = max(d.priority, task.priority)
 
         deps = [d.task_id for d in deps]
         self.__scheduler.add_task(self.__id, task.task_id, status=PENDING,
@@ -232,6 +230,8 @@ class Worker(object):
         logger.info('Scheduled %s (prio=%d)', task.task_id, task.priority)
 
         for task_2 in task.deps():
+            # update dependency priority
+            task_2.priority = max(task_2.priority, task.priority)
             yield task_2  # return additional tasks to add
 
     def _check_complete_value(self, is_complete):
