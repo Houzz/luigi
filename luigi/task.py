@@ -273,7 +273,7 @@ class Task(object):
 
         self.task_id = '%s(%s)' % (self.task_family, ', '.join(task_id_parts))
         self.__hash = hash(self.task_id)
-        self.priority = 0
+        self._priority = 0
 
     def initialized(self):
         return hasattr(self, 'task_id')

@@ -43,8 +43,8 @@ STATUS_TO_UPSTREAM_MAP = {FAILED: UPSTREAM_FAILED, RUNNING: UPSTREAM_RUNNING, PE
 
 class Task(object):
     def __init__(self, status, deps, resources, priority=0):
+        self._priority = priority
         self.resources = resources
-        self.priority = priority
         self.stakeholders = set()  # workers that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
@@ -178,8 +178,8 @@ class CentralPlannerScheduler(Scheduler):
             if status == FAILED:
                 task.retry = time.time() + self._retry_delay
 
-            if priority > task.priority:
-                task.priority = priority
+            if priority > task._priority:
+                task._priority = priority
 
         if deps is not None:
             task.deps = set(deps)
@@ -270,7 +270,7 @@ class CentralPlannerScheduler(Scheduler):
 
 
             if ok:
-                cur_t = (-task.priority, -dependents[task_id], task.time)
+                cur_t = (-task._priority, -dependents[task_id], task.time)
                 if best_t is None or cur_t < best_t:
                     best_t = cur_t
                     best_task = task_id
@@ -325,7 +325,7 @@ class CentralPlannerScheduler(Scheduler):
             'start_time': task.time,
             'params': self._get_task_params(task_id),
             'name': self._get_task_name(task_id),
-            'priority': task.priority
+            'priority': task._priority
         }
 
     def _get_task_params(self, task_id):
