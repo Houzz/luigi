@@ -73,7 +73,7 @@ class RemoteScheduler(Scheduler):
         self._request('/api/ping', {'worker': worker}, attempts=1)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=False, deps=None, expl=None,
-                 resources={}):
+                 resources={}, priority=0):
         self._request('/api/add_task', {
             'task_id': task_id,
             'worker': worker,
@@ -82,6 +82,7 @@ class RemoteScheduler(Scheduler):
             'deps': deps,
             'expl': expl,
             'resources': resources,
+            'priority': priority
         })
 
     def get_work(self, worker, host=None):
@@ -126,8 +127,8 @@ class RemoteSchedulerResponder(object):
     def __init__(self, scheduler):
         self._scheduler = scheduler
 
-    def add_task(self, worker, task_id, status, runnable, deps, expl, resources=None, **kwargs):
-        return self._scheduler.add_task(worker, task_id, status, runnable, deps, expl, resources)
+    def add_task(self, worker, task_id, status, runnable, deps, expl, resources=None, priority=0, **kwargs):
+        return self._scheduler.add_task(worker, task_id, status, runnable, deps, expl, resources, priority)
 
     def get_work(self, worker, host=None, **kwargs):
         return self._scheduler.get_work(worker, host)
