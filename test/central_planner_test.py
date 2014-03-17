@@ -194,6 +194,20 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='A', priority=2)
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 
+    def test_scheduler_with_pirority_and_competing_resources(self):
+        self.sch.add_task(worker='X', task_id='A', status=RUNNING)
+        self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
+        self.sch.update_resources(R=1)
+        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], None)
+        self.sch.add_task(worker='Y', task_id='D', priority=0)
+        self.sch.add_task(worker='Y', task_id='E', deps=('D',), resources={'R': 1}, priority=20)
+        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'D')
+        self.sch.add_task(worker='X', task_id='A', status=DONE)
+        self.sch.add_task(worker='Y', task_id='D', status=DONE)
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], None)
+        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'E')
+
 class TestParameterSplit(unittest.TestCase):
     task_id_examples = [
         "TrackIsrcs()",

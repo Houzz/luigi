@@ -224,13 +224,21 @@ class CentralPlannerScheduler(Scheduler):
         # available resources, highest priority, least number of tasks depending
         # on
 
+        # If there is another worker with higher priority job is waiting for
+        #   a resource to run that job, the current worker should not get it.
+        # For all the tasks pending under this worker, pick the one that does
+        #   not block higher priority job, with sufficent resouces, and has
+        #   highest priority.
+
+        # Algo: sort all works by priority, and number of dependents, then
+        #   iterate over them, fill them into worker as if those workers asks
+        #   works too. Then the best work is the one filled into current worker.
+
         # TODO: remove tasks that can't be done, figure out if the worker has absolutely
         # nothing it can wait for
 
         # Return remaining tasks that have no FAILED descendents
         self.update(worker)
-        best_t = None
-        best_task = None
         locally_pending_tasks = 0
         running_tasks = []
         used_resources = self._used_resources()
@@ -242,22 +250,22 @@ class CentralPlannerScheduler(Scheduler):
                 for dep in task.deps:
                     dependents[dep] += 1.0 / num_deps
 
+        rankings = {}
+        for task_id, task in self._tasks.iteritems():
+            rankings[task_id] = (task._priority, worker in task.workers, dependents[task_id])
+
         uniques_waiting = 0
         unique_tasks = 0
-        for task_id, task in self._tasks.iteritems():
-            if worker not in task.workers:
-                continue
+        pworker_tasks = dict.fromkeys(self._active_workers)
 
-            if task.status == RUNNING:
+        for task_id in sorted(rankings, key=rankings.get, reverse=True):
+            task = self._tasks[task_id]
+
+            if task.status == RUNNING and worker in task.workers:
                 running_tasks.append({'task_id': task_id, 'worker': task.worker_running})
 
             if task.status != PENDING:
                 continue
-
-            if len(task.workers) == 1:
-                unique_tasks += 1
-
-            locally_pending_tasks += 1
 
             ok = True
             for dep in task.deps:
@@ -266,25 +274,36 @@ class CentralPlannerScheduler(Scheduler):
                 elif self._tasks[dep].status != DONE:
                     ok = False
 
-            if not self._has_resources(task.resources, used_resources):
-                if ok and len(task.workers) == 1:
-                    uniques_waiting += 1
-                continue
+            if worker in task.workers:
+                if len(task.workers) == 1:
+                    unique_tasks += 1
+                    if ok and not self._has_resources(task.resources, used_resources):
+                        uniques_waiting += 1
+                locally_pending_tasks += 1
 
-            if ok:
-                cur_t = (-task._priority, -dependents[task_id], task.time)
-                if best_t is None or cur_t < best_t:
-                    best_t = cur_t
-                    best_task = task_id
+            if ok and self._has_resources(task.resources, used_resources):
+                filled = False
+                if worker in task.workers and pworker_tasks[worker] is None:
+                    pworker_tasks[worker] = task_id
+                    filled = True
+                else:
+                    for pworker in task.workers:
+                        if pworker_tasks[pworker] is None:
+                            pworker_tasks[pworker] = task_id
+                            filled = True
+                            break
+                if filled and task.resources:
+                    for resource, amount in task.resources.items():
+                        used_resources[resource] += amount
 
-        if best_task:
-            t = self._tasks[best_task]
+        if pworker_tasks[worker]:
+            t = self._tasks[pworker_tasks[worker]]
             t.status = RUNNING
             t.worker_running = worker
-            self._update_task_history(best_task, RUNNING, host=host)
+            self._update_task_history(pworker_tasks[worker], RUNNING, host=host)
 
         return {'n_pending_tasks': locally_pending_tasks,
-                'task_id': best_task,
+                'task_id': pworker_tasks[worker],
                 'running_tasks': running_tasks,
                 'unique_tasks': unique_tasks,
                 'uniques_waiting': uniques_waiting,
