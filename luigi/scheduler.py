@@ -256,7 +256,8 @@ class CentralPlannerScheduler(Scheduler):
 
         uniques_waiting = 0
         unique_tasks = 0
-        pworker_tasks = dict.fromkeys(self._active_workers)
+        p_worker_tasks = dict.fromkeys(self._active_workers)
+        p_used_resources = collections.defaultdict(int)
 
         for task_id in sorted(rankings, key=rankings.get, reverse=True):
             task = self._tasks[task_id]
@@ -281,29 +282,32 @@ class CentralPlannerScheduler(Scheduler):
                         uniques_waiting += 1
                 locally_pending_tasks += 1
 
-            if ok and self._has_resources(task.resources, used_resources):
+            # check against total resource because current running workers may use some resources
+            if ok and self._has_resources(task.resources, p_used_resources):
                 filled = False
-                if worker in task.workers and pworker_tasks[worker] is None:
-                    pworker_tasks[worker] = task_id
+                if worker in task.workers and \
+                        p_worker_tasks[worker] is None and \
+                        self._has_resources(task.resources, used_resources):
+                    p_worker_tasks[worker] = task_id
                     filled = True
-                else:
-                    for pworker in task.workers:
-                        if pworker_tasks[pworker] is None:
-                            pworker_tasks[pworker] = task_id
+                if not filled:
+                    for p_worker in task.workers:
+                        if p_worker != worker and p_worker_tasks[p_worker] is None:
+                            p_worker_tasks[p_worker] = task_id
                             filled = True
                             break
                 if filled and task.resources:
                     for resource, amount in task.resources.items():
-                        used_resources[resource] += amount
+                        p_used_resources[resource] += amount
 
-        if pworker_tasks[worker]:
-            t = self._tasks[pworker_tasks[worker]]
+        if p_worker_tasks[worker]:
+            t = self._tasks[p_worker_tasks[worker]]
             t.status = RUNNING
             t.worker_running = worker
-            self._update_task_history(pworker_tasks[worker], RUNNING, host=host)
+            self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
 
         return {'n_pending_tasks': locally_pending_tasks,
-                'task_id': pworker_tasks[worker],
+                'task_id': p_worker_tasks[worker],
                 'running_tasks': running_tasks,
                 'unique_tasks': unique_tasks,
                 'uniques_waiting': uniques_waiting,
