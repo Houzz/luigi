@@ -256,7 +256,7 @@ class CentralPlannerScheduler(Scheduler):
 
         uniques_waiting = 0
         unique_tasks = 0
-        p_worker_tasks = dict.fromkeys(self._active_workers)
+        p_worker_tasks = collections.defaultdict(lambda: None)
         p_used_resources = collections.defaultdict(int)
 
         for task_id in sorted(rankings, key=rankings.get, reverse=True):
@@ -306,6 +306,7 @@ class CentralPlannerScheduler(Scheduler):
             t.worker_running = worker
             self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
 
+        logger.warn('get_work() returns %s for worker %s', (task_id, worker))
         return {'n_pending_tasks': locally_pending_tasks,
                 'task_id': p_worker_tasks[worker],
                 'running_tasks': running_tasks,
