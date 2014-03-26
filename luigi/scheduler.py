@@ -306,7 +306,7 @@ class CentralPlannerScheduler(Scheduler):
             t.worker_running = worker
             self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
 
-        logger.info('get_work() returns %s for worker %s', task_id, worker)
+        logger.info('get_work returns %s for worker %s', task_id, worker)
         return {'n_pending_tasks': locally_pending_tasks,
                 'task_id': p_worker_tasks[worker],
                 'running_tasks': running_tasks,
