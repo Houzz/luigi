@@ -253,7 +253,6 @@ class CentralPlannerScheduler(Scheduler):
         uniques_waiting = 0
         unique_tasks = 0
         p_worker_tasks = collections.defaultdict(lambda: None)
-        p_used_resources = collections.defaultdict(int)
 
         for task_id in sorted(rankings, key=rankings.get, reverse=True):
             task = self._tasks[task_id]
@@ -279,7 +278,7 @@ class CentralPlannerScheduler(Scheduler):
                 locally_pending_tasks += 1
 
             # check against total resource because current running workers may use some resources
-            if ok and self._has_resources(task.resources, p_used_resources):
+            if ok and self._has_resources(task.resources, used_resources):
                 filled = False
                 if worker in task.workers and \
                         p_worker_tasks[worker] is None and \
@@ -292,9 +291,6 @@ class CentralPlannerScheduler(Scheduler):
                             p_worker_tasks[p_worker] = task_id
                             filled = True
                             break
-                if filled and task.resources:
-                    for resource, amount in task.resources.items():
-                        p_used_resources[resource] += amount
 
         if p_worker_tasks[worker]:
             t = self._tasks[p_worker_tasks[worker]]
