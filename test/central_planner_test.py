@@ -194,6 +194,13 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='A', priority=2)
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 
+    def test_scheduler_with_priority_and_deps_multiple(self):
+        self.sch.add_task(worker='X', task_id='A', priority=1)
+        self.sch.add_task(worker='X', task_id='B', deps=('A',), priority=2)
+        self.sch.add_task(worker='X', task_id='C', deps=('B'), priority=10)
+        self.sch.add_task(worker='X', task_id='D', priority=5)
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+
     def test_scheduler_with_pirority_and_competing_resources(self):
         self.sch.add_task(worker='X', task_id='A', status=RUNNING)
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=10)

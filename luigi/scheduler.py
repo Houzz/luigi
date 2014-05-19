@@ -157,6 +157,16 @@ class CentralPlannerScheduler(Scheduler):
         # of whenever the worker was last active
         self._active_workers[worker] = time.time()
 
+    def _update_priority(self, task_id, prio):
+        if task_id not in self._tasks:
+            return
+        task = self._tasks[task_id]
+        if prio > task._priority:
+            task._priority = prio
+            if task.deps:
+                for dep in task.deps:
+                    self._update_priority(dep, prio)
+
     def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None,
                  resources=None, priority=0):
         """
@@ -164,6 +174,7 @@ class CentralPlannerScheduler(Scheduler):
         * If deps is not None, update dependency list
         * Update status of task
         * Add additional workers/stakeholders
+        * Update priority when needed
         """
         self.update(worker)
 
@@ -183,6 +194,12 @@ class CentralPlannerScheduler(Scheduler):
 
         if deps is not None:
             task.deps = set(deps)
+
+            # We need to iterate thru deps and update priority if current priority is higher than dep's priority.
+            # In the case where the dep is not registered yet, we simply skip it because this is taken care of
+            # in worker._add_task_and_deps()
+            for dep in deps:
+                self._update_priority(dep, task._priority)
 
         task.stakeholders.add(worker)
 
