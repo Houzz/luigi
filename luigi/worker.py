@@ -39,8 +39,12 @@ class TaskException(Exception):
 
 
 class Event:
-    SUCCESS = "event.core.success"
+    # TODO nice descriptive subclasses of Event instead of strings? pass their instances to the callback instead of an undocumented arg list?
+    DEPENDENCY_DISCOVERED = "event.core.dependency.discovered"  # triggered for every (task, upstream task) pair discovered in a jobflow
+    DEPENDENCY_MISSING = "event.core.dependency.missing"
+    DEPENDENCY_PRESENT = "event.core.dependency.present"
     FAILURE = "event.core.failure"
+    SUCCESS = "event.core.success"
 
 
 class Worker(object):
@@ -76,8 +80,8 @@ class Worker(object):
             self.__keep_alive_uniques = keep_alive_uniques
 
 
-        self.__id = worker_id
-        self.__scheduler = scheduler
+        self._id = worker_id
+        self._scheduler = scheduler
         if (isinstance(scheduler, CentralPlannerScheduler)
                 and worker_processes != 1):
             warnings.warn("Will only use one process when running with local in-process scheduler")
@@ -86,7 +90,7 @@ class Worker(object):
 
         self.worker_processes = worker_processes
         self.host = socket.gethostname()
-        self.__scheduled_tasks = {}
+        self._scheduled_tasks = {}
 
         # store the previous tasks executed by the same worker
         # for debugging reasons
@@ -105,7 +109,7 @@ class Worker(object):
                 while True:
                     self._should_stop.wait(ping_interval)
                     if self._should_stop.is_set():
-                        logger.info("Worker was stopped. Shutting down Keep-Alive thread")
+                        logger.info("Worker %s was stopped. Shutting down Keep-Alive thread" % worker_id)
                         break
                     try:
                         scheduler.ping(worker=worker_id)
@@ -171,9 +175,12 @@ class Worker(object):
             self._log_unexpected_error(task)
             self._email_unexpected_error(task, formatted_traceback)
 
+    def _check_complete(self, task):
+        return task.complete()
+
     def _add(self, task):
         self._validate_task(task)
-        if task.task_id in self.__scheduled_tasks:
+        if task.task_id in self._scheduled_tasks:
             return []  # already scheduled
         logger.debug("Checking if %s is complete", task)
         is_complete = False
@@ -185,6 +192,7 @@ class Worker(object):
         except:
             formatted_traceback = traceback.format_exc()
             self._log_complete_error(task)
+            task.trigger_event(Event.DEPENDENCY_MISSING, task)
             self._email_complete_error(task, formatted_traceback)
             # abort, i.e. don't schedule any subtasks of a task with
             # failing complete()-method since we don't know if the task
@@ -194,9 +202,9 @@ class Worker(object):
 
         if is_complete:
             # Not submitting dependencies of finished tasks
-            self.__scheduler.add_task(self.__id, task.task_id, status=DONE,
+            self._scheduler.add_task(self._id, task.task_id, status=DONE,
                                       runnable=False)
-
+            task.trigger_event(Event.DEPENDENCY_PRESENT, task)
         elif task.run == NotImplemented:
             self._add_external(task)
         else:
@@ -204,9 +212,10 @@ class Worker(object):
         return []
 
     def _add_external(self, external_task):
-        self.__scheduled_tasks[external_task.task_id] = external_task
-        self.__scheduler.add_task(self.__id, external_task.task_id, status=PENDING,
+        self._scheduled_tasks[external_task.task_id] = external_task
+        self._scheduler.add_task(self._id, external_task.task_id, status=PENDING,
                                   runnable=False)
+        external_task.trigger_event(Event.DEPENDENCY_MISSING, external_task)
         logger.warning('Task %s is not complete and run() is not implemented. Probably a missing external dependency.', external_task.task_id)
 
     def _validate_dependency(self, dependency):
@@ -217,31 +226,32 @@ class Worker(object):
 
     def _add_task_and_deps(self, task):
         task._priority = max(task.task_priority(), task._priority)
-        self.__scheduled_tasks[task.task_id] = task
+        self._scheduled_tasks[task.task_id] = task
         deps = task.deps()
         for d in deps:
             self._validate_dependency(d)
+            task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
 
         deps = [d.task_id for d in deps]
-        self.__scheduler.add_task(self.__id, task.task_id, status=PENDING,
+        self._scheduler.add_task(self._id, task.task_id, status=PENDING,
                                   deps=deps, runnable=True,
                                   resources=task.resources(),
                                   priority=task._priority)
         logger.info('Scheduled %s (prio=%d)', task.task_id, task._priority)
 
-        for task_2 in task.deps():
+        for d in task.deps():
             # update dependency priority
-            task_2._priority = max(task_2._priority, task._priority)
-            yield task_2  # return additional tasks to add
+            d._priority = max(d._priority, task._priority)
+            yield d  # return additional tasks to add
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
             raise Exception("Return value of Task.complete() must be boolean (was %r)" % is_complete)
 
     def _run_task(self, task_id):
-        task = self.__scheduled_tasks[task_id]
+        task = self._scheduled_tasks[task_id]
 
-        logger.info('[pid %s] [prio %s] Running   %s', os.getpid(), task._priority, task_id)
+        logger.info('[pid %s] [prio %s] Worker %s running   %s', os.getpid(), task._priority, self._id, task_id)
         try:
             # Verify that all the tasks are fulfilled!
             ok = True
@@ -272,7 +282,7 @@ class Worker(object):
 
             if pre_run_dirty:
                 task.mark_undirty()
-            logger.info('[pid %s] Done      %s', os.getpid(), task_id)
+            logger.info('[pid %s] Worker %s done      %s', os.getpid(), self._id, task_id)
             task.trigger_event(Event.SUCCESS, task)
             status = DONE
 
@@ -280,13 +290,13 @@ class Worker(object):
             raise
         except Exception as ex:
             status = FAILED
-            logger.exception("[pid %s] Error while running %s", os.getpid(), task)
+            logger.exception("[pid %s] Worker %s failed    %s", os.getpid(), self._id, task)
             error_message = task.on_failure(ex)
             task.trigger_event(Event.FAILURE, task, ex)
             subject = "Luigi: %s FAILED" % task
             notifications.send_error_email(subject, error_message)
 
-        self.__scheduler.add_task(self.__id, task_id, status=status,
+        self._scheduler.add_task(self._id, task_id, status=status,
                                   expl=error_message, runnable=None)
 
         return status
@@ -309,7 +319,7 @@ class Worker(object):
 
     def _get_work(self):
         logger.debug("Asking scheduler for work...")
-        r = self.__scheduler.get_work(worker=self.__id, host=self.host)
+        r = self._scheduler.get_work(worker=self._id, host=self.host)
         # Support old version of scheduler
         if isinstance(r, tuple) or isinstance(r, list):
             n_pending_tasks, task_id = r

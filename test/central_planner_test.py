@@ -155,7 +155,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(r['task_id'], None)  # Worker Y is pending on A to be done
         s = r['running_tasks'][0]
         self.assertEqual(s['task_id'], 'A')
-        self.assertEqual(s['worker'], 'X')
+        self.assert_(s['worker'].startswith('X on '))
 
     def test_scheduler_resources_none(self):
         self.sch.add_task(worker='X', task_id='A', resources={'R1': 1})

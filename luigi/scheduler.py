@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import datetime
 import collections
 import os
 import logging
@@ -45,8 +46,8 @@ class Task(object):
     def __init__(self, status, deps, resources, priority=0):
         self._priority = priority
         self.resources = resources
-        self.stakeholders = set()  # workers that are somehow related to this task (i.e. don't prune while any of these workers are still active)
-        self.workers = set()  # workers that can perform task - task is 'BROKEN' if none of these workers are active
+        self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
+        self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
             self.deps = set()
         else:
@@ -55,11 +56,22 @@ class Task(object):
         self.time = time.time()  # Timestamp when task was first added
         self.retry = None
         self.remove = None
-        self.worker_running = None  # the worker that is currently running the task or None
+        self.worker_running = None  # the worker id that is currently running the task or None
         self.expl = None
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
+
+
+class Worker(object):
+    """ Structure for tracking worker activity and keeping their references """
+    def __init__(self, id, last_active=None):
+        self.id = id
+        self.reference = None  # reference to the worker in the real world. (Currently a dict containing just the host)
+        self.last_active = last_active  # seconds since epoch
+
+    def __str__(self):
+        return "%s on %s, last active %s" % (self.id, self.reference, datetime.datetime.utcfromtimestamp(self.last_active).isoformat())
 
 
 class CentralPlannerScheduler(Scheduler):
@@ -80,14 +92,13 @@ class CentralPlannerScheduler(Scheduler):
         worker_disconnect_delay -- If a worker hasn't communicated for this long, remove it from active workers
         '''
         self._state_path = state_path
-        self._tasks = {}
+        self._tasks = {}  # map from id to a Task object
         self._retry_delay = retry_delay
         self._remove_delay = remove_delay
         self._worker_disconnect_delay = worker_disconnect_delay
-        self._active_workers = {}  # map from id to timestamp (last updated)
+        self._active_workers = {}  # map from id to a Worker object
         self._task_history = task_history or history.NopHistory()
         self._resources = resources
-        # TODO: have a Worker object instead, add more data to it
 
     def dump(self):
         state = (self._tasks, self._active_workers)
@@ -99,12 +110,20 @@ class CentralPlannerScheduler(Scheduler):
         else:
             logger.info("Saved state in %s", self._state_path)
 
+    # prone to lead to crashes when old state is unpickled with updated code. TODO some kind of version control?
     def load(self):
         if os.path.exists(self._state_path):
             logger.info("Attempting to load state from %s", self._state_path)
             with open(self._state_path) as fobj:
                 state = pickle.load(fobj)
             self._tasks, self._active_workers = state
+
+            # Convert from old format
+            # TODO: this is really ugly, we need something more future-proof
+            # Every time we add an attribute to the Worker class, this code needs to be updated
+            for k, v in self._active_workers.iteritems():
+                if isinstance(v, float):
+                    self._active_workers[k] = Worker(id=k, last_active=v)
         else:
             logger.info("No prior state file exists at %s. Starting with clean slate", self._state_path)
 
@@ -112,10 +131,10 @@ class CentralPlannerScheduler(Scheduler):
         logger.info("Starting pruning of task graph")
         # Delete workers that haven't said anything for a while (probably killed)
         delete_workers = []
-        for worker in self._active_workers:
-            if self._active_workers[worker] < time.time() - self._worker_disconnect_delay:
-                logger.info("worker %r updated at %s timed out (no contact for >=%ss)", worker, self._active_workers[worker], self._worker_disconnect_delay)
-                delete_workers.append(worker)
+        for worker in self._active_workers.values():
+            if worker.last_active < time.time() - self._worker_disconnect_delay:
+                logger.info("Worker %s timed out (no contact for >=%ss)", worker, self._worker_disconnect_delay)
+                delete_workers.append(worker.id)
 
         for worker in delete_workers:
             self._active_workers.pop(worker)
@@ -152,10 +171,12 @@ class CentralPlannerScheduler(Scheduler):
                 task.status = PENDING
         logger.info("Done pruning task graph")
 
-    def update(self, worker):
-        # update timestamp so that we keep track
-        # of whenever the worker was last active
-        self._active_workers[worker] = time.time()
+    def update(self, worker_id, worker_reference=None):
+        """ Keep track of whenever the worker was last active """
+        worker = self._active_workers.setdefault(worker_id, Worker(worker_id))
+        if worker_reference:
+            worker.reference = worker_reference
+        worker.last_active = time.time()
 
     def _update_priority(self, task_id, prio):
         if task_id not in self._tasks:
@@ -251,7 +272,9 @@ class CentralPlannerScheduler(Scheduler):
         # nothing it can wait for
 
         # Return remaining tasks that have no FAILED descendents
-        self.update(worker)
+        self.update(worker, {'host': host})
+        best_t = float('inf')
+        best_task = None
         locally_pending_tasks = 0
         running_tasks = []
         used_resources = self._used_resources()
@@ -276,7 +299,7 @@ class CentralPlannerScheduler(Scheduler):
             task = self._tasks[task_id]
 
             if task.status == RUNNING and worker in task.workers:
-                running_tasks.append({'task_id': task_id, 'worker': task.worker_running})
+                running_tasks.append({'task_id': task_id, 'worker': str(self._active_workers.get(task.worker_running))})
 
             if task.status != PENDING:
                 continue
@@ -441,6 +464,26 @@ class CentralPlannerScheduler(Scheduler):
                 serialized = self._serialize_task(task_id)
                 result[task.status][task_id] = serialized
         return result
+
+    def inverse_dependencies(self, task_id):
+        self.prune()
+        serialized = {}
+        if task_id in self._tasks:
+            self._traverse_inverse_deps(task_id, serialized)
+        return serialized
+
+    def _traverse_inverse_deps(self, task_id, serialized):
+        stack = [task_id]
+        serialized[task_id] = self._serialize_task(task_id)
+        while len(stack) > 0:
+            curr_id = stack.pop()
+            for id, task in self._tasks.iteritems():
+                if curr_id in task.deps:
+                    serialized[curr_id]["deps"].append(id)
+                    if id not in serialized:
+                        serialized[id] = self._serialize_task(id)
+                        serialized[id]["deps"] = []
+                        stack.append(id)
 
     def fetch_error(self, task_id):
         if self._tasks[task_id].expl is not None:

@@ -86,13 +86,18 @@ def create_packages_archive(packages, filename):
         logger.debug('adding to tar: %s -> %s', src, dst)
         tar.add(src, dst)
     for package in packages:
-        if package.__package__ and package.__package__ != package.__name__:
-            # Replace with package instead of submodule
-            package = __import__(package.__package__, None, None, 'non_empty')
+        # Put a submodule's entire package in the archive. This is the
+        # magic that usually packages everything you need without
+        # having to attach packages/modules explicitly
+        if not hasattr(package, "__path__") and '.' in package.__name__:
+            package = __import__(package.__name__.rpartition('.')[0], None, None, 'non_empty')
 
         n = package.__name__.replace(".", "/")
 
         if hasattr(package, "__path__"):
+            # TODO: (BUG) picking only the first path does not
+            # properly deal with namespaced packages in different
+            # directories
             p = package.__path__[0]
 
             if p.endswith('.egg') and os.path.isfile(p):
@@ -197,7 +202,7 @@ def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
     def track_process(arglist, tracking_url_callback, env=None):
         # Dump stdout to a temp file, poll stderr and log it
         temp_stdout = tempfile.TemporaryFile()
-        proc = subprocess.Popen(arglist, stdout=temp_stdout, stderr=subprocess.PIPE, env=env)
+        proc = subprocess.Popen(arglist, stdout=temp_stdout, stderr=subprocess.PIPE, env=env, close_fds=True)
 
         # We parse the output to try to find the tracking URL.
         # This URL is useful for fetching the logs of the job.
@@ -234,7 +239,7 @@ def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
 
         if proc.returncode == 0:
             write_luigi_history(arglist, {'job_id': job_id})
-            return
+            return (out, err)
 
         # Try to fetch error logs if possible
         message = 'Streaming job failed with exit code %d. ' % proc.returncode
@@ -255,7 +260,7 @@ def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
     if tracking_url_callback is None:
         tracking_url_callback = lambda x: None
 
-    track_process(arglist, tracking_url_callback, env)
+    return track_process(arglist, tracking_url_callback, env)
 
 
 def fetch_task_failures(tracking_url):
@@ -326,15 +331,26 @@ class HadoopJobRunner(JobRunner):
         if runner_path.endswith("pyc"):
             runner_path = runner_path[:-3] + "py"
 
-        base_tmp_dir = configuration.get_config().get('core', 'tmp-dir', '/tmp/luigi')
-        self.tmp_dir = os.path.join(base_tmp_dir, 'hadoop_job_%016x' % random.getrandbits(64))
+        base_tmp_dir = configuration.get_config().get('core', 'tmp-dir', None)
+        if base_tmp_dir:
+            warnings.warn("The core.tmp-dir configuration item is"\
+                          " deprecated, please use the TMPDIR"\
+                          " environment variable if you wish"\
+                          " to control where luigi.hadoop may"\
+                          " create temporary files and directories.")
+            self.tmp_dir = os.path.join(base_tmp_dir, 'hadoop_job_%016x' % random.getrandbits(64))
+            os.makedirs(self.tmp_dir)
+        else:
+            self.tmp_dir = tempfile.mkdtemp()
+
         logger.debug("Tmp dir: %s", self.tmp_dir)
-        os.makedirs(self.tmp_dir)
 
         # build arguments
-        map_cmd = 'python mrrunner.py map'
-        cmb_cmd = 'python mrrunner.py combiner'
-        red_cmd = 'python mrrunner.py reduce'
+        config = configuration.get_config()
+        python_executable = config.get('hadoop', 'python-executable', 'python')
+        map_cmd = '{0} mrrunner.py map'.format(python_executable)
+        cmb_cmd = '{0} mrrunner.py combiner'.format(python_executable)
+        red_cmd = '{0} mrrunner.py reduce'.format(python_executable)
 
         # replace output with a temporary work directory
         output_final = job.output().path
@@ -410,6 +426,7 @@ class HadoopJobRunner(JobRunner):
         self.finish()
 
     def finish(self):
+        # FIXME: check for isdir?
         if self.tmp_dir and os.path.exists(self.tmp_dir):
             logger.debug('Removing directory %s', self.tmp_dir)
             shutil.rmtree(self.tmp_dir)
@@ -490,7 +507,6 @@ class LocalJobRunner(JobRunner):
 
 
 class BaseHadoopJobTask(luigi.Task):
-    n_reduce_tasks = 25
     pool = luigi.Parameter(is_global=True, default=None, significant=False)
     # This value can be set to change the default batching increment. Default is 1 for backwards compatibility.
     batch_counter_default = 1
@@ -499,7 +515,6 @@ class BaseHadoopJobTask(luigi.Task):
     final_combiner = NotImplemented
     final_reducer = NotImplemented
 
-    reducer = NotImplemented
     priority = NotImplemented
 
     _counter_dict = {}
@@ -508,10 +523,6 @@ class BaseHadoopJobTask(luigi.Task):
     def jobconfs(self):
         jcs = []
         jcs.append('mapred.job.name=%s' % self.task_id)
-        if self.reducer == NotImplemented:
-            jcs.append('mapred.reduce.tasks=0')
-        else:
-            jcs.append('mapred.reduce.tasks=%s' % self.n_reduce_tasks)
         if self.priority != NotImplemented:
             jcs.append('mapred.job.priority=%s' % self.priority())
         pool = self.pool
@@ -573,8 +584,17 @@ class BaseHadoopJobTask(luigi.Task):
             return super(BaseHadoopJobTask, self).on_failure(exception)
 
 
-
 class JobTask(BaseHadoopJobTask):
+    n_reduce_tasks = 25
+    reducer = NotImplemented
+
+    def jobconfs(self):
+        jcs = super(JobTask, self).jobconfs()
+        if self.reducer == NotImplemented:
+            jcs.append('mapred.reduce.tasks=0')
+        else:
+            jcs.append('mapred.reduce.tasks=%s' % self.n_reduce_tasks)
+        return jcs
 
     def init_mapper(self):
         pass
@@ -691,14 +711,22 @@ class JobTask(BaseHadoopJobTask):
 
     def _setup_links(self):
         if hasattr(self, '_links'):
+            missing = []
             for src, dst in self._links:
                 d = os.path.dirname(dst)
                 if d and not os.path.exists(d):
                     os.makedirs(d)
+                if not os.path.exists(src):
+                    missing.append(src)
+                    continue
                 if not os.path.exists(dst):
                     # If the combiner runs, the file might already exist,
                     # so no reason to create the link again
                     os.link(src, dst)
+            if missing:
+                raise HadoopJobError(
+                    'Missing files for distributed cache: ' +
+                    ', '.join(missing))
 
     def _dump(self, dir=''):
         """Dump instance to file."""
