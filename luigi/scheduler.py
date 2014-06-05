@@ -432,6 +432,16 @@ class CentralPlannerScheduler(Scheduler):
                     result[task_id] = serialized
         return result
 
+    def task_search(self, task_str):
+        ''' query for a subset of tasks by task_id '''
+        self.prune()
+        result = collections.defaultdict(dict)
+        for task_id, task in self._tasks.iteritems():
+            if task_id.find(task_str) != -1:
+                serialized = self._serialize_task(task_id)
+                result[task.status][task_id] = serialized
+        return result
+
     def fetch_error(self, task_id):
         if self._tasks[task_id].expl is not None:
             return {"taskId": task_id, "error": self._tasks[task_id].expl}
