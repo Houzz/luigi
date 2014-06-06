@@ -213,6 +213,8 @@ class CentralPlannerScheduler(Scheduler):
             if priority > task._priority:
                 task._priority = priority
 
+            task.resources = resources
+
         if deps is not None:
             task.deps = set(deps)
 
