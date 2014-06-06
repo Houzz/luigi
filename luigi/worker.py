@@ -297,7 +297,8 @@ class Worker(object):
             notifications.send_error_email(subject, error_message)
 
         self._scheduler.add_task(self._id, task_id, status=status,
-                                  expl=error_message, runnable=None)
+                                 expl=error_message, runnable=None,
+                                 resources=task.resources())
 
         return status
 
