@@ -55,6 +55,7 @@ class Task(object):
         self.retry = None
         self.remove = None
         self.worker_running = None  # the worker id that is currently running the task or None
+        self.time_running = None  # Timestamp when picked up by worker
         self.expl = None
         self.priority = priority
         self.resources = resources
@@ -343,6 +344,7 @@ class CentralPlannerScheduler(Scheduler):
             t = self._tasks[p_worker_tasks[worker]]
             t.status = RUNNING
             t.worker_running = worker
+            t.time_running = time.time()
             self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
 
         logger.info('get_work returns %s for worker %s', p_worker_tasks[worker], worker)
@@ -389,6 +391,7 @@ class CentralPlannerScheduler(Scheduler):
             'status': task.status,
             'workers': list(task.workers),
             'worker_running': task.worker_running,
+            'time_running': task.time_running,
             'start_time': task.time,
             'params': self._get_task_params(task_id),
             'name': self._get_task_name(task_id),
