@@ -215,6 +215,8 @@ class Task(object):
 
     _event_callbacks = {}
 
+    task_priority = 0
+
     @classmethod
     def event_handler(cls, event):
         """ Decorator for adding event handlers """
@@ -354,7 +356,6 @@ class Task(object):
 
         self.task_id = '%s(%s)' % (self.task_family, ', '.join(task_id_parts))
         self.__hash = hash(self.task_id)
-        self.task_priority = 0
 
     def initialized(self):
         """Returns ``True`` if the Task is initialized and ``False`` otherwise."""

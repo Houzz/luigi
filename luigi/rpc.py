@@ -83,7 +83,7 @@ class RemoteScheduler(Scheduler):
             'deps': deps,
             'expl': expl,
             'resources': resources,
-            'priority': priority
+            'priority': priority,
         })
 
     def get_work(self, worker, host=None):

@@ -44,8 +44,6 @@ STATUS_TO_UPSTREAM_MAP = {FAILED: UPSTREAM_FAILED, RUNNING: UPSTREAM_RUNNING, PE
 
 class Task(object):
     def __init__(self, status, deps, resources, priority=0):
-        self._priority = priority
-        self.resources = resources
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
@@ -58,6 +56,8 @@ class Task(object):
         self.remove = None
         self.worker_running = None  # the worker id that is currently running the task or None
         self.expl = None
+        self.priority = priority
+        self.resources = resources
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
@@ -182,8 +182,8 @@ class CentralPlannerScheduler(Scheduler):
         if task_id not in self._tasks:
             return
         task = self._tasks[task_id]
-        if prio > task._priority:
-            task._priority = prio
+        if prio > task.priority:
+            task.priority = prio
             if task.deps:
                 for dep in task.deps:
                     self._update_priority(dep, prio)
@@ -210,8 +210,8 @@ class CentralPlannerScheduler(Scheduler):
             if status == FAILED:
                 task.retry = time.time() + self._retry_delay
 
-            if priority > task._priority:
-                task._priority = priority
+            if priority > task.priority:
+                task.priority = priority
 
             task.resources = resources
 
@@ -222,7 +222,7 @@ class CentralPlannerScheduler(Scheduler):
             # In the case where the dep is not registered yet, we simply skip it because this is taken care of
             # in worker._add_task_and_deps()
             for dep in deps:
-                self._update_priority(dep, task._priority)
+                self._update_priority(dep, task.priority)
 
         task.stakeholders.add(worker)
 
@@ -276,6 +276,7 @@ class CentralPlannerScheduler(Scheduler):
         # Return remaining tasks that have no FAILED descendents
         self.update(worker, {'host': host})
         best_t = float('inf')
+        best_priority = float('-inf')
         best_task = None
         locally_pending_tasks = 0
         running_tasks = []
@@ -290,7 +291,7 @@ class CentralPlannerScheduler(Scheduler):
 
         rankings = {}
         for task_id, task in self._tasks.iteritems():
-            rankings[task_id] = (task._priority, worker in task.workers, dependents[task_id])
+            rankings[task_id] = (task.priority, worker in task.workers, dependents[task_id])
 
         uniques_waiting = 0
         unique_tasks = 0
@@ -391,7 +392,7 @@ class CentralPlannerScheduler(Scheduler):
             'start_time': task.time,
             'params': self._get_task_params(task_id),
             'name': self._get_task_name(task_id),
-            'priority': task._priority
+            'priority': task.priority,
         }
 
     def _get_task_params(self, task_id):
