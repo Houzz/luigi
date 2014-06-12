@@ -225,7 +225,6 @@ class Worker(object):
             raise Exception('requires() must return Task objects')
 
     def _add_task_and_deps(self, task):
-        task._priority = max(task.task_priority(), task._priority)
         self._scheduled_tasks[task.task_id] = task
         deps = task.deps()
         for d in deps:
@@ -236,12 +235,11 @@ class Worker(object):
         self._scheduler.add_task(self._id, task.task_id, status=PENDING,
                                   deps=deps, runnable=True,
                                   resources=task.resources(),
-                                  priority=task._priority)
-        logger.info('Scheduled %s (prio=%d)', task.task_id, task._priority)
+                                  priority=task.task_priority)
+        logger.info('Scheduled %s (prio=%d)', task.task_id, task.task_priority)
 
         for d in task.deps():
             # update dependency priority
-            d._priority = max(d._priority, task._priority)
             yield d  # return additional tasks to add
 
     def _check_complete_value(self, is_complete):
@@ -251,7 +249,7 @@ class Worker(object):
     def _run_task(self, task_id):
         task = self._scheduled_tasks[task_id]
 
-        logger.info('[pid %s] [prio %s] Worker %s running   %s', os.getpid(), task._priority, self._id, task_id)
+        logger.info('[pid %s] [prio %s] Worker %s running   %s', os.getpid(), task.task_priority, self._id, task_id)
         try:
             # Verify that all the tasks are fulfilled!
             ok = True

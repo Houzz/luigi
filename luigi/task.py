@@ -354,7 +354,7 @@ class Task(object):
 
         self.task_id = '%s(%s)' % (self.task_family, ', '.join(task_id_parts))
         self.__hash = hash(self.task_id)
-        self._priority = 0
+        self.task_priority = 0
 
     def initialized(self):
         """Returns ``True`` if the Task is initialized and ``False`` otherwise."""
@@ -486,9 +486,6 @@ class Task(object):
         """
         # used by scheduler
         return flatten(self._requires())
-
-    def task_priority(self):
-        return 0 # default impl
 
     def run(self):
         """The task run method, to be overridden in a subclass."""
