@@ -391,7 +391,7 @@ class CentralPlannerScheduler(Scheduler):
             'status': task.status,
             'workers': list(task.workers),
             'worker_running': task.worker_running,
-            'time_running': task.time_running,
+            'time_running': getattr(task, "time_running", None),
             'start_time': task.time,
             'params': self._get_task_params(task_id),
             'name': self._get_task_name(task_id),

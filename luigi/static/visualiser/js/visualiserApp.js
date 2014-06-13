@@ -24,6 +24,9 @@ function visualiserApp(luigi) {
         var taskName = taskIdParts[1];
         var taskParams = taskIdParts[2];
         var displayTime = new Date(Math.floor(task.start_time*1000)).toLocaleString();
+        if task.status == "RUNNING" {
+          displayTime += " / " + new Date(Math.floor(task.time_running*1000)).toLocaleString();
+        }
         return {
             taskId: task.taskId,
             taskName: taskName,
