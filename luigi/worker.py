@@ -203,7 +203,8 @@ class Worker(object):
         if is_complete:
             # Not submitting dependencies of finished tasks
             self._scheduler.add_task(self._id, task.task_id, status=DONE,
-                                      runnable=False)
+                                     resources=task.resources(), priority=task.task_priority,
+                                     runnable=False)
             task.trigger_event(Event.DEPENDENCY_PRESENT, task)
         elif task.run == NotImplemented:
             self._add_external(task)
