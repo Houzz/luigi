@@ -212,10 +212,10 @@ class CentralPlannerScheduler(Scheduler):
             if status == FAILED:
                 task.retry = time.time() + self._retry_delay
 
-            if priority > task.priority:
-                task.priority = priority
+        if priority > task.priority:
+            task.priority = priority
 
-            task.resources = resources
+        task.resources = resources
 
         if deps is not None:
             task.deps = set(deps)
