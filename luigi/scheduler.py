@@ -472,6 +472,18 @@ class CentralPlannerScheduler(Scheduler):
                 result[task.status][task_id] = serialized
         return result
 
+    def resources(self):
+        ''' get total resources and available ones '''
+        used_resources = self._used_resources()
+        ret = collections.defaultdict(dict)
+        for resource, total in self._resources.iteritems():
+            ret[resource]['total'] = total
+            if resource in used_resources:
+                ret[resource]['used'] = used_resources[resource]
+            else:
+                ret[resource]['used'] = 0
+        return ret
+
     def inverse_dependencies(self, task_id):
         self.prune()
         serialized = {}
