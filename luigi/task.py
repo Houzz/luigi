@@ -215,6 +215,7 @@ class Task(object):
 
     _event_callbacks = {}
 
+    resources = {}
     task_priority = 0
 
     @classmethod
@@ -469,8 +470,13 @@ class Task(object):
         '''
         return flatten(self.requires())  # base impl
 
-    def resources(self):
-        return {}  # default impl
+    def _resources(self):
+        '''
+        Override it "template" tasks which provide common resource functionality
+        but allow subclasses to specify additional resources while preserving
+        the name for consistent end-user experience.
+        '''
+        return self.resources  # default impl
 
     def input(self):
         """Returns the outputs of the Tasks returned by :py:meth:`requires`

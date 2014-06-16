@@ -203,7 +203,7 @@ class Worker(object):
         if is_complete:
             # Not submitting dependencies of finished tasks
             self._scheduler.add_task(self._id, task.task_id, status=DONE,
-                                     resources=task.resources(), priority=task.task_priority,
+                                     resources=task._resources(), priority=task.task_priority,
                                      runnable=False)
             task.trigger_event(Event.DEPENDENCY_PRESENT, task)
         elif task.run == NotImplemented:
@@ -216,7 +216,7 @@ class Worker(object):
         self._scheduled_tasks[external_task.task_id] = external_task
         self._scheduler.add_task(self._id, external_task.task_id, status=PENDING,
                                  runnable=False, priority=external_task.task_priority,
-                                 resources=external_task.resources())
+                                 resources=external_task._resources())
         external_task.trigger_event(Event.DEPENDENCY_MISSING, external_task)
         logger.warning('Task %s is not complete and run() is not implemented. Probably a missing external dependency.', external_task.task_id)
 
@@ -236,7 +236,7 @@ class Worker(object):
         deps = [d.task_id for d in deps]
         self._scheduler.add_task(self._id, task.task_id, status=PENDING,
                                  deps=deps, runnable=True,
-                                 resources=task.resources(),
+                                 resources=task._resources(),
                                  priority=task.task_priority)
         logger.info('Scheduled %s (prio=%d)', task.task_id, task.task_priority)
 
@@ -299,7 +299,7 @@ class Worker(object):
         self._scheduler.add_task(self._id, task_id, status=status,
                                  expl=error_message, runnable=None,
                                  priority=task.task_priority,
-                                 resources=task.resources())
+                                 resources=task._resources())
 
         return status
 
