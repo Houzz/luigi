@@ -397,6 +397,7 @@ class CentralPlannerScheduler(Scheduler):
             'params': self._get_task_params(task_id),
             'name': self._get_task_name(task_id),
             'priority': task.priority,
+            'resources': task.resources,
         }
 
     def _get_task_params(self, task_id):

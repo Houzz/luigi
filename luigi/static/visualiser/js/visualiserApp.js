@@ -35,6 +35,7 @@ function visualiserApp(luigi) {
             taskName: taskName,
             taskParams: taskParams,
             priority: task.priority,
+            resources: JSON.stringify(task.resources),
             displayTime: displayTime,
             displayTimestamp : task.start_time,
             trackingUrl: task.trackingUrl,
