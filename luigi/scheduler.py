@@ -181,9 +181,9 @@ class CentralPlannerScheduler(Scheduler):
         worker.last_active = time.time()
 
     def _update_priority(self, task_id, prio):
-        if task_id not in self._tasks:
-            return
-        task = self._tasks[task_id]
+        task = self._tasks.setdefault(
+            task_id, Task(status=UNKNOWN, deps=None,
+                          resources=None, priority=prio))
         if prio > task.priority:
             task.priority = prio
             if task.deps:
@@ -202,6 +202,11 @@ class CentralPlannerScheduler(Scheduler):
         self.update(worker)
 
         task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps, resources=resources, priority=priority))
+        if task.status == UNKNOWN:
+            if deps is not None:
+                task.deps = set(deps)
+            task.resources = resources
+            task.status = status
 
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added

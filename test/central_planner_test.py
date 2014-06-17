@@ -189,9 +189,9 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'B')
 
     def test_scheduler_with_priority_and_deps(self):
+        self.sch.add_task(worker='X', task_id='B', deps=('A',), priority=3)
         self.sch.add_task(worker='X', task_id='A', priority=1)
-        self.sch.add_task(worker='X', task_id='B', deps=('A',), priority=2)
-        self.sch.add_task(worker='X', task_id='A', priority=2)
+        self.sch.add_task(worker='X', task_id='C', priority=2)
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 
     def test_scheduler_with_priority_and_deps_multiple(self):
@@ -248,7 +248,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'C', deps=['Z'], priority=3)
         self.sch.add_task(WORKER, 'D', priority=2)
         self.sch.add_task(WORKER, 'Z', priority=1)
-        for expected_id in ['B', 'D', 'Z', 'A', 'C']:
+        for expected_id in ['Z', 'A', 'B', 'C', 'D']:
             self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
             self.sch.add_task(WORKER, expected_id, status=DONE)
         self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
