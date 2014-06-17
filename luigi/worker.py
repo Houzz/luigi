@@ -57,7 +57,7 @@ class Worker(object):
 
     def __init__(self, scheduler=CentralPlannerScheduler(), worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
-                 wait_interval=None, keep_alive_uniques=None):
+                 wait_interval=None):
         if not worker_id:
             worker_id = 'worker-%09d' % random.randrange(0, 999999999)
 
@@ -74,11 +74,6 @@ class Worker(object):
             if wait_interval is None:
                 wait_interval = config.getint('core', 'worker-wait-interval', 1)
             self.__wait_interval = wait_interval
-
-            if keep_alive_uniques is None:
-                keep_alive_uniques = config.getint('core', 'worker-keep-alive-uniques', 0)
-            self.__keep_alive_uniques = keep_alive_uniques
-
 
         self._id = worker_id
         self._scheduler = scheduler
@@ -303,11 +298,10 @@ class Worker(object):
 
         return status
 
-    def _log_remote_tasks(self, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting):
+    def _log_remote_tasks(self, running_tasks, n_pending_tasks, unique_ready_tasks):
         logger.info("Done")
         logger.info("There are no more tasks to run at this time")
-        logger.info("unique_tasks=%d, uniques_waiting=%d",
-                    unique_tasks, uniques_waiting)
+        logger.info("unique_ready_tasks=%d", unique_ready_tasks)
         if running_tasks:
             for r in running_tasks:
                 logger.info('%s is currently run by worker %s', r['task_id'], r['worker'])
@@ -328,16 +322,14 @@ class Worker(object):
         if isinstance(r, tuple) or isinstance(r, list):
             n_pending_tasks, task_id = r
             running_tasks = []
-            unique_tasks = 0
-            uniques_waiting = 0
+            unique_ready_tasks = 0
         else:
             n_pending_tasks = r['n_pending_tasks']
             task_id = r['task_id']
             running_tasks = r['running_tasks']
             # support old version of scheduler
-            unique_tasks = r.get('unique_tasks', 0)
-            uniques_waiting = r.get('uniques_waiting', 0)
-        return task_id, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting
+            unique_ready_tasks = r.get('unique_ready_tasks', 0)
+        return task_id, running_tasks, n_pending_tasks, unique_ready_tasks
 
     def _fork_task(self, children, task_id):
         child_pid = os.fork()
@@ -365,13 +357,13 @@ class Worker(object):
             while len(children) >= self.worker_processes:
                 self._reap_children(children)
 
-            task_id, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting = self._get_work()
+            task_id, running_tasks, n_pending_tasks, unique_ready_tasks = self._get_work()
 
             if task_id is None:
-                self._log_remote_tasks(running_tasks, n_pending_tasks, unique_tasks, uniques_waiting)
+                self._log_remote_tasks(running_tasks, n_pending_tasks, unique_ready_tasks)
                 if not children:
-                    pending_run = n_pending_tasks and running_tasks and unique_tasks >= self.__keep_alive_uniques
-                    if self.__keep_alive and (pending_run or uniques_waiting):
+                    pending_run = n_pending_tasks and running_tasks or unique_ready_tasks
+                    if self.__keep_alive and pending_run:
                         sleeper.next()
                         continue
                     else:

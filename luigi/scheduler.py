@@ -300,8 +300,7 @@ class CentralPlannerScheduler(Scheduler):
         for task_id, task in self._tasks.iteritems():
             rankings[task_id] = (task.priority, worker in task.workers, dependents[task_id])
 
-        uniques_waiting = 0
-        unique_tasks = 0
+        unique_ready_tasks = 0
         p_worker_tasks = collections.defaultdict(lambda: None)
         p_used_resources = collections.defaultdict(int)
 
@@ -322,10 +321,8 @@ class CentralPlannerScheduler(Scheduler):
                     ok = False
 
             if worker in task.workers:
-                if len(task.workers) == 1:
-                    unique_tasks += 1
-                    if ok:
-                        uniques_waiting += 1
+                if ok and len(task.workers) == 1:
+                    unique_ready_tasks += 1
                 locally_pending_tasks += 1
 
             # check against total resource because current running workers may use some resources
@@ -352,14 +349,12 @@ class CentralPlannerScheduler(Scheduler):
             t.worker_running = worker
             t.time_running = time.time()
             self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
-            uniques_waiting -= 1
 
         logger.info('get_work returns %s for worker %s', p_worker_tasks[worker], worker)
         return {'n_pending_tasks': locally_pending_tasks,
                 'task_id': p_worker_tasks[worker],
                 'running_tasks': running_tasks,
-                'unique_tasks': unique_tasks,
-                'uniques_waiting': uniques_waiting,
+                'unique_ready_tasks': unique_ready_tasks,
                }
 
     def ping(self, worker):
