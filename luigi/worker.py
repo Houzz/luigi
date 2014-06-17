@@ -303,9 +303,11 @@ class Worker(object):
 
         return status
 
-    def _log_remote_tasks(self, running_tasks, n_pending_tasks):
+    def _log_remote_tasks(self, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting):
         logger.info("Done")
         logger.info("There are no more tasks to run at this time")
+        logger.info("unique_tasks=%d, uniques_waiting=%d",
+                    unique_tasks, uniques_waiting)
         if running_tasks:
             for r in running_tasks:
                 logger.info('%s is currently run by worker %s', r['task_id'], r['worker'])
@@ -366,10 +368,9 @@ class Worker(object):
             task_id, running_tasks, n_pending_tasks, unique_tasks, uniques_waiting = self._get_work()
 
             if task_id is None:
-                self._log_remote_tasks(running_tasks, n_pending_tasks)
+                self._log_remote_tasks(running_tasks, n_pending_tasks, unique_tasks, uniques_waiting)
                 if not children:
                     pending_run = n_pending_tasks and running_tasks and unique_tasks >= self.__keep_alive_uniques
-                    waiting_for_unique = uniques_waiting > 0
                     if self.__keep_alive and (pending_run or uniques_waiting):
                         sleeper.next()
                         continue
