@@ -324,7 +324,7 @@ class CentralPlannerScheduler(Scheduler):
             if worker in task.workers:
                 if len(task.workers) == 1:
                     unique_tasks += 1
-                    if ok and not self._has_resources(task.resources, used_resources):
+                    if ok:
                         uniques_waiting += 1
                 locally_pending_tasks += 1
 
@@ -352,6 +352,7 @@ class CentralPlannerScheduler(Scheduler):
             t.worker_running = worker
             t.time_running = time.time()
             self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
+            uniques_waiting -= 1
 
         logger.info('get_work returns %s for worker %s', p_worker_tasks[worker], worker)
         return {'n_pending_tasks': locally_pending_tasks,
