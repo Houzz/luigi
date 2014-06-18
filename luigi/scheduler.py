@@ -44,8 +44,11 @@ STATUS_TO_UPSTREAM_MAP = {FAILED: UPSTREAM_FAILED, RUNNING: UPSTREAM_RUNNING, PE
 
 
 class Task(object):
-    def __init__(self, status, deps, resources, priority=0):
-        self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
+    def __init__(self, status, deps, resources, priority=0, stakeholders=None):
+        if stakeholders is None:
+            self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
+        else:
+            self.stakeholders = stakeholders
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
             self.deps = set()
@@ -180,17 +183,16 @@ class CentralPlannerScheduler(Scheduler):
             worker.reference = worker_reference
         worker.last_active = time.time()
 
-    def _update_priority(self, task_id, prio):
+    def _update_priority(self, task_id, prio, worker):
         task = self._tasks.setdefault(
             task_id, Task(status=UNKNOWN, deps=None,
-                          resources=None, priority=prio))
+                          resources=None, priority=prio,
+                          stakeholders=set(worker)))
         if prio > task.priority:
-            logger.info("%s priority changes to %d, orig = %d",
-                        task_id, prio, task.priority)
             task.priority = prio
             if task.deps:
                 for dep in task.deps:
-                    self._update_priority(dep, prio)
+                    self._update_priority(dep, prio, worker)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None,
                  resources=None, priority=0):
@@ -215,8 +217,6 @@ class CentralPlannerScheduler(Scheduler):
                 task.retry = time.time() + self._retry_delay
 
         if priority > task.priority:
-            logger.info("%s priority changes to %d, orig = %d",
-                        task_id, priority, task.priority)
             task.priority = priority
 
         task.resources = resources
@@ -225,10 +225,11 @@ class CentralPlannerScheduler(Scheduler):
             task.deps = set(deps)
 
             # We need to iterate thru deps and update priority if current priority is higher than dep's priority.
-            # In the case where the dep is not registered yet, we simply skip it because this is taken care of
-            # in worker._add_task_and_deps()
             for dep in deps:
-                self._update_priority(dep, task.priority)
+                # passing worker there because if the dep does not exist, we
+                # need to create one with worker as stakeholder so it won't be
+                # pruned
+                self._update_priority(dep, task.priority, worker)
 
         task.stakeholders.add(worker)
 
@@ -281,9 +282,6 @@ class CentralPlannerScheduler(Scheduler):
 
         # Return remaining tasks that have no FAILED descendents
         self.update(worker, {'host': host})
-        best_t = float('inf')
-        best_priority = float('-inf')
-        best_task = None
         locally_pending_tasks = 0
         running_tasks = []
         used_resources = self._used_resources()
@@ -504,16 +502,6 @@ class CentralPlannerScheduler(Scheduler):
                         serialized[id] = self._serialize_task(id)
                         serialized[id]["deps"] = []
                         stack.append(id)
-
-    def task_search(self, task_str):
-        ''' query for a subset of tasks by task_id '''
-        self.prune()
-        result = collections.defaultdict(dict)
-        for task_id, task in self._tasks.iteritems():
-            if task_id.find(task_str) != -1:
-                serialized = self._serialize_task(task_id)
-                result[task.status][task_id] = serialized
-        return result
 
     def fetch_error(self, task_id):
         if self._tasks[task_id].expl is not None:
