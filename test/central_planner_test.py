@@ -190,14 +190,15 @@ class CentralPlannerTest(unittest.TestCase):
 
     def test_scheduler_with_priority_and_deps(self):
         self.sch.add_task(worker='X', task_id='B', deps=('A',), priority=3)
-        self.sch.add_task(worker='X', task_id='A', priority=1)
+        self.sch.add_task(worker='X', task_id='A', deps=('D',), priority=1)
         self.sch.add_task(worker='X', task_id='C', priority=2)
-        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+        self.sch.add_task(worker='X', task_id='D', priority=0)
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'D')
 
     def test_scheduler_with_priority_and_deps_multiple(self):
-        self.sch.add_task(worker='X', task_id='A', priority=1)
-        self.sch.add_task(worker='X', task_id='B', deps=('A',), priority=2)
         self.sch.add_task(worker='X', task_id='C', deps=('B'), priority=10)
+        self.sch.add_task(worker='X', task_id='B', deps=('A',), priority=2)
+        self.sch.add_task(worker='X', task_id='A', priority=1)
         self.sch.add_task(worker='X', task_id='D', priority=5)
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 

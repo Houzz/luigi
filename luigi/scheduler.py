@@ -185,6 +185,8 @@ class CentralPlannerScheduler(Scheduler):
             task_id, Task(status=UNKNOWN, deps=None,
                           resources=None, priority=prio))
         if prio > task.priority:
+            logger.info("%s priority changes to %d, orig = %d",
+                        task_id, prio, task.priority)
             task.priority = prio
             if task.deps:
                 for dep in task.deps:
@@ -202,11 +204,6 @@ class CentralPlannerScheduler(Scheduler):
         self.update(worker)
 
         task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps, resources=resources, priority=priority))
-        if task.status == UNKNOWN:
-            if deps is not None:
-                task.deps = set(deps)
-            task.resources = resources
-            task.status = status
 
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
@@ -218,6 +215,8 @@ class CentralPlannerScheduler(Scheduler):
                 task.retry = time.time() + self._retry_delay
 
         if priority > task.priority:
+            logger.info("%s priority changes to %d, orig = %d",
+                        task_id, priority, task.priority)
             task.priority = priority
 
         task.resources = resources
