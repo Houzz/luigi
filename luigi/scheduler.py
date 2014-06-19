@@ -44,11 +44,8 @@ STATUS_TO_UPSTREAM_MAP = {FAILED: UPSTREAM_FAILED, RUNNING: UPSTREAM_RUNNING, PE
 
 
 class Task(object):
-    def __init__(self, status, deps, resources, priority=0, stakeholders=None):
-        if stakeholders is None:
-            self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
-        else:
-            self.stakeholders = stakeholders
+    def __init__(self, status, deps, resources, priority=0):
+        self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
             self.deps = set()
@@ -186,8 +183,8 @@ class CentralPlannerScheduler(Scheduler):
     def _update_priority(self, task_id, prio, worker):
         task = self._tasks.setdefault(
             task_id, Task(status=UNKNOWN, deps=None,
-                          resources=None, priority=prio,
-                          stakeholders=set([worker])))
+                          resources=None, priority=prio))
+        task.stakeholders.add(worker)
         if prio > task.priority:
             task.priority = prio
             if task.deps:
@@ -221,17 +218,16 @@ class CentralPlannerScheduler(Scheduler):
 
         task.resources = resources
 
+        task.stakeholders.add(worker)
+
         if deps is not None:
             task.deps = set(deps)
 
             # We need to iterate thru deps and update priority if current priority is higher than dep's priority.
             for dep in deps:
-                # passing worker there because if the dep does not exist, we
-                # need to create one with worker as stakeholder so it won't be
-                # pruned
+                # passing worker here because we need to add current worker
+                # into task's stakeholders otherwise they will be pruned
                 self._update_priority(dep, task.priority, worker)
-
-        task.stakeholders.add(worker)
 
         if runnable:
             task.workers.add(worker)
