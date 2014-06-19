@@ -187,7 +187,7 @@ class CentralPlannerScheduler(Scheduler):
         task = self._tasks.setdefault(
             task_id, Task(status=UNKNOWN, deps=None,
                           resources=None, priority=prio,
-                          stakeholders=set(worker)))
+                          stakeholders=set([worker])))
         if prio > task.priority:
             task.priority = prio
             if task.deps:
