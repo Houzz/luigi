@@ -209,6 +209,11 @@ class CentralPlannerScheduler(Scheduler):
 
         if not (task.status == RUNNING and status == PENDING):
             # don't allow re-scheduling of task while it is running, it must either fail or succeed first
+            if status == PENDING or status != task.status:
+                # Update the DB only if there was a acctual change, to prevent noise.
+                # We also check for status == PENDING b/c that's the default value
+                # (so checking for status != task.status woule lie)
+                self._update_task_history(task_id, status)
             task.status = status
             if status == FAILED:
                 task.retry = time.time() + self._retry_delay
@@ -234,7 +239,6 @@ class CentralPlannerScheduler(Scheduler):
 
         if expl is not None:
             task.expl = expl
-        self._update_task_history(task_id, status)
 
     def update_resources(self, **resources):
         if self._resources is None:
