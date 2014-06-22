@@ -91,6 +91,10 @@ class Worker(object):
         # for debugging reasons
         self._previous_tasks = []
 
+        # This is a cache for actual_complete during scheduling, it should not
+        # be used elsewhere
+        self._complete_cache = {}
+
         class KeepAliveThread(threading.Thread):
             """ Periodically tell the scheduler that the worker still lives """
             def __init__(self):
@@ -171,7 +175,12 @@ class Worker(object):
             self._email_unexpected_error(task, formatted_traceback)
 
     def _check_complete(self, task):
-        return task.complete()
+        if task.task_id in self._complete_cache:
+            return self._complete_cache[task.task_id]
+        else:
+            complete = task.actual_complete()
+            self._complete_cache[task.task_id] = complete
+            return complete
 
     def _add(self, task):
         self._validate_task(task)
@@ -180,7 +189,7 @@ class Worker(object):
         logger.debug("Checking if %s is complete", task)
         is_complete = False
         try:
-            is_complete = task.actual_complete()
+            is_complete = self._check_complete(task)
             self._check_complete_value(is_complete)
         except KeyboardInterrupt:
             raise
