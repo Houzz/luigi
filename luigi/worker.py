@@ -87,10 +87,6 @@ class Worker(object):
         self.host = socket.gethostname()
         self._scheduled_tasks = {}
 
-        # store the previous tasks executed by the same worker
-        # for debugging reasons
-        self._previous_tasks = []
-
         # This is a cache for actual_complete during scheduling, it should not
         # be used elsewhere
         self._complete_cache = {}
@@ -254,11 +250,10 @@ class Worker(object):
             pre_run_dirty = task.is_dirty()
 
             # Verify that all the tasks are fulfilled!
-            missing_deps = [dep for dep in task.deps() if not dep.actual_complete()]
-            if missing_deps:
-                deps_str = 'dependency' if len(missing_deps) == 1 else 'dependencies'
-                missing_str = ', '.join(repr(dep.task_id) for dep in missing_deps)
-                raise RuntimeError('Unfulfilled %s at run time: %s' % (deps_str, missing_str))
+            missing = [dep.task_id for dep in task.deps() if not dep.actual_complete()]
+            if missing:
+                deps = 'dependency' if len(missing) == 1 else 'dependencies'
+                raise RuntimeError('Unfulfilled %s at run time: %s' % (deps, ', '.join(missing)))
 
             task.run()
             error_message = json.dumps(task.on_success())
@@ -368,8 +363,6 @@ class Worker(object):
                 self._fork_task(children, task_id)
             else:
                 self._run_task(task_id)
-
-            self._previous_tasks.append(task_id)
 
         while children:
             self._reap_children(children)
