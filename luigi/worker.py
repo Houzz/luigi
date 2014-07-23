@@ -251,29 +251,14 @@ class Worker(object):
 
         logger.info('[pid %s] [prio %s] Worker %s running   %s', os.getpid(), task.task_priority, self._id, task_id)
         try:
-            # Verify that all the tasks are fulfilled!
-            ok = True
-            for task_2 in task.deps():
-                if not task_2.complete():
-                    ok = False
-                    missing_dep = task_2
-
-            if not ok:
-                # TODO: possibly try to re-add task again ad pending
-                raise RuntimeError('Unfulfilled dependency %r at run time!\nPrevious tasks: %r' % (missing_dep.task_id, self._previous_tasks))
-
             pre_run_dirty = task.is_dirty()
 
-            # Verify that all the tasks are not dirty!
-            ok = True
-            for task_2 in task.deps():
-                if task_2.is_dirty():
-                    ok = False
-                    missing_dep = task_2
-
-            if not ok:
-                raise RuntimeError('Dirty dependency %r at run time!\nPrevious tasks: %r'
-                        % (missing_dep.task_id, self._previous_tasks))
+            # Verify that all the tasks are fulfilled!
+            missing_deps = [dep for dep in task.deps() if not dep.actual_complete()]
+            if missing_deps:
+                deps_str = 'dependency' if len(missing_deps) == 1 else 'dependencies'
+                missing_str = ', '.join(repr(dep.task_id) for dep in missing_deps)
+                raise RuntimeError('Unfulfilled %s at run time: %s' % (deps_str, missing_str))
 
             task.run()
             error_message = json.dumps(task.on_success())
