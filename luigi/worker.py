@@ -162,11 +162,16 @@ class Worker(object):
     def add(self, task):
         """ Add a Task for the worker to check and possibly schedule and run """
         stack = [task]
+        self._validate_task(task)
+        seen = set([task.task_id])
         try:
             while stack:
                 current = stack.pop()
                 for next in self._add(current):
-                    stack.append(next)
+                    if next.task_id not in seen:
+                        self._validate_task(next)
+                        seen.add(next.task_id)
+                        stack.append(next)
         except (KeyboardInterrupt, TaskException):
             raise
         except:
@@ -174,22 +179,11 @@ class Worker(object):
             self._log_unexpected_error(task)
             self._email_unexpected_error(task, formatted_traceback)
 
-    def _check_complete(self, task):
-        if task.task_id in self._complete_cache:
-            return self._complete_cache[task.task_id]
-        else:
-            complete = task.actual_complete()
-            self._complete_cache[task.task_id] = complete
-            return complete
-
     def _add(self, task):
-        self._validate_task(task)
-        if task.task_id in self._scheduled_tasks:
-            return []  # already scheduled
         logger.debug("Checking if %s is complete", task)
         is_complete = False
         try:
-            is_complete = self._check_complete(task)
+            is_complete = task.actual_complete()
             self._check_complete_value(is_complete)
         except KeyboardInterrupt:
             raise
