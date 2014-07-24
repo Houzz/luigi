@@ -278,7 +278,7 @@ class Worker(object):
                                  expl=error_message, runnable=None,
                                  priority=task.task_priority,
                                  resources=task._resources())
-        if missing_deps:
+        if missing:
             logger.info("Rescheduling %s" % task)
             self.add(task)
 
