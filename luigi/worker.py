@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import collections
 import random
 from scheduler import CentralPlannerScheduler, PENDING, FAILED, DONE
 import threading
@@ -57,7 +58,7 @@ class Worker(object):
 
     def __init__(self, scheduler=CentralPlannerScheduler(), worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
-                 wait_interval=None):
+                 wait_interval=None, max_reschedules=None):
         if not worker_id:
             worker_id = 'worker-%09d' % random.randrange(0, 999999999)
 
@@ -75,6 +76,10 @@ class Worker(object):
                 wait_interval = config.getint('core', 'worker-wait-interval', 1)
             self.__wait_interval = wait_interval
 
+        if max_reschedules is None:
+            max_reschedules = config.getint('core', 'max-reschedules', 1)
+        self.__max_reschedules = max_reschedules
+
         self._id = worker_id
         self._scheduler = scheduler
         if (isinstance(scheduler, CentralPlannerScheduler)
@@ -82,10 +87,10 @@ class Worker(object):
             warnings.warn("Will only use one process when running with local in-process scheduler")
             worker_processes = 1
 
-
         self.worker_processes = worker_processes
         self.host = socket.gethostname()
         self._scheduled_tasks = {}
+        self.unfulfilled_counts = collections.defaultdict(int)
 
         # This is a cache for actual_complete during scheduling, it should not
         # be used elsewhere
@@ -278,9 +283,19 @@ class Worker(object):
                                  expl=error_message, runnable=None,
                                  priority=task.task_priority,
                                  resources=task._resources())
+
+        # re-add task to reschedule missing dependencies
         if missing:
-            logger.info("Rescheduling %s" % task)
-            self.add(task)
+            reschedule = True
+
+            # keep out of infinite loops by not rescheduling too many times
+            for task_id in missing:
+                self.unfulfilled_counts[task_id] += 1
+                if self.unfulfilled_counts[task_id] > self.__max_reschedules:
+                    reschedule = False
+            if reschedule:
+                logger.info("Rescheduling %s" % task)
+                self.add(task)
 
         return status
 
