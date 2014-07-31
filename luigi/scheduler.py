@@ -71,9 +71,13 @@ class Worker(object):
         self.id = id
         self.reference = None  # reference to the worker in the real world. (Currently a dict containing just the host)
         self.last_active = last_active  # seconds since epoch
+        self.info = {}
+
+    def add_info(self, info):
+        self.info.update(info)
 
     def __str__(self):
-        return "%s on %s, last active %s" % (self.id, self.reference, datetime.datetime.utcfromtimestamp(self.last_active).isoformat())
+        return self.id
 
 
 class CentralPlannerScheduler(Scheduler):
@@ -116,8 +120,13 @@ class CentralPlannerScheduler(Scheduler):
     def load(self):
         if os.path.exists(self._state_path):
             logger.info("Attempting to load state from %s", self._state_path)
-            with open(self._state_path) as fobj:
-                state = pickle.load(fobj)
+            try:
+                with open(self._state_path) as fobj:
+                    state = pickle.load(fobj)
+            except:
+                logger.exception("Error when loading state. Starting from clean slate.")
+                return
+
             self._tasks, self._active_workers = state
 
             # Convert from old format
@@ -240,6 +249,9 @@ class CentralPlannerScheduler(Scheduler):
         if expl is not None:
             task.expl = expl
 
+    def add_worker(self, worker, info):
+        self._active_workers[worker].add_info(info)
+
     def update_resources(self, **resources):
         if self._resources is None:
             self._resources = {}
@@ -304,8 +316,14 @@ class CentralPlannerScheduler(Scheduler):
         for task_id in sorted(rankings, key=rankings.get, reverse=True):
             task = self._tasks[task_id]
 
-            if task.status == RUNNING and worker in task.workers:
-                running_tasks.append({'task_id': task_id, 'worker': str(self._active_workers.get(task.worker_running))})
+            if task.status == RUNNING:
+                # Return a list of currently running tasks to the client,
+                # makes it easier to troubleshoot
+                other_worker = self._active_workers[task.worker_running]
+                more_info = {'task_id': task_id, 'worker': str(other_worker)}
+                if other_worker is not None:
+                    more_info.update(other_worker.info)
+                running_tasks.append(more_info)
 
             if task.status != PENDING:
                 continue

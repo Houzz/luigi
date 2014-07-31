@@ -15,6 +15,7 @@
 import collections
 import random
 from scheduler import CentralPlannerScheduler, PENDING, FAILED, DONE
+import collections
 import threading
 import time
 import os
@@ -24,6 +25,7 @@ import traceback
 import logging
 import warnings
 import notifications
+import getpass
 from target import Target
 from task import Task
 
@@ -44,6 +46,8 @@ class Event:
     DEPENDENCY_DISCOVERED = "event.core.dependency.discovered"  # triggered for every (task, upstream task) pair discovered in a jobflow
     DEPENDENCY_MISSING = "event.core.dependency.missing"
     DEPENDENCY_PRESENT = "event.core.dependency.present"
+    BROKEN_TASK = "event.core.task.broken"
+    START = "event.core.start"
     FAILURE = "event.core.failure"
     SUCCESS = "event.core.success"
 
@@ -59,8 +63,10 @@ class Worker(object):
     def __init__(self, scheduler=CentralPlannerScheduler(), worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
                  wait_interval=None, max_reschedules=None):
+        self._worker_info = self._generate_worker_info()
+
         if not worker_id:
-            worker_id = 'worker-%09d' % random.randrange(0, 999999999)
+            worker_id = 'Worker(%s)' % ', '.join(['%s=%s' % (k, v) for k, v in self._worker_info])
 
         config = configuration.get_config()
 
@@ -90,6 +96,9 @@ class Worker(object):
         self.worker_processes = worker_processes
         self.host = socket.gethostname()
         self._scheduled_tasks = {}
+
+        self.add_succeeded = True
+        self.run_succeeded = True
         self.unfulfilled_counts = collections.defaultdict(int)
 
         # This is a cache for actual_complete during scheduling, it should not
@@ -134,6 +143,24 @@ class Worker(object):
         self._keep_alive_thread.stop()
         self._keep_alive_thread.join()
 
+    def _generate_worker_info(self):
+        # Generate as much info as possible about the worker
+        # Some of these calls might not be available on all OS's
+        args = [('salt', '%09d' % random.randrange(0, 999999999))]
+        try:
+            args += [('host', socket.gethostname())]
+        except:
+            pass
+        try:
+            args += [('username', getpass.getuser())]
+        except:
+            pass
+        try:
+            args += [('pid', os.getpid())]
+        except:
+            pass
+        return args
+
     def _validate_task(self, task):
         if not isinstance(task, Task):
             raise TaskException('Can not schedule non-task %s' % task)
@@ -161,7 +188,9 @@ class Worker(object):
         notifications.send_error_email(subject, message)
 
     def add(self, task):
-        """ Add a Task for the worker to check and possibly schedule and run """
+        """ Add a Task for the worker to check and possibly schedule and run.
+         Returns True if task and its dependencies were successfully scheduled or completed before"""
+        self.add_succeeded = True
         stack = [task]
         self._validate_task(task)
         seen = set([task.task_id])
@@ -175,10 +204,13 @@ class Worker(object):
                         stack.append(next)
         except (KeyboardInterrupt, TaskException):
             raise
-        except:
+        except Exception as ex:
+            self.add_succeeded = False
             formatted_traceback = traceback.format_exc()
             self._log_unexpected_error(task)
+            task.trigger_event(Event.BROKEN_TASK, task, ex)
             self._email_unexpected_error(task, formatted_traceback)
+        return self.add_succeeded
 
     def _add(self, task):
         logger.debug("Checking if %s is complete", task)
@@ -189,6 +221,7 @@ class Worker(object):
         except KeyboardInterrupt:
             raise
         except:
+            self.add_succeeded = False
             formatted_traceback = traceback.format_exc()
             self._log_complete_error(task)
             task.trigger_event(Event.DEPENDENCY_MISSING, task)
@@ -259,7 +292,7 @@ class Worker(object):
             if missing:
                 deps = 'dependency' if len(missing) == 1 else 'dependencies'
                 raise RuntimeError('Unfulfilled %s at run time: %s' % (deps, ', '.join(missing)))
-
+            task.trigger_event(Event.START, task)
             task.run()
             error_message = json.dumps(task.on_success())
 
@@ -294,10 +327,16 @@ class Worker(object):
                 if self.unfulfilled_counts[task_id] > self.__max_reschedules:
                     reschedule = False
             if reschedule:
-                logger.info("Rescheduling %s" % task)
                 self.add(task)
 
+        self.run_succeeded &= status == DONE
         return status
+
+    def _add_worker(self):
+        try:
+            self._scheduler.add_worker(self._id, self._worker_info)
+        except:
+            logger.exception('Exception adding worker - scheduler might be running an older version')
 
     def _log_remote_tasks(self, running_tasks, n_pending_tasks, unique_ready_tasks):
         logger.info("Done")
@@ -313,6 +352,7 @@ class Worker(object):
         died_pid, status = os.wait()
         if died_pid in children:
             children.remove(died_pid)
+            self.run_succeeded &= status == 0
         else:
             logger.warning("Some random process %s died", died_pid)
 
@@ -339,8 +379,8 @@ class Worker(object):
         else:
             # need to have different random seeds...
             random.seed((os.getpid(), time.time()))
-            self._run_task(task_id)
-            os._exit(0)
+            status = self._run_task(task_id)
+            os._exit(0 if status == DONE else 1)
 
     def _sleeper(self):
         # TODO is exponential backoff necessary?
@@ -351,8 +391,13 @@ class Worker(object):
             yield
 
     def run(self):
+        """Returns True if all scheduled tasks were executed successfully"""
+
         children = set()
         sleeper  = self._sleeper()
+        self.run_succeeded = True
+
+        self._add_worker()
 
         while True:
             while len(children) >= self.worker_processes:
@@ -381,3 +426,4 @@ class Worker(object):
 
         while children:
             self._reap_children(children)
+        return self.run_succeeded

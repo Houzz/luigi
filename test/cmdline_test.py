@@ -19,7 +19,8 @@ from luigi.mock import MockFile
 import mock
 import unittest
 import warnings
-
+import subprocess
+import os
 
 class SomeTask(luigi.Task):
     n = luigi.IntParameter()
@@ -59,6 +60,17 @@ class TaskWithSameName(luigi.Task):
     # there should be no ambiguity
     def run(self):
         self.x = 43
+
+
+class WriteToFile(luigi.Task):
+    filename = luigi.Parameter()
+    def output(self):
+        return luigi.LocalTarget(self.filename)
+
+    def run(self):
+        f = self.output().open('w')
+        print >>f, 'foo'
+        f.close()
 
 
 class CmdlineTest(unittest.TestCase):
@@ -107,11 +119,13 @@ class CmdlineTest(unittest.TestCase):
     @mock.patch("warnings.warn")
     @mock.patch("luigi.interface.setup_interface_logging")
     def test_cmdline_logger(self, setup_mock, warn):
-        luigi.run(['Task', '--local-scheduler'])
-        self.assertEqual([mock.call(None)], setup_mock.call_args_list)
+        with mock.patch("luigi.interface.EnvironmentParamsContainer.env_params") as env_params:
+            env_params.return_value.logging_conf_file = None
+            luigi.run(['Task', '--local-scheduler'])
+            self.assertEqual([mock.call(None)], setup_mock.call_args_list)
 
         with mock.patch("luigi.configuration.get_config") as getconf:
-            getconf.return_value.get.return_value = None
+            getconf.return_value.get.side_effect = ConfigParser.NoOptionError(section='foo', option='bar')
             getconf.return_value.get_boolean.return_value = True
 
             luigi.interface.setup_interface_logging.call_args_list = []
@@ -121,6 +135,14 @@ class CmdlineTest(unittest.TestCase):
     @mock.patch('argparse.ArgumentParser.print_usage')
     def test_non_existent_class(self, print_usage):
         self.assertRaises(SystemExit, luigi.run, ['--local-scheduler', 'XYZ'])
+
+    def test_bin_luigi(self):
+        t = luigi.LocalTarget(is_tmp=True)
+        cmd = ['./bin/luigi', '--module', 'cmdline_test', 'WriteToFile', '--filename', t.path, '--local-scheduler']
+        env = os.environ.copy()
+        env['PYTHONPATH'] = env.get('PYTHONPATH', '') + ':.:test'
+        subprocess.check_call(cmd, env=env, stderr=subprocess.STDOUT)
+        self.assertTrue(t.exists())
 
 if __name__ == '__main__':
     unittest.main()

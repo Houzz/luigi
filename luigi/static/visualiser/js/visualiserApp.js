@@ -25,10 +25,12 @@ function visualiserApp(luigi) {
         var taskParams = taskIdParts[2];
         var displayTime = new Date(Math.floor(task.start_time*1000)).toLocaleString();
         if (task.status == "RUNNING" && "time_running" in task) {
-          displayTime += " | " + new Date(Math.floor(task.time_running*1000)).toLocaleString();
-          if ("worker_running" in task) {
-            displayTime += " (" + task.worker_running + ")"
-          }
+            var current_time = new Date().getTime()
+            var minutes_running = Math.round((current_time - task.time_running * 1000) / 1000 / 60)
+            displayTime += " | " + minutes_running + " minutes"
+            if ("worker_running" in task) {
+              displayTime += " (" + task.worker_running + ")"
+            }
         }
         return {
             taskId: task.taskId,
