@@ -409,6 +409,9 @@ class Task(object):
     def __repr__(self):
         return self.task_id
 
+    def __eq__(self, other):
+        return self.task_id == getattr(other, 'task_id', None)
+
     def complete(self):
         """
             If the task has any outputs, return ``True`` if all outputs exists.
