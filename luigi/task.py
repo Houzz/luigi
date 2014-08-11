@@ -410,7 +410,7 @@ class Task(object):
         return self.task_id
 
     def __eq__(self, other):
-        return self.task_id == getattr(other, 'task_id', None)
+        return self.__class__ == other.__class__ and self.param_args == other.param_args
 
     def complete(self):
         """
