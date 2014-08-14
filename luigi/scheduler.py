@@ -215,6 +215,12 @@ class CentralPlannerScheduler(Scheduler):
 
         task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps, resources=resources, priority=priority, family=family, params=params))
 
+        # for setting priority, we'll sometimes create tasks with unset family and params
+        if not task.family:
+            task.family = family
+        if not task.params:
+            task.params = params
+
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
 
