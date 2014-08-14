@@ -261,7 +261,7 @@ class Worker(object):
 
         self._scheduled_tasks[task.task_id] = task
         self._scheduler.add_task(self._id, task.task_id, status=status,
-                                 deps=deps, runnable=runnable, priority=task.task_priority,
+                                 deps=deps, runnable=runnable, priority=task.priority,
                                  params=task.to_str_params(),
                                  family=task.task_family)
 
@@ -270,7 +270,7 @@ class Worker(object):
     def _add_external(self, external_task):
         self._scheduled_tasks[external_task.task_id] = external_task
         self._scheduler.add_task(self._id, external_task.task_id, status=PENDING,
-                                 runnable=False, priority=external_task.task_priority,
+                                 runnable=False, priority=external_task.priority,
                                  resources=external_task._resources())
         external_task.trigger_event(Event.DEPENDENCY_MISSING, external_task)
         logger.warning('Task %s is not complete and run() is not implemented. Probably a missing external dependency.', external_task.task_id)
@@ -288,7 +288,7 @@ class Worker(object):
     def _run_task(self, task_id):
         task = self._scheduled_tasks[task_id]
 
-        logger.info('[pid %s] [prio %s] Worker %s running   %s', os.getpid(), task.task_priority, self._id, task_id)
+        logger.info('[pid %s] [prio %s] Worker %s running   %s', os.getpid(), task.priority, self._id, task_id)
         try:
             pre_run_dirty = task.is_dirty()
 
@@ -319,7 +319,7 @@ class Worker(object):
 
         self._scheduler.add_task(self._id, task_id, status=status,
                                  expl=error_message, runnable=None,
-                                 priority=task.task_priority,
+                                 priority=task.priority,
                                  resources=task._resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family)

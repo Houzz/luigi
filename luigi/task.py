@@ -216,7 +216,7 @@ class Task(object):
     _event_callbacks = {}
 
     resources = {}
-    task_priority = 0
+    priority = 0
 
     @classmethod
     def event_handler(cls, event):
