@@ -230,19 +230,42 @@ class Worker(object):
             # failing complete()-method since we don't know if the task
             # is complete and subtasks might not be desirable to run if
             # they have already ran before
-            return []
+            return
 
         if is_complete:
-            # Not submitting dependencies of finished tasks
-            self._scheduler.add_task(self._id, task.task_id, status=DONE,
-                                     resources=task._resources(), priority=task.task_priority,
-                                     runnable=False)
+            deps = None
+            status = DONE
+            runnable = False
+
             task.trigger_event(Event.DEPENDENCY_PRESENT, task)
         elif task.run == NotImplemented:
-            self._add_external(task)
+            deps = None
+            status = PENDING
+            runnable = False
+
+            task.trigger_event(Event.DEPENDENCY_MISSING, task)
+            logger.warning('Task %s is not complete and run() is not implemented. Probably a missing external dependency.', task.task_id)
+
         else:
-            return self._add_task_and_deps(task)
-        return []
+            deps = task.deps()
+            status = PENDING
+            runnable = True
+
+        if deps:
+            for d in deps:
+                self._validate_dependency(d)
+                task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
+                yield d # return additional tasks to add
+
+            deps = [d.task_id for d in deps]
+
+        self._scheduled_tasks[task.task_id] = task
+        self._scheduler.add_task(self._id, task.task_id, status=status,
+                                 deps=deps, runnable=runnable, priority=task.task_priority,
+                                 params=task.to_str_params(),
+                                 family=task.task_family)
+
+        logger.info('Scheduled %s (%s)', task.task_id, status)
 
     def _add_external(self, external_task):
         self._scheduled_tasks[external_task.task_id] = external_task
@@ -257,24 +280,6 @@ class Worker(object):
             raise Exception('requires() can not return Target objects. Wrap it in an ExternalTask class')
         elif not isinstance(dependency, Task):
             raise Exception('requires() must return Task objects')
-
-    def _add_task_and_deps(self, task):
-        self._scheduled_tasks[task.task_id] = task
-        deps = task.deps()
-        for d in deps:
-            self._validate_dependency(d)
-            task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
-
-        deps = [d.task_id for d in deps]
-        self._scheduler.add_task(self._id, task.task_id, status=PENDING,
-                                 deps=deps, runnable=True,
-                                 resources=task._resources(),
-                                 priority=task.task_priority)
-        logger.info('Scheduled %s (prio=%d)', task.task_id, task.task_priority)
-
-        for d in task.deps():
-            # update dependency priority
-            yield d  # return additional tasks to add
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
@@ -315,7 +320,9 @@ class Worker(object):
         self._scheduler.add_task(self._id, task_id, status=status,
                                  expl=error_message, runnable=None,
                                  priority=task.task_priority,
-                                 resources=task._resources())
+                                 resources=task._resources(),
+                                 params=task.to_str_params(),
+                                 family=task.task_family)
 
         # re-add task to reschedule missing dependencies
         if missing:

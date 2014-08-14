@@ -19,6 +19,7 @@ import json
 import time
 import warnings
 from scheduler import Scheduler, PENDING
+import configuration
 
 logger = logging.getLogger('luigi-interface')  # TODO: 'interface'?
 
@@ -35,6 +36,11 @@ class RemoteScheduler(Scheduler):
     def __init__(self, host='localhost', port=8082, connect_timeout=None):
         self._host = host
         self._port = port
+
+        config = configuration.get_config()
+
+        if connect_timeout is None:
+            connect_timeout = config.getfloat('core', 'rpc-connect-timeout', 10.0)
         self._connect_timeout = connect_timeout
 
     def _wait(self):
@@ -74,7 +80,7 @@ class RemoteScheduler(Scheduler):
         self._request('/api/ping', {'worker': worker}, attempts=1)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=False, deps=None, expl=None,
-                 resources={}, priority=0):
+                 resources={}, priority=0, family='', params={}):
         self._request('/api/add_task', {
             'task_id': task_id,
             'worker': worker,
@@ -84,6 +90,8 @@ class RemoteScheduler(Scheduler):
             'expl': expl,
             'resources': resources,
             'priority': priority,
+            'family': family,
+            'params': params,
         })
 
     def get_work(self, worker, host=None):
@@ -140,8 +148,8 @@ class RemoteSchedulerResponder(object):
     def __init__(self, scheduler):
         self._scheduler = scheduler
 
-    def add_task(self, worker, task_id, status, runnable, deps, expl, resources=None, priority=0, **kwargs):
-        return self._scheduler.add_task(worker, task_id, status, runnable, deps, expl, resources, priority)
+    def add_task(self, worker, task_id, status, runnable, deps, expl, resources=None, priority=0, family='', params={}, **kwargs):
+        return self._scheduler.add_task(worker, task_id, status, runnable, deps, expl, resources, priority, family, params)
 
     def add_worker(self, worker, info, **kwargs):
         return self._scheduler.add_worker(worker, info)

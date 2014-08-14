@@ -44,7 +44,7 @@ STATUS_TO_UPSTREAM_MAP = {FAILED: UPSTREAM_FAILED, RUNNING: UPSTREAM_RUNNING, PE
 
 
 class Task(object):
-    def __init__(self, status, deps, resources, priority=0):
+    def __init__(self, status, deps, resources, priority=0, family='', params={}):
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
         if deps is None:
@@ -60,6 +60,8 @@ class Task(object):
         self.expl = None
         self.priority = priority
         self.resources = resources
+        self.family = family
+        self.params = params
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
@@ -201,7 +203,7 @@ class CentralPlannerScheduler(Scheduler):
                     self._update_priority(dep, prio, worker)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None,
-                 resources=None, priority=0):
+                 resources=None, priority=0, family='', params={}):
         """
         * Add task identified by task_id if it doesn't exist
         * If deps is not None, update dependency list
@@ -211,7 +213,7 @@ class CentralPlannerScheduler(Scheduler):
         """
         self.update(worker)
 
-        task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps, resources=resources, priority=priority))
+        task = self._tasks.setdefault(task_id, Task(status=PENDING, deps=deps, resources=resources, priority=priority, family=family, params=params))
 
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
@@ -409,31 +411,14 @@ class CentralPlannerScheduler(Scheduler):
             'worker_running': task.worker_running,
             'time_running': getattr(task, "time_running", None),
             'start_time': task.time,
-            'params': self._get_task_params(task_id),
-            'name': self._get_task_name(task_id),
+            'params': task.params,
+            'name': task.family,
             'priority': task.priority,
             'resources': task.resources,
         }
         if include_deps:
             ret['deps'] = list(task.deps)
         return ret
-
-    def _get_task_params(self, task_id):
-        params = {}
-        params_part = task_id.split('(')[1].strip(')')
-        params_strings = params_part.split(", ")
-
-        for param in params_strings:
-            if not param:
-                continue
-            split_param = param.split('=')
-            if len(split_param) != 2:
-                return {'<complex parameters>': params_part}
-            params[split_param[0]] = split_param[1]
-        return params
-
-    def _get_task_name(self, task_id):
-        return task_id.split('(')[0]
 
     def graph(self):
         self.prune()
@@ -452,9 +437,9 @@ class CentralPlannerScheduler(Scheduler):
                     'status': UNKNOWN,
                     'workers': [],
                     'start_time': UNKNOWN,
-                    'params': self._get_task_params(task_id),
-                    'name': self._get_task_name(task_id),
-                    'priority': 0
+                    'params': task.params,
+                    'name': task.family,
+                    'priority': 0,
                 }
             else:
                 serialized[task_id] = self._serialize_task(task_id)
