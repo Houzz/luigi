@@ -262,6 +262,7 @@ class Worker(object):
         self._scheduled_tasks[task.task_id] = task
         self._scheduler.add_task(self._id, task.task_id, status=status,
                                  deps=deps, runnable=runnable, priority=task.priority,
+                                 resources=task._resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family)
 
