@@ -21,10 +21,12 @@ import pymysql
 import warnings
 import traceback
 
-from functools import wraps
-
 Parameter = parameter.Parameter
 logger = logging.getLogger('luigi-interface')
+
+DIRTY_QUERY = '''INSERT INTO `%s` (task_id, created) VALUES(%%s, NOW())
+    ON DUPLICATE KEY UPDATE created=NOW()'''
+CLEAN_QUERY = "DELETE FROM `%s` where task_id=%%s and created=%%s LIMIT 1"
 
 
 def namespace(namespace=None):
@@ -544,17 +546,28 @@ class Task(object):
                 self._dirty_created = r[0]
                 return True
 
-    def mark_undirty(self):
+    def _dirty_jobs_table(self):
         config = configuration.get_config()
         dirty_jobs_enabled = config.getboolean('core', 'worker-dirty-jobs-enabled', False)
-        if not dirty_jobs_enabled or self._dirty_created is None:
+        if not dirty_jobs_enabled:
+            return None
+        return config.get('core', 'worker-dirty-jobs-table', None)
+
+    def mark_undirty(self):
+        table = self._dirty_jobs_table()
+        if table is None or self._dirty_created is None:
             return
 
         with self._dirty_jobs_db_cursor() as cursor:
-            table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
-            sql = "DELETE FROM `%s` where task_id='%s' and created = '%s' LIMIT 1" % (table, self.task_id, self._dirty_created)
-            rows = cursor.execute(sql)
+            cursor.execute(CLEAN_QUERY % table, (self.task_id, self._dirty_created))
 
+    def mark_dirty(self):
+        table = self._dirty_jobs_table()
+        if table is None:
+            return
+
+        with self._dirty_jobs_db_cursor() as cursor:
+            cursor.execute(DIRTY_QUERY % table, (self.task_id,))
 
     def on_failure(self, exception):
         """ Override for custom error handling
