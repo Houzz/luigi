@@ -219,6 +219,7 @@ class Task(object):
 
     resources = {}
     priority = 0
+    disabled = False
 
     @classmethod
     def event_handler(cls, event):

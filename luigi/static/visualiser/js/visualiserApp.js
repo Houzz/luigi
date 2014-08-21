@@ -191,6 +191,10 @@ function visualiserApp(luigi) {
             getTaskList("#upstreamFailedTasks", upstreamFailedTasks);
         });
 
+        luigi.getDisabledTaskList(function(disabledTasks) {
+            getTaskList("#disabledTasks", disabledTasks);
+        });
+
         luigi.getPendingTaskList(function(pendingTasks) {
             getTaskList("#pendingTasks", pendingTasks);
         });

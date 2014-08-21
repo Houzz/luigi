@@ -76,5 +76,11 @@ var LuigiAPI = (function() {
         });
     };
 
+    LuigiAPI.prototype.getDisabledTaskList = function(callback) {
+        jsonRPC(this.urlRoot + "/task_list", {status: "DISABLED", upstream_status: ""}, function(response) {
+            callback(flatten(response.response));
+        });
+    };
+
     return LuigiAPI;
 })();
