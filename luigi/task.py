@@ -360,6 +360,7 @@ class Task(object):
 
         self.task_id = '%s(%s)' % (self.task_family, ', '.join(task_id_parts))
         self.__hash = hash(self.task_id)
+        self.__disabled_mem = None
 
     def initialized(self):
         """Returns ``True`` if the Task is initialized and ``False`` otherwise."""
@@ -492,6 +493,16 @@ class Task(object):
         the name for consistent end-user experience.
         '''
         return self.resources  # default impl
+
+    def _disabled(self):
+        '''Check whether a task is disabled
+
+        This checks self.disabled and does a recursive check against all requirements.
+        In order to keep computation linear, this is memoized.
+        '''
+        if self.__disabled_mem is None:
+            self.__disabled_mem = self.disabled or any(req._disabled() for req in self.deps())
+        return self.__disabled_mem
 
     def input(self):
         """Returns the outputs of the Tasks returned by :py:meth:`requires`
