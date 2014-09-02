@@ -500,7 +500,7 @@ class Task(object):
         This checks self.disabled and does a recursive check against all requirements.
         In order to keep computation linear, this is memoized.
         '''
-        if self.__disabled_mem is None and not self.actual_complete():
+        if self.__disabled_mem is None:
             self.__disabled_mem = self.disabled or any(req._disabled() for req in self.deps())
         return self.__disabled_mem
 
