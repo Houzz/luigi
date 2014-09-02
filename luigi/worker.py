@@ -251,7 +251,7 @@ class Worker(object):
             status = PENDING
             runnable = True
 
-        if task._disabled():
+        if task.disabled:
             status = DISABLED
 
         if deps:
