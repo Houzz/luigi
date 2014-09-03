@@ -50,6 +50,7 @@ class Event:
     START = "event.core.start"
     FAILURE = "event.core.failure"
     SUCCESS = "event.core.success"
+    PROCESSING_TIME = "event.core.processing_time"
 
 
 class Worker(object):
@@ -302,7 +303,11 @@ class Worker(object):
                 deps = 'dependency' if len(missing) == 1 else 'dependencies'
                 raise RuntimeError('Unfulfilled %s at run time: %s' % (deps, ', '.join(missing)))
             task.trigger_event(Event.START, task)
-            task.run()
+            t0 = time.time()
+            try:
+                task.run()
+            finally:
+                task.trigger_event(Event.PROCESSING_TIME, task, time.time() - t0)
             error_message = json.dumps(task.on_success())
 
             if pre_run_dirty:

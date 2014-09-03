@@ -423,11 +423,11 @@ class SnakebiteHdfsClient(HdfsClient):
         :param mode: \*nix style owner/group/other permissions
         :type mode: octal, default 0755
         """
-        bite = self.get_bite()
-        if raise_if_exists and bite.test(path, exists=True):
+        result = list(self.get_bite().mkdir(list_path(path),
+                                            create_parent=parents, mode=mode))
+        if raise_if_exists and "ile exists" in result[0].get('error', ''):
             raise luigi.target.FileAlreadyExists("%s exists" % (path, ))
-        return list(bite.mkdir(list_path(path), create_parent=parents,
-                               mode=mode))
+        return result
 
     def listdir(self, path, ignore_directories=False, ignore_files=False,
                 include_size=False, include_type=False, include_time=False,
@@ -591,7 +591,7 @@ class HdfsAtomicWritePipe(luigi.format.OutputPipeProcessWrapper):
     def __init__(self, path):
         self.path = path
         self.tmppath = tmppath(self.path)
-        mkdir(os.path.dirname(self.tmppath))
+        mkdir(os.path.dirname(self.tmppath), parents=True, raise_if_exists=True)
         super(HdfsAtomicWritePipe, self).__init__([load_hadoop_cmd(), 'fs', '-put', '-', self.tmppath])
 
     def abort(self):
