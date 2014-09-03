@@ -521,14 +521,19 @@ class Task(object):
         user = config.get('core', 'worker-dirty-jobs-user', 'user')
         passwd = config.get('core', 'worker-dirty-jobs-pass', '')
         db = config.get('core', 'worker-dirty-jobs-db', 'luigi')
-        table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
         db_conn = pymysql.connect(host=host, port=port, user=user, passwd=passwd, db=db)
         db_cursor = db_conn.cursor()
 
-        yield db_cursor
+        try:
+            yield db_cursor
 
-        db_conn.commit()
-        db_conn.close()
+        # Add query to programming error output for easier debugging
+        except pymysql.ProgrammingError as e:
+            raise pymysql.ProgrammingError('%s\nQuery: %s' % (e.args[1], db_cursor._last_executed))
+
+        finally:
+            db_conn.commit()
+            db_conn.close()
 
     def is_dirty(self):
         config = configuration.get_config()
