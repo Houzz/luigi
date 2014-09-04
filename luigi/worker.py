@@ -102,10 +102,6 @@ class Worker(object):
         self.run_succeeded = True
         self.unfulfilled_counts = collections.defaultdict(int)
 
-        # This is a cache for actual_complete during scheduling, it should not
-        # be used elsewhere
-        self._complete_cache = {}
-
         class KeepAliveThread(threading.Thread):
             """ Periodically tell the scheduler that the worker still lives """
             def __init__(self):
