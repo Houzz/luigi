@@ -442,15 +442,11 @@ class Task(object):
         else:
             return True
 
-    def actual_complete(self, scheduling=False):
+    def actual_complete(self):
         """Check if a task is complete and also not dirty.
 
         """
-        complete_args = inspect.getargspec(self.complete).args
-        assert complete_args in (['self'], ['self', 'scheduling'])
-        complete = self.complete(scheduling) if 'scheduling' in complete_args else self.complete()
-
-        return complete and not self.is_dirty()
+        return self.complete() and not self.is_dirty()
 
     def output(self):
         """The output that this Task produces.
