@@ -22,7 +22,12 @@ WORKER = 'myworker'
 
 class CentralPlannerTest(unittest.TestCase):
     def setUp(self):
-        self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        self.sch = CentralPlannerScheduler(retry_delay=100,
+                                           remove_delay=1000,
+                                           worker_disconnect_delay=10,
+                                           disable_persist=10,
+                                           disable_window=10,
+                                           disable_failures=3)
         self.time = time.time
 
     def tearDown(self):
@@ -252,6 +257,71 @@ class CentralPlannerTest(unittest.TestCase):
         for expected_id in ['Z', 'A', 'B', 'C', 'D']:
             self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
             self.sch.add_task(WORKER, expected_id, status=DONE)
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
+
+    def test_disable(self):
+        self.sch.add_task(WORKER, 'A')
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+
+        # should be disabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
+        self.sch.add_task(WORKER, 'A')
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
+
+    def test_disable_and_reenable(self):
+        self.sch.add_task(WORKER, 'A')
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+
+        # should be disabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
+
+        self.sch.remove_disable('A')
+
+        # should be enabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 1)
+        self.sch.add_task(WORKER, 'A')
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
+
+    def test_disable_and_reenable_and_disable_again(self):
+        self.sch.add_task(WORKER, 'A')
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+
+        # should be disabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
+
+        self.sch.remove_disable('A')
+
+        # should be enabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 1)
+        self.sch.add_task(WORKER, 'A')
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
+
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+
+        # should be still enabled
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 1)
+        self.sch.add_task(WORKER, 'A')
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
+
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+
+        # should be disabled now
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
+        self.sch.add_task(WORKER, 'A')
         self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
 
 

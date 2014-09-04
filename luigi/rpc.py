@@ -141,6 +141,9 @@ class RemoteScheduler(Scheduler):
     def resources(self):
         return self._request('/api/resources')
 
+    def remove_disable(self, task_str):
+        return self._request('/api/remove_disable', {'task_id': task_id})
+
     def fetch_error(self, task_id):
         return self._request('/api/fetch_error', {'task_id': task_id})
 
@@ -193,6 +196,9 @@ class RemoteSchedulerResponder(object):
 
     def resources(self, **kwargs):
         return self._scheduler.resources()
+
+    def remove_disable(self, task_id):
+        return self._scheduler.remove_disable(task_id)
 
     def fetch_error(self, task_id, **kwargs):
         return self._scheduler.fetch_error(task_id)
