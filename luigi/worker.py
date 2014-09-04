@@ -217,7 +217,7 @@ class Worker(object):
         logger.debug("Checking if %s is complete", task)
         is_complete = False
         try:
-            is_complete = task.actual_complete()
+            is_complete = task.actual_complete(scheduling=True)
             self._check_complete_value(is_complete)
         except KeyboardInterrupt:
             raise

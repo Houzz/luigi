@@ -441,7 +441,7 @@ class Task(object):
         else:
             return True
 
-    def actual_complete(self):
+    def actual_complete(self, scheduling=False):
         """Check if a task is complete and also not dirty.
 
         """
