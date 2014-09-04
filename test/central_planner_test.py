@@ -324,6 +324,23 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'A')
         self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
 
+    def test_disable_and_done(self):
+        self.sch.add_task(WORKER, 'A')
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+
+        # should be disabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
+        self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
+
+        self.sch.add_task(WORKER, 'A', status=DONE)
+
+        # should be enabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
+        self.assertEqual(len(self.sch.task_list('DONE', '')), 1)
+        self.sch.add_task(WORKER, 'A')
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
 
 if __name__ == '__main__':
     unittest.main()
