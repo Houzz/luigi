@@ -107,7 +107,7 @@ class Task(object):
     def __repr__(self):
         return "Task(%r)" % vars(self)
 
-    def _reenable(self):
+    def re_enable(self):
         self.disabled = False
         self.status = FAILED
         self.failures.clear()
@@ -224,7 +224,7 @@ class CentralPlannerScheduler(Scheduler):
             if task.status == DISABLED and task.disabled:
                 # re-enable task after the disable time expires
                 if datetime.datetime.now() - task.disabled > self._disable_time:
-                    task._reenable()
+                    task.re_enable()
 
         # Remove tasks that have no stakeholders
         remove_tasks = []
@@ -251,7 +251,7 @@ class CentralPlannerScheduler(Scheduler):
             if status == DISABLED:
                 task.disabled = None
             elif status == DONE:
-                task._reenable()
+                task.re_enable()
                 task.status = DONE
             return
 
@@ -617,7 +617,7 @@ class CentralPlannerScheduler(Scheduler):
             task = self._tasks[task_id]
             # task is disabled by scheduler not by worker
             if task.status == DISABLED and task.disabled:
-                task._reenable()
+                task.re_enable()
         return serialized
 
     def fetch_error(self, task_id):
