@@ -15,6 +15,7 @@
 import abc
 import configuration
 import contextlib
+import inspect
 import logging
 import parameter
 import pymysql
@@ -445,7 +446,11 @@ class Task(object):
         """Check if a task is complete and also not dirty.
 
         """
-        return self.complete() and not self.is_dirty()
+        complete_args = inspect.getargspec(self.complete).args
+        assert complete_args in (['self'], ['self', 'scheduling'])
+        complete = self.complete(scheduling) if 'scheduling' in complete_args else self.complete()
+
+        return complete and not self.is_dirty()
 
     def output(self):
         """The output that this Task produces.
