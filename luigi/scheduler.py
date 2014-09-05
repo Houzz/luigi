@@ -512,6 +512,8 @@ class CentralPlannerScheduler(Scheduler):
             'priority': task.priority,
             'resources': task.resources,
         }
+        if task.status == DISABLED:
+            ret['re_enable_able'] = task.disabled is not None
         if include_deps:
             ret['deps'] = list(task.deps)
         return ret
@@ -618,6 +620,7 @@ class CentralPlannerScheduler(Scheduler):
             # task is disabled by scheduler not by worker
             if task.status == DISABLED and task.disabled:
                 task.re_enable()
+                serialized = self._serialize_task(task_id, False)
         return serialized
 
     def fetch_error(self, task_id):

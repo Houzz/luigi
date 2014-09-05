@@ -44,7 +44,7 @@ function visualiserApp(luigi) {
             status: task.status,
             graph: (task.status == "PENDING" || task.status == "RUNNING" || task.status == "DONE"),
             error: task.status == "FAILED",
-            re_enable: task.status == "DISABLED"
+            re_enable: task.status == "DISABLED" && task.re_enable_able
         };
     }
 
@@ -170,10 +170,15 @@ function visualiserApp(luigi) {
             });
         });
         $(id + " .re-enable-button").click(function() {
+            var that = $(this);
             $(this).attr('disabled', true);
             luigi.reEnable($(this).attr("data-task-id"), function(data) {
-                // do nothing
-                console.log(data);
+                if (data.name) {
+                  that.parent().parent().remove();
+                  cnt = parseInt($("#disabledTasks .badge-important").text());
+                  cnt --;
+                  $("#disabledTasks .badge-important").text(cnt);
+                }
             });
         });
     }
