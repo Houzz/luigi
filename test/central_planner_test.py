@@ -13,7 +13,8 @@
 # the License.
 
 import time
-from luigi.scheduler import CentralPlannerScheduler, DONE, FAILED, RUNNING
+from luigi.scheduler import CentralPlannerScheduler
+from luigi.scheduler import DONE, FAILED, RUNNING, DISABLED
 import unittest
 import luigi.notifications
 luigi.notifications.DEBUG = True
@@ -281,7 +282,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
         self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
 
-        self.sch.remove_disable('A')
+        self.sch.re_enable('A')
 
         # should be enabled at this point
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
@@ -299,7 +300,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
         self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
 
-        self.sch.remove_disable('A')
+        self.sch.re_enable('A')
 
         # should be enabled at this point
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
@@ -339,6 +340,17 @@ class CentralPlannerTest(unittest.TestCase):
         # should be enabled at this point
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
         self.assertEqual(len(self.sch.task_list('DONE', '')), 1)
+        self.sch.add_task(WORKER, 'A')
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
+
+    def test_disable_by_worker(self):
+        self.sch.add_task(WORKER, 'A', status=DISABLED)
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
+
+        self.sch.add_task(WORKER, 'A')
+
+        # should be enabled at this point
+        self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
         self.sch.add_task(WORKER, 'A')
         self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
 

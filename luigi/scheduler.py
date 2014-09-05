@@ -253,6 +253,9 @@ class CentralPlannerScheduler(Scheduler):
             elif status == DONE:
                 task.re_enable()
                 task.status = DONE
+            elif task.disabled is None:
+                # when it is disabled by client, we allow the status change
+                task.status = status
             return
 
         if status == FAILED and not task.failures.add_failure():
