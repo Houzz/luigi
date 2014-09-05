@@ -43,7 +43,8 @@ function visualiserApp(luigi) {
             trackingUrl: task.trackingUrl,
             status: task.status,
             graph: (task.status == "PENDING" || task.status == "RUNNING" || task.status == "DONE"),
-            error: task.status == "FAILED"
+            error: task.status == "FAILED",
+            re_enable: task.status == "DISABLED"
         };
     }
 
@@ -166,6 +167,13 @@ function visualiserApp(luigi) {
         $(id + " .error-trace-button").click(function() {
             luigi.getErrorTrace($(this).attr("data-task-id"), function(error) {
                showErrorTrace(error);
+            });
+        });
+        $(id + " .re-enable-button").click(function() {
+            $(this).attr('disabled', true);
+            luigi.reEnable($(this).attr("data-task-id"), function(data) {
+                // do nothing
+                console.log(data);
             });
         });
     }

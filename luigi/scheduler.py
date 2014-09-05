@@ -611,7 +611,7 @@ class CentralPlannerScheduler(Scheduler):
                         serialized[id]["deps"] = []
                         stack.append(id)
 
-    def remove_disable(self, task_id):
+    def re_enable(self, task_id):
         serialized = {}
         if task_id in self._tasks:
             task = self._tasks[task_id]
