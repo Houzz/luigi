@@ -76,6 +76,10 @@ class Failures(object):
 
         return len(self.failures) < self.capacity
 
+    def clear(self):
+        ''' Clear the failure queue '''
+        self.failures.clear()
+
 
 class Task(object):
     def __init__(self, status, deps, resources, priority=0, family='', params={},
@@ -102,6 +106,11 @@ class Task(object):
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
+
+    def re_enable(self):
+        self.disabled = False
+        self.status = FAILED
+        self.failures.clear()
 
 
 class Worker(object):
@@ -212,6 +221,11 @@ class CentralPlannerScheduler(Scheduler):
                 self.set_status(task_id, FAILED)
                 task.retry = time.time() + self._retry_delay
 
+            if task.status == DISABLED and task.disabled:
+                # re-enable task after the disable time expires
+                if datetime.datetime.now() - task.disabled > self._disable_time:
+                    task.re_enable()
+
         # Remove tasks that have no stakeholders
         remove_tasks = []
         for task_id, task in self._tasks.iteritems():
@@ -233,6 +247,17 @@ class CentralPlannerScheduler(Scheduler):
         if status == DISABLED and task.status == RUNNING:
             return
 
+        if task.status == DISABLED:
+            if status == DISABLED:
+                task.disabled = None
+            elif status == DONE:
+                task.re_enable()
+                task.status = DONE
+            elif task.disabled is None:
+                # when it is disabled by client, we allow the status change
+                task.status = status
+            return
+
         if status == FAILED and not task.failures.add_failure():
             task.disabled = datetime.datetime.now()
             status = DISABLED
@@ -248,12 +273,6 @@ class CentralPlannerScheduler(Scheduler):
         elif status == DISABLED:
             task.disabled = None
 
-        if task.disabled:
-            # re-enable task after the disable time expires
-            if datetime.datetime.now() - task.disabled > self._disable_time:
-                task.disabled = False
-            else:
-                status = DISABLED
         task.status = status
 
     def update(self, worker_id, worker_reference=None):
@@ -496,6 +515,8 @@ class CentralPlannerScheduler(Scheduler):
             'priority': task.priority,
             'resources': task.resources,
         }
+        if task.status == DISABLED:
+            ret['re_enable_able'] = task.disabled is not None
         if include_deps:
             ret['deps'] = list(task.deps)
         return ret
@@ -594,6 +615,16 @@ class CentralPlannerScheduler(Scheduler):
                         serialized[id] = self._serialize_task(id)
                         serialized[id]["deps"] = []
                         stack.append(id)
+
+    def re_enable(self, task_id):
+        serialized = {}
+        if task_id in self._tasks:
+            task = self._tasks[task_id]
+            # task is disabled by scheduler not by worker
+            if task.status == DISABLED and task.disabled:
+                task.re_enable()
+                serialized = self._serialize_task(task_id, False)
+        return serialized
 
     def fetch_error(self, task_id):
         if self._tasks[task_id].expl is not None:
