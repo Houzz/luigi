@@ -174,10 +174,11 @@ function visualiserApp(luigi) {
             $(this).attr('disabled', true);
             luigi.reEnable($(this).attr("data-task-id"), function(data) {
                 if (data.name) {
-                  that.parent().parent().remove();
-                  cnt = parseInt($("#disabledTasks .badge-important").text());
+                  node = that.closest(".taskFamily").find(".badge-important");
+                  cnt = parseInt(node.text());
                   cnt --;
-                  $("#disabledTasks .badge-important").text(cnt);
+                  node.text(cnt);
+                  that.parent().parent().remove();
                 }
             });
         });
