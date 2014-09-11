@@ -21,6 +21,8 @@ from helpers import with_config
 import unittest
 import logging
 import threading
+import os
+import signal
 import luigi.notifications
 luigi.notifications.DEBUG = True
 
@@ -420,6 +422,7 @@ class WorkerPingThreadTests(unittest.TestCase):
         w.stop()  # should stop within 0.01 s
         self.assertFalse(w._keep_alive_thread.is_alive())
 
+
 EMAIL_CONFIG = {"core": {"error-email": "not-a-real-email-address-for-test-only"}}
 
 
@@ -524,6 +527,44 @@ class WorkerEmailTest(EmailTest):
         self.assertEquals(self.last_email, None)
         self.assertTrue(a.complete())
 
+
+class RaiseSystemExit(luigi.Task):
+    def run(self):
+        raise SystemExit("System exit!!")
+
+
+class SuicidalWorker(luigi.Task):
+    signal = luigi.IntParameter()
+    def run(self):
+        os.kill(os.getpid(), self.signal)
+
+
+class MultipleWorkersTest(unittest.TestCase):
+    def test_multiple_workers(self):
+        # Test using multiple workers
+        # Also test generating classes dynamically since this may reflect issues with
+        # various platform and how multiprocessing is implemented. If it's using os.fork
+        # under the hood it should be fine, but dynamic classses can't be pickled, so
+        # other implementations of multiprocessing (using spawn etc) may fail
+        class MyDynamicTask(luigi.Task):
+            x = luigi.Parameter()
+            def run(self):
+                time.sleep(0.1)
+
+        t0 = time.time()
+        luigi.build([MyDynamicTask(i) for i in xrange(100)], workers=100, local_scheduler=True)
+        self.assertTrue(time.time() < t0 + 5.0) # should ideally take exactly 0.1s, but definitely less than 10.0
+
+    def test_system_exit(self):
+        # This would hang indefinitely before this fix:
+        # https://github.com/spotify/luigi/pull/439
+        luigi.build([RaiseSystemExit()], workers=2, local_scheduler=True)
+
+    def test_term_worker(self):
+        luigi.build([SuicidalWorker(signal.SIGTERM)], workers=2, local_scheduler=True)
+
+    def test_kill_worker(self):
+        luigi.build([SuicidalWorker(signal.SIGKILL)], workers=2, local_scheduler=True)
 
 if __name__ == '__main__':
     unittest.main()
