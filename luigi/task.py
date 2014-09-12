@@ -222,6 +222,10 @@ class Task(object):
     priority = 0
     disabled = False
 
+    # Resources used by the task. Should be formatted like {"impala": 1} to indicate that the
+    # task requires 1 unit of the impala resource.
+    resources = {}
+
     @classmethod
     def event_handler(cls, event):
         """ Decorator for adding event handlers """
@@ -488,7 +492,7 @@ class Task(object):
 
     def _resources(self):
         '''
-        Override it "template" tasks which provide common resource functionality
+        Override in "template" tasks which provide common resource functionality
         but allow subclasses to specify additional resources while preserving
         the name for consistent end-user experience.
         '''

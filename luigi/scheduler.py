@@ -376,28 +376,8 @@ class CentralPlannerScheduler(Scheduler):
                         used_resources[resource] += amount
         return used_resources
 
-    def get_work(self, worker, host=None):
-        # TODO: remove any expired nodes
-
-        # If there is another worker with higher priority job is waiting for
-        #   a resource to run that job, the current worker should not get it.
-        # For all the tasks pending under this worker, pick the one that does
-        #   not block higher priority job, with sufficent resouces, and has
-        #   highest priority.
-
-        # Algo: sort all works by priority, and number of dependents, then
-        #   iterate over them, fill them into worker as if those workers asks
-        #   works too. Then the best work is the one filled into current worker.
-
-        # TODO: remove tasks that can't be done, figure out if the worker has absolutely
-        # nothing it can wait for
-
-        # Return remaining tasks that have no FAILED descendents
-        self.update(worker, {'host': host})
-        locally_pending_tasks = 0
-        running_tasks = []
-        used_resources = self._used_resources()
-
+    def _rank(self, worker):
+        ''' Return worker's rank function for task scheduling '''
         dependents = collections.defaultdict(int)
         for task_id, task in self._tasks.iteritems():
             if task.status != DONE:
@@ -405,18 +385,37 @@ class CentralPlannerScheduler(Scheduler):
                 for dep in task.deps:
                     dependents[dep] += 1.0 / num_deps
 
-        rankings = {}
-        for task_id, task in self._tasks.iteritems():
-            rankings[task_id] = (task.priority, worker in task.workers, dependents[task_id])
+        return lambda (task_id, task): (task.priority, worker in task.workers, dependents[task_id], -task.time)
 
+    def _not_schedulable(self, task, used_resources):
+        return task.status != PENDING or not self._has_resources(task.resources, used_resources)
+
+    def get_work(self, worker, host=None):
+        # TODO: remove any expired nodes
+
+        # Algo: iterate over all nodes, find the highest priority node no dependencies and available
+        # resources.
+
+        # Resource checking looks both at currently available resources and at which resources would
+        # be available if all running tasks died and we rescheduled all workers greedily. We do both
+        # checks in order to prevent a worker with many low-priority tasks from starving other
+        # workers with higher priority tasks that share the same resources.
+
+        # TODO: remove tasks that can't be done, figure out if the worker has absolutely
+        # nothing it can wait for
+
+        # Return remaining tasks that have no FAILED descendents
+        self.update(worker, {'host': host})
+        best_task = None
+        locally_pending_tasks = 0
+        running_tasks = []
+        used_resources = self._used_resources()
+        potential_resources = collections.defaultdict(int)
+        potential_workers = set([worker])
         unique_ready_tasks = 0
-        p_worker_tasks = collections.defaultdict(lambda: None)
-        p_used_resources = collections.defaultdict(int)
 
-        for task_id in sorted(rankings, key=rankings.get, reverse=True):
-            task = self._tasks[task_id]
-
-            if task.status == RUNNING:
+        for task_id, task in sorted(self._tasks.iteritems(), key=self._rank(worker), reverse=True):
+            if task.status == RUNNING and worker in task.workers:
                 # Return a list of currently running tasks to the client,
                 # makes it easier to troubleshoot
                 other_worker = self._active_workers[task.worker_running]
@@ -425,50 +424,34 @@ class CentralPlannerScheduler(Scheduler):
                     more_info.update(other_worker.info)
                 running_tasks.append(more_info)
 
-            if task.status != PENDING:
+            ready = all(dep in self._tasks and self._tasks[dep].status == DONE for dep in task.deps)
+            if task.status == PENDING and worker in task.workers:
+                locally_pending_tasks += 1
+                if ready and len(task.workers) == 1:
+                    unique_ready_tasks += 1
+
+            if self._not_schedulable(task, potential_resources) or best_task or not ready:
                 continue
 
-            ok = True
-            for dep in task.deps:
-                if dep not in self._tasks:
-                    ok = False
-                elif self._tasks[dep].status != DONE:
-                    ok = False
+            if worker in task.workers and self._has_resources(task.resources, used_resources):
+                best_task = task_id
+            else:
+                # keep track of the resources used in greedy scheduling
+                for w in filter(lambda w: w not in potential_workers, task.workers):
+                    for resource, amount in (task.resources or {}).items():
+                        potential_resources[resource] += amount
+                    potential_workers.add(w)
 
-            if worker in task.workers:
-                if ok and len(task.workers) == 1:
-                    unique_ready_tasks += 1
-                locally_pending_tasks += 1
-
-            # check against total resource because current running workers may use some resources
-            if ok and self._has_resources(task.resources, p_used_resources):
-                filled = False
-                if worker in task.workers and \
-                        p_worker_tasks[worker] is None and \
-                        self._has_resources(task.resources, used_resources):
-                    p_worker_tasks[worker] = task_id
-                    filled = True
-                if not filled:
-                    for p_worker in task.workers:
-                        if p_worker != worker and p_worker_tasks[p_worker] is None:
-                            p_worker_tasks[p_worker] = task_id
-                            filled = True
-                            break
-                if filled and task.resources:
-                    for resource, amount in task.resources.items():
-                        p_used_resources[resource] += amount
-
-        if p_worker_tasks[worker]:
-            task_id = p_worker_tasks[worker]
-            t = self._tasks[task_id]
-            self.set_status(task_id, RUNNING)
+        if best_task:
+            t = self._tasks[best_task]
+            t.status = RUNNING
             t.worker_running = worker
             t.time_running = time.time()
-            self._update_task_history(p_worker_tasks[worker], RUNNING, host=host)
+            self._update_task_history(best_task, RUNNING, host=host)
 
-        logger.info('get_work returns %s for worker %s', p_worker_tasks[worker], worker)
+        logger.info('get_work returns %s for worker %s', best_task, worker)
         return {'n_pending_tasks': locally_pending_tasks,
-                'task_id': p_worker_tasks[worker],
+                'task_id': best_task,
                 'running_tasks': running_tasks,
                 'unique_ready_tasks': unique_ready_tasks,
                }
