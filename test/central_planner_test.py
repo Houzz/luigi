@@ -210,23 +210,18 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='Y', task_id='D', priority=0)
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'D')
 
-        self.sch.add_task(worker='X', task_id='A', status=DONE)
-        self.sch.add_task(worker='Y', task_id='D', status=DONE)
-        self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
-        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'B')
-
-        self.sch.update_resources(R=2)
-        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'C')
+    def check_task_order(self, order):
+        for expected_id in order:
+            self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
+            self.sch.add_task(WORKER, expected_id, status=DONE)
+        self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
 
     def test_priorities(self):
         self.sch.add_task(WORKER, 'A', priority=10)
         self.sch.add_task(WORKER, 'B', priority=5)
         self.sch.add_task(WORKER, 'C', priority=15)
         self.sch.add_task(WORKER, 'D', priority=9)
-        for expected_id in ['C', 'A', 'D', 'B']:
-            self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
-            self.sch.add_task(WORKER, expected_id, status=DONE)
-        self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
+        self.check_task_order(['C', 'A', 'D', 'B'])
 
     def test_priorities_default_and_negative(self):
         self.sch.add_task(WORKER, 'A', priority=10)
@@ -234,10 +229,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'C', priority=15)
         self.sch.add_task(WORKER, 'D', priority=-20)
         self.sch.add_task(WORKER, 'E', priority=1)
-        for expected_id in ['C', 'A', 'E', 'B', 'D']:
-            self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
-            self.sch.add_task(WORKER, expected_id, status=DONE)
-        self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
+        self.check_task_order(['C', 'A', 'E', 'B', 'D'])
 
     def test_priorities_and_dependencies(self):
         self.sch.add_task(WORKER, 'A', deps=['Z'], priority=10)
@@ -245,10 +237,14 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'C', deps=['Z'], priority=3)
         self.sch.add_task(WORKER, 'D', priority=2)
         self.sch.add_task(WORKER, 'Z', priority=1)
-        for expected_id in ['Z', 'A', 'B', 'C', 'D']:
-            self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
-            self.sch.add_task(WORKER, expected_id, status=DONE)
-        self.assertEqual(self.sch.get_work(WORKER)['task_id'], None)
+        self.check_task_order(['Z', 'A', 'B', 'C', 'D'])
+
+    def test_priority_update_dependency_after_scheduling(self):
+        self.sch.add_task(WORKER, 'A', priority=1)
+        self.sch.add_task(WORKER, 'B', priority=5, deps=['A'])
+        self.sch.add_task(WORKER, 'C', priority=10, deps=['B'])
+        self.sch.add_task(WORKER, 'D', priority=6)
+        self.check_task_order(['A', 'B', 'C', 'D'])
 
     def test_disable(self):
         self.sch.add_task(WORKER, 'A')
@@ -343,6 +339,21 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
         self.sch.add_task(WORKER, 'A')
         self.assertEqual(self.sch.get_work(WORKER)['task_id'], 'A')
+
+    def test_priority_update_dependency_chain(self):
+        self.sch.add_task(WORKER, 'A', priority=10, deps=['B'])
+        self.sch.add_task(WORKER, 'B', priority=5, deps=['C'])
+        self.sch.add_task(WORKER, 'C', priority=1)
+        self.sch.add_task(WORKER, 'D', priority=6)
+        self.check_task_order(['C', 'B', 'A', 'D'])
+
+    def test_priority_no_decrease_with_multiple_updates(self):
+        self.sch.add_task(WORKER, 'A', priority=1)
+        self.sch.add_task(WORKER, 'B', priority=10, deps=['A'])
+        self.sch.add_task(WORKER, 'C', priority=5, deps=['A'])
+        self.sch.add_task(WORKER, 'D', priority=6)
+        self.check_task_order(['A', 'B', 'D', 'C'])
+
 
 if __name__ == '__main__':
     unittest.main()

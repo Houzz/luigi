@@ -82,7 +82,7 @@ class Failures(object):
 
 
 class Task(object):
-    def __init__(self, status, deps, resources, priority=0, family='', params={},
+    def __init__(self, status, deps, resources={}, priority=0, family='', params={},
                  disable_failures=None, disable_window=None):
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
@@ -282,15 +282,17 @@ class CentralPlannerScheduler(Scheduler):
             worker.reference = worker_reference
         worker.last_active = time.time()
 
-    def _update_priority(self, task_id, prio, worker):
-        task = self._tasks.setdefault(
-            task_id, self._make_task(status=UNKNOWN, deps=None, resources=None, priority=prio))
-        task.stakeholders.add(worker)
-        if prio > task.priority:
-            task.priority = prio
-            if task.deps:
-                for dep in task.deps:
-                    self._update_priority(dep, prio, worker)
+    def _update_priority(self, task, prio, worker):
+        """ Update priority of the given task
+
+        Priority can only be increased. If the task doesn't exist, a placeholder
+        task is created to preserve priority when the task is later scheduled.
+        """
+        task.priority = prio = max(prio, task.priority)
+        for dep in task.deps or []:
+            t = self._tasks[dep] # This should always exist, see add_task
+            if prio > t.priority:
+                self._update_priority(t, prio, worker)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None,
                  resources=None, priority=0, family='', params={}):
@@ -342,6 +344,14 @@ class CentralPlannerScheduler(Scheduler):
                 # passing worker here because we need to add current worker
                 # into task's stakeholders otherwise they will be pruned
                 self._update_priority(dep, task.priority, worker)
+
+        # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
+        # Otherwise the task dependencies might end up being pruned if scheduling takes a long time
+        for dep in task.deps or []:
+            t = self._tasks.setdefault(dep, Task(status=UNKNOWN, deps=None, priority=priority))
+            t.stakeholders.add(worker)
+
+        self._update_priority(task, priority, worker)
 
         if runnable:
             task.workers.add(worker)
@@ -514,7 +524,7 @@ class CentralPlannerScheduler(Scheduler):
     def _recurse_deps(self, task_id, serialized):
         if task_id not in serialized:
             task = self._tasks.get(task_id)
-            if task is None:
+            if task is None or not task.family:
                 logger.warn('Missing task for id [%s]', task_id)
 
                 # try to infer family and params from task_id
