@@ -329,21 +329,12 @@ class CentralPlannerScheduler(Scheduler):
             if status == FAILED:
                 task.retry = time.time() + self._retry_delay
 
-        if priority > task.priority:
-            task.priority = priority
-
         task.resources = resources
-
-        task.stakeholders.add(worker)
 
         if deps is not None:
             task.deps = set(deps)
 
-            # We need to iterate thru deps and update priority if current priority is higher than dep's priority.
-            for dep in deps:
-                # passing worker here because we need to add current worker
-                # into task's stakeholders otherwise they will be pruned
-                self._update_priority(dep, task.priority, worker)
+        task.stakeholders.add(worker)
 
         # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
         # Otherwise the task dependencies might end up being pruned if scheduling takes a long time
@@ -567,16 +558,6 @@ class CentralPlannerScheduler(Scheduler):
                     result[task_id] = serialized
         return result
 
-    def task_search(self, task_str):
-        ''' query for a subset of tasks by task_id '''
-        self.prune()
-        result = collections.defaultdict(dict)
-        for task_id, task in self._tasks.iteritems():
-            if task_id.find(task_str) != -1:
-                serialized = self._serialize_task(task_id, False)
-                result[task.status][task_id] = serialized
-        return result
-
     def resources(self):
         ''' get total resources and available ones '''
         used_resources = self._used_resources()
@@ -608,6 +589,16 @@ class CentralPlannerScheduler(Scheduler):
                         serialized[id] = self._serialize_task(id)
                         serialized[id]["deps"] = []
                         stack.append(id)
+
+    def task_search(self, task_str):
+        ''' query for a subset of tasks by task_id '''
+        self.prune()
+        result = collections.defaultdict(dict)
+        for task_id, task in self._tasks.iteritems():
+            if task_id.find(task_str) != -1:
+                serialized = self._serialize_task(task_id, False)
+                result[task.status][task_id] = serialized
+        return result
 
     def re_enable(self, task_id):
         serialized = {}
