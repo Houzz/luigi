@@ -92,7 +92,7 @@ class TaskProcess(multiprocessing.Process):
         except BaseException as ex:
             status = FAILED
             logger.exception("[pid %s] Worker %s failed    %s", os.getpid(), self.worker_id, self.task)
-            error_message = self.task.on_failure(ex)
+            error_message = notifications.wrap_traceback(self.task.on_failure(ex))
             self.task.trigger_event(Event.FAILURE, self.task, ex)
             subject = "Luigi: %s FAILED" % self.task
             notifications.send_error_email(subject, error_message)
@@ -312,7 +312,7 @@ class Worker(object):
         self._scheduled_tasks[task.task_id] = task
         self._scheduler.add_task(self._id, task.task_id, status=status,
                                  deps=deps, runnable=runnable, priority=task.priority,
-                                 resources=task._resources(),
+                                 resources=task.process_resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family)
 
@@ -410,7 +410,7 @@ class Worker(object):
         self._scheduler.add_task(self._id, task.task_id, status=status,
                                  expl=error_message, runnable=None,
                                  priority=task.priority,
-                                 resources=task._resources(),
+                                 resources=task.process_resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family)
 
