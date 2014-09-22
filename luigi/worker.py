@@ -456,14 +456,13 @@ class Worker(object):
             if task_id is None:
                 self._log_remote_tasks(running_tasks, n_pending_tasks, unique_ready_tasks)
                 if len(self._running_tasks) == 0:
-                    if self.__keep_alive and unique_ready_tasks:
-                        sleeper.next()
-                        continue
-                    else:
+                    if not (self.__keep_alive and unique_ready_tasks):
                         break
                 else:
                     self._handle_next_done_task()
-                    continue
+                sleeper.next()
+                continue
+
 
             # task_id is not None:
             logger.debug("Pending tasks: %s", n_pending_tasks)
