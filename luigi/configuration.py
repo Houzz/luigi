@@ -66,6 +66,7 @@ class LuigiConfigParser(ConfigParser):
     def set(self, section, option, value):
         if not ConfigParser.has_section(self, section):
             ConfigParser.add_section(self, section)
+
         return ConfigParser.set(self, section, option, value)
 
 def get_config():
