@@ -209,7 +209,6 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(a.complete())
         self.assertTrue(b.complete())
 
-
     def test_avoid_infinite_reschedule(self):
         class A(Task):
             def complete(self):
@@ -225,6 +224,21 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(self.w.add(B()))
         self.assertFalse(self.w.run())
 
+    def test_co_schedule(self):
+        dummy = DummyTask()
+
+        class A(DummyTask):
+            def co_schedule(self):
+                return dummy
+        a = A()
+
+        self.assertTrue(self.w.add(a))
+        self.assertFalse(dummy.complete())
+        self.assertFalse(a.complete())
+
+        self.w.run()
+        self.assertTrue(a.complete())
+        self.assertTrue(dummy.complete())
 
     def test_interleaved_workers(self):
         class A(DummyTask):
