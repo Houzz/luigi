@@ -387,7 +387,7 @@ class Worker(object):
 
         try:
             task_id, status, error_message, missing = self._task_result_queue.get(
-                timeout=self.__wait_interval)
+                timeout=float(self.__wait_interval))
         except Queue.Empty:
             return
 
