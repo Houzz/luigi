@@ -75,6 +75,26 @@ function visualiserApp(luigi) {
         return renderTemplate("rowTemplate", {tasks: tasksByFamily});
     }
 
+    function tasksToDisplayWorkers(running_tasks) {
+        var workers = {};
+        for (var task_idx in running_tasks) {
+            var task = running_tasks[task_idx];
+            if(workers[task.worker_running] === undefined) {
+                workers[task.worker_running] = [];
+            }
+            workers[task.worker_running].push(taskToDisplayTask(task));
+        }
+        var rv = [];
+        for (worker in workers) {
+            rv.push({name: worker, tasks: workers[worker]});
+        }
+        return rv;
+    }
+
+    function renderWorkers(running_tasks) {
+        return renderTemplate("workerTemplate", {"workers": tasksToDisplayWorkers(running_tasks)});
+    }
+
     function switchTab(tabId) {
         $(".tabButton").parent().removeClass("active");
         $(".tab-pane").removeClass("active");
@@ -89,7 +109,9 @@ function visualiserApp(luigi) {
 
     function processHashChange() {
         var hash = location.hash;
-        if (hash) {
+        if (hash == "#w") {
+            switchTab("workerList");
+        } else if (hash) {
             var taskId = hash.substr(1);
             $("#graphContainer").hide();
             $("#graphPlaceholder svg").empty();
@@ -190,8 +212,16 @@ function visualiserApp(luigi) {
         bindTaskEvents(id, expand);
     }
 
+    function getWorkers(id, running_tasks) {
+        $(id).append(renderWorkers(running_tasks));
+    }
+
     $(document).ready(function() {
         loadTemplates();
+
+        luigi.getRunningTaskList(function(runningTasks) {
+            getWorkers("#workerList", runningTasks);
+        });
 
         luigi.getRunningTaskList(function(runningTasks) {
             getTaskList("#runningTasks", runningTasks, true);
