@@ -565,8 +565,9 @@ class CentralPlannerScheduler(Scheduler):
         workers = [{
             'name': worker.id,
             'last_active': worker.last_active,
-            'started': worker.started,
+            'started': getattr(worker, 'started', None),
             } for worker in self._active_workers.values()]
+        workers.sort(key=lambda worker: worker['started'], reverse=True)
         if include_running:
             running = collections.defaultdict(dict)
             for task_id, task in self._tasks.items():
