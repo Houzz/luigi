@@ -19,8 +19,7 @@ function visualiserApp(luigi) {
         return dateObject.getHours() + ":" + dateObject.getMinutes() + ":" + dateObject.getSeconds();
     }
 
-    function taskToDisplayTask(task, showWorker) {
-        showWorker = typeof showWorker !== 'undefined' ? showWorker : true;
+    function taskToDisplayTask(showWorker, task) {
         var taskIdParts = /([A-Za-z0-9_]*)\((.*)\)/.exec(task.taskId);
         var taskName = taskIdParts[1];
         var taskParams = taskIdParts[2];
@@ -69,31 +68,22 @@ function visualiserApp(luigi) {
     }
 
     function renderTasks(tasks) {
-        var displayTasks = tasks.map(taskToDisplayTask);
+        var displayTasks = tasks.map($.proxy(taskToDisplayTask, null, true));
         displayTasks.sort(function(a,b) { return b.displayTimestamp - a.displayTimestamp; });
         var tasksByFamily = entryList(indexByProperty(displayTasks, "taskName"));
         tasksByFamily.sort(function(a,b) { return a.key.localeCompare(b.key); });
         return renderTemplate("rowTemplate", {tasks: tasksByFamily});
     }
 
-    function tasksToDisplayWorkers(running_tasks) {
-        var workers = {};
-        for (var task_idx in running_tasks) {
-            var task = running_tasks[task_idx];
-            if(workers[task.worker_running] === undefined) {
-                workers[task.worker_running] = [];
-            }
-            workers[task.worker_running].push(taskToDisplayTask(task, false));
-        }
-        var rv = [];
-        for (worker in workers) {
-            rv.push({name: worker, tasks: workers[worker]});
-        }
-        return rv;
+    function processWorker(worker) {
+        worker.tasks = worker.running.map($.proxy(taskToDisplayTask, null, false));
+        worker.start_time = new Date(worker.started * 1000).toLocaleString();
+        worker.active = new Date(worker.last_active * 1000).toLocaleString();
+        return worker;
     }
 
-    function renderWorkers(running_tasks) {
-        return renderTemplate("workerTemplate", {"workers": tasksToDisplayWorkers(running_tasks)});
+    function renderWorkers(workers) {
+        return renderTemplate("workerTemplate", {"workers": workers.map(processWorker)});
     }
 
     function switchTab(tabId) {
@@ -213,15 +203,15 @@ function visualiserApp(luigi) {
         bindTaskEvents(id, expand);
     }
 
-    function getWorkers(id, running_tasks) {
-        $(id).append(renderWorkers(running_tasks));
+    function getWorkerList(id, workers) {
+        $(id).append(renderWorkers(workers));
     }
 
     $(document).ready(function() {
         loadTemplates();
 
-        luigi.getRunningTaskList(function(runningTasks) {
-            getWorkers("#workerList", runningTasks);
+        luigi.getWorkerList(function(workers) {
+            getWorkerList("#workerList", workers);
         });
 
         luigi.getRunningTaskList(function(runningTasks) {

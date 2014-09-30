@@ -119,6 +119,7 @@ class Worker(object):
         self.id = id
         self.reference = None  # reference to the worker in the real world. (Currently a dict containing just the host)
         self.last_active = last_active  # seconds since epoch
+        self.started = time.time()  # seconds since epoch
         self.info = {}
 
     def add_info(self, info):
@@ -558,6 +559,24 @@ class CentralPlannerScheduler(Scheduler):
                     serialized = self._serialize_task(task_id, False)
                     result[task_id] = serialized
         return result
+
+    def worker_list(self, include_running=True):
+        self.prune()
+        workers = [{
+            'name': worker.id,
+            'last_active': worker.last_active,
+            'started': worker.started,
+            } for worker in self._active_workers.values()]
+        if include_running:
+            running = collections.defaultdict(dict)
+            for task_id, task in self._tasks.items():
+                if task.status == RUNNING and task.worker_running:
+                    running[task.worker_running][task_id] = self._serialize_task(task_id, False)
+            for worker in workers:
+                tasks = running[worker['name']]
+                worker['num_running'] = len(tasks)
+                worker['running'] = tasks
+        return workers
 
     def resources(self):
         ''' get total resources and available ones '''

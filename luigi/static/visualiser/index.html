@@ -97,6 +97,9 @@
         <script type="text/template" name="workerTemplate">
             {{#workers}}
                 <h3>{{name}}</h3>
+                <p><b>Started</b>: {{start_time}}</p>
+                <p><b>Last Checkin</b>: {{active}}</p>
+                <p><b>Running Tasks</b>: {{num_running}}</p>
                 {{#tasks}}
                 <div class="taskRow row-fluid" data-task-id="{{taskId}}">
                     <div class="span4"><strong>{{taskName}}</strong><em> ({{taskParams}})</em></div>
