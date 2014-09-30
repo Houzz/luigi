@@ -19,7 +19,8 @@ function visualiserApp(luigi) {
         return dateObject.getHours() + ":" + dateObject.getMinutes() + ":" + dateObject.getSeconds();
     }
 
-    function taskToDisplayTask(task) {
+    function taskToDisplayTask(task, showWorker) {
+        showWorker = typeof showWorker !== 'undefined' ? showWorker : true;
         var taskIdParts = /([A-Za-z0-9_]*)\((.*)\)/.exec(task.taskId);
         var taskName = taskIdParts[1];
         var taskParams = taskIdParts[2];
@@ -28,7 +29,7 @@ function visualiserApp(luigi) {
             var current_time = new Date().getTime()
             var minutes_running = Math.round((current_time - task.time_running * 1000) / 1000 / 60)
             displayTime += " | " + minutes_running + " minutes"
-            if ("worker_running" in task) {
+            if (showWorker && "worker_running" in task) {
               displayTime += " (" + task.worker_running + ")"
             }
         }
@@ -82,7 +83,7 @@ function visualiserApp(luigi) {
             if(workers[task.worker_running] === undefined) {
                 workers[task.worker_running] = [];
             }
-            workers[task.worker_running].push(taskToDisplayTask(task));
+            workers[task.worker_running].push(taskToDisplayTask(task, false));
         }
         var rv = [];
         for (worker in workers) {
