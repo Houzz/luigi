@@ -562,11 +562,13 @@ class CentralPlannerScheduler(Scheduler):
 
     def worker_list(self, include_running=True):
         self.prune()
-        workers = [{
-            'name': worker.id,
-            'last_active': worker.last_active,
-            'started': getattr(worker, 'started', None),
-            } for worker in self._active_workers.values()]
+        workers = [
+            dict(
+                name=worker.id,
+                last_active=worker.last_active,
+                started=getattr(worker, 'started', None),
+                **worker.info
+            ) for worker in self._active_workers.values()]
         workers.sort(key=lambda worker: worker['started'], reverse=True)
         if include_running:
             running = collections.defaultdict(dict)
