@@ -100,6 +100,8 @@
                 <p><b>Started</b>: {{start_time}}</p>
                 <p><b>Last Checkin</b>: {{active}}</p>
                 <p><b>Root Task</b>: <a href="#{{{first_task}}}">{{first_task}}</a></p>
+                <p><b>Pending Tasks</b>: {{num_pending}}</p>
+                <p><b>Unique Pending Tasks</b>: {{num_uniques}}</p>
                 <p><b>Running Tasks</b>: {{num_running}}</p>
                 {{#tasks}}
                 <div class="taskRow row-fluid" data-task-id="{{taskId}}">

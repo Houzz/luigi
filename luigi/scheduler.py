@@ -572,12 +572,21 @@ class CentralPlannerScheduler(Scheduler):
         workers.sort(key=lambda worker: worker['started'], reverse=True)
         if include_running:
             running = collections.defaultdict(dict)
+            num_pending = collections.defaultdict(int)
+            num_uniques = collections.defaultdict(int)
             for task_id, task in self._tasks.items():
                 if task.status == RUNNING and task.worker_running:
                     running[task.worker_running][task_id] = self._serialize_task(task_id, False)
+                elif task.status == PENDING:
+                    for worker in task.workers:
+                        num_pending[worker] += 1
+                    if len(task.workers) == 1:
+                        num_uniques[list(task.workers)[0]] += 1
             for worker in workers:
                 tasks = running[worker['name']]
                 worker['num_running'] = len(tasks)
+                worker['num_pending'] = num_pending[worker['name']]
+                worker['num_uniques'] = num_uniques[worker['name']]
                 worker['running'] = tasks
         return workers
 
