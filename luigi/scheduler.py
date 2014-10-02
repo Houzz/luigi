@@ -23,7 +23,7 @@ import cPickle as pickle
 import task_history as history
 logger = logging.getLogger("luigi.server")
 
-from task_status import PENDING, FAILED, DONE, RUNNING, UNKNOWN, DISABLED
+from task_status import PENDING, FAILED, DONE, RUNNING, SUSPENDED, UNKNOWN, DISABLED
 
 
 class Scheduler(object):
@@ -295,8 +295,9 @@ class CentralPlannerScheduler(Scheduler):
             if prio > t.priority:
                 self._update_priority(t, prio, worker)
 
-    def add_task(self, worker, task_id, status=PENDING, runnable=True, deps=None, expl=None,
-                 resources=None, priority=0, family='', params={}):
+    def add_task(self, worker, task_id, status=PENDING, runnable=True,
+                 deps=None, new_deps=None, expl=None, resources=None,
+                 priority=0, family='', params={}):
         """
         * Add task identified by task_id if it doesn't exist
         * If deps is not None, update dependency list
@@ -334,6 +335,9 @@ class CentralPlannerScheduler(Scheduler):
 
         if deps is not None:
             task.deps = set(deps)
+
+        if new_deps is not None:
+            task.deps.update(new_deps)
 
         task.stakeholders.add(worker)
         task.resources = resources
@@ -415,7 +419,7 @@ class CentralPlannerScheduler(Scheduler):
         used_resources = self._used_resources()
         potential_resources = collections.defaultdict(int)
         potential_workers = set([worker])
-        unique_ready_tasks = 0
+        n_unique_pending = 0
 
         for task_id, task in sorted(self._tasks.iteritems(), key=self._rank(worker), reverse=True):
             if task.status == RUNNING and worker in task.workers:
@@ -430,8 +434,8 @@ class CentralPlannerScheduler(Scheduler):
             ready = all(dep in self._tasks and self._tasks[dep].status == DONE for dep in task.deps)
             if task.status == PENDING and worker in task.workers:
                 locally_pending_tasks += 1
-                if ready and len(task.workers) == 1:
-                    unique_ready_tasks += 1
+                if len(task.workers) == 1:
+                    n_unique_pending += 1
 
             if self._not_schedulable(task, potential_resources) or best_task or not ready:
                 continue
@@ -454,10 +458,9 @@ class CentralPlannerScheduler(Scheduler):
 
         logger.info('get_work returns %s for worker %s', best_task, worker)
         return {'n_pending_tasks': locally_pending_tasks,
+                'n_unique_pending': n_unique_pending,
                 'task_id': best_task,
-                'running_tasks': running_tasks,
-                'unique_ready_tasks': unique_ready_tasks,
-               }
+                'running_tasks': running_tasks}
 
     def ping(self, worker):
         self.update(worker)

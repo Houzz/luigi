@@ -24,6 +24,7 @@ import threading
 import os
 import signal
 import luigi.notifications
+import tempfile
 luigi.notifications.DEBUG = True
 
 
@@ -38,6 +39,17 @@ class DummyTask(Task):
     def run(self):
         logging.debug("%s - setting has_run", self.task_id)
         self.has_run = True
+
+
+class DynamicDummyTask(Task):
+    p = luigi.Parameter()
+
+    def output(self):
+        return luigi.LocalTarget(self.p)
+
+    def run(self):
+        with self.output().open('w') as f:
+            f.write('Done!')
 
 
 class WorkerTest(unittest.TestCase):
@@ -209,6 +221,32 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(a.complete())
         self.assertTrue(b.complete())
 
+    def test_dynamic_dependencies(self):
+
+        class DynamicRequires(Task):
+            p = luigi.Parameter()
+
+            def output(self):
+                return luigi.LocalTarget(os.path.join(self.p, 'parent'))
+
+            def run(self):
+                dummy_targets = yield [DynamicDummyTask(os.path.join(self.p, str(i)))
+                                     for i in range(5)]
+                dummy_targets += yield [DynamicDummyTask(os.path.join(self.p, str(i)))
+                                       for i in range(5, 7)]
+                with self.output().open('w') as f:
+                    for i, d in enumerate(dummy_targets):
+                        for line in d.open('r'):
+                            print >>f, '%d: %s' % (i, line.strip())
+
+        t = DynamicRequires(p=tempfile.mktemp())
+        luigi.build([t], local_scheduler=True)
+        self.assertTrue(t.complete())
+
+        # loop through output and verify
+        f = t.output().open('r')
+        for i in xrange(7):
+            self.assertEquals(f.readline().strip(), '%d: Done!' % i)
 
     def test_avoid_infinite_reschedule(self):
         class A(Task):
@@ -224,7 +262,6 @@ class WorkerTest(unittest.TestCase):
 
         self.assertTrue(self.w.add(B()))
         self.assertFalse(self.w.run())
-
 
     def test_interleaved_workers(self):
         class A(DummyTask):
@@ -313,8 +350,8 @@ class WorkerTest(unittest.TestCase):
 
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
 
-        w  = Worker(scheduler=sch, worker_id='X', keep_alive=True)
-        w2 = Worker(scheduler=sch, worker_id='Y', keep_alive=True, wait_interval=0.1)
+        w  = Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True)
+        w2 = Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1)
 
         self.assertTrue(w.add(a))
         self.assertTrue(w2.add(b))
@@ -326,6 +363,40 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(b.complete())
 
         w.stop()
+        w2.stop()
+
+    def test_die_for_non_unique_pending(self):
+        class A(DummyTask):
+            def run(self):
+                logging.debug('running A')
+                time.sleep(0.1)
+                super(A, self).run()
+
+        a = A()
+
+        class B(DummyTask):
+            def requires(self):
+                return a
+            def run(self):
+                logging.debug('running B')
+                super(B, self).run()
+
+        b = B()
+
+        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+
+        w  = Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True)
+        w2 = Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1)
+
+        self.assertTrue(w.add(b))
+        self.assertTrue(w2.add(b))
+
+        self.assertEquals(w._get_work()[0], 'A()')
+        self.assertTrue(w2.run())
+
+        self.assertFalse(a.complete())
+        self.assertFalse(b.complete())
+
         w2.stop()
 
     def test_complete_exception(self):
