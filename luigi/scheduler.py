@@ -244,6 +244,10 @@ class CentralPlannerScheduler(Scheduler):
         logger.info("Done pruning task graph")
 
     def set_status(self, task_id, status):
+        # not sure why we have this status, as it can never be set
+        if status == SUSPENDED:
+            status = PENDING
+
         task = self._tasks[task_id]
         if status == DISABLED and task.status == RUNNING:
             return
