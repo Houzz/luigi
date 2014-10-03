@@ -76,5 +76,17 @@ var LuigiAPI = (function() {
         });
     };
 
+    LuigiAPI.prototype.getDisabledTaskList = function(callback) {
+        jsonRPC(this.urlRoot + "/task_list", {status: "DISABLED", upstream_status: ""}, function(response) {
+            callback(flatten(response.response));
+        });
+    };
+
+    LuigiAPI.prototype.getUpstreamDisabledTaskList = function(callback) {
+        jsonRPC(this.urlRoot + "/task_list", {status: "PENDING", upstream_status: "UPSTREAM_DISABLED"}, function(response) {
+            callback(flatten(response.response));
+        });
+    };
+
     return LuigiAPI;
 })();
