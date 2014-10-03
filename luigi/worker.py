@@ -12,7 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-import collections
 import random
 from scheduler import (CentralPlannerScheduler, PENDING, RUNNING, FAILED,
                        SUSPENDED, DONE, DISABLED)

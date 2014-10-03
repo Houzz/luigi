@@ -75,6 +75,3 @@ class LockTest(unittest.TestCase):
 
         s = os.stat(self.pid_file)
         self.assertEquals(s.st_mode & 0777, 0777)
-
-if __name__ == '__main__':
-    unittest.main()

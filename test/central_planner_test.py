@@ -13,8 +13,7 @@
 # the License.
 
 import time
-from luigi.scheduler import CentralPlannerScheduler
-from luigi.scheduler import DONE, FAILED, RUNNING, DISABLED
+from luigi.scheduler import CentralPlannerScheduler, DONE, FAILED, DISABLED
 import unittest
 import luigi.notifications
 luigi.notifications.DEBUG = True

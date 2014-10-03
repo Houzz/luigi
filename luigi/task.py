@@ -15,9 +15,7 @@
 import abc
 import configuration
 import contextlib
-import inspect
 import logging
-import notifications
 import parameter
 import pymysql
 import warnings
@@ -256,7 +254,8 @@ class Task(object):
 
     _event_callbacks = {}
 
-    resources = {}
+    # Priority of the task: the scheduler should favor available
+    # tasks with higher priority values first.
     priority = 0
     disabled = False
 
@@ -628,7 +627,7 @@ class Task(object):
         """
 
         traceback_string = traceback.format_exc()
-        return "Runtime error:\n%s" % notifications.wrap_traceback(traceback_string)
+        return "Runtime error:\n%s" % traceback_string
 
     def on_success(self):
         """ Override for doing custom completion handling for a larger class of tasks
