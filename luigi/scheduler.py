@@ -335,8 +335,6 @@ class CentralPlannerScheduler(Scheduler):
             if status == FAILED:
                 task.retry = time.time() + self._retry_delay
 
-        task.resources = resources
-
         if deps is not None:
             task.deps = set(deps)
 
@@ -390,17 +388,22 @@ class CentralPlannerScheduler(Scheduler):
     def _rank(self, worker):
         ''' Return worker's rank function for task scheduling '''
         dependents = collections.defaultdict(int)
+        not_done = lambda t: t not in self._tasks or self._tasks[t].status != DONE
         for task_id, task in self._tasks.iteritems():
             if task.status != DONE:
-                num_deps = float(len(task.deps))
-                for dep in task.deps:
-                    dependents[dep] += 1.0 / num_deps
+                deps = filter(not_done, task.deps)
+                inverse_num_deps = 1.0 / max(len(deps), 1)
+                for dep in deps:
+                    dependents[dep] += inverse_num_deps
 
         return lambda (task_id, task): (task.priority, worker in task.workers, dependents[task_id], -task.time)
 
     def _not_schedulable(self, task, used_resources):
-        return task.status != PENDING or not self._has_resources(task.resources, used_resources)
-
+        return any((
+            task.status != PENDING,
+            any(dep not in self._tasks or self._tasks[dep].status != DONE for dep in task.deps),
+            not self._has_resources(task.resources, used_resources)
+        ))
     def get_work(self, worker, host=None):
         # TODO: remove any expired nodes
 
@@ -435,13 +438,12 @@ class CentralPlannerScheduler(Scheduler):
                     more_info.update(other_worker.info)
                 running_tasks.append(more_info)
 
-            ready = all(dep in self._tasks and self._tasks[dep].status == DONE for dep in task.deps)
             if task.status == PENDING and worker in task.workers:
                 locally_pending_tasks += 1
                 if len(task.workers) == 1:
                     n_unique_pending += 1
 
-            if self._not_schedulable(task, potential_resources) or best_task or not ready:
+            if self._not_schedulable(task, potential_resources) or best_task:
                 continue
 
             if worker in task.workers and self._has_resources(task.resources, used_resources):
@@ -460,7 +462,6 @@ class CentralPlannerScheduler(Scheduler):
             t.time_running = time.time()
             self._update_task_history(best_task, RUNNING, host=host)
 
-        logger.info('get_work returns %s for worker %s', best_task, worker)
         return {'n_pending_tasks': locally_pending_tasks,
                 'n_unique_pending': n_unique_pending,
                 'task_id': best_task,
