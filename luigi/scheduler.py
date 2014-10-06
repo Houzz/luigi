@@ -347,7 +347,8 @@ class CentralPlannerScheduler(Scheduler):
         # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
         # Otherwise the task dependencies might end up being pruned if scheduling takes a long time
         for dep in task.deps or []:
-            t = self._tasks.setdefault(dep, Task(status=UNKNOWN, deps=None, priority=priority))
+            t = self._tasks.setdefault(dep, self._make_task(
+                status=UNKNOWN, deps=None, priority=priority))
             t.stakeholders.add(worker)
 
         self._update_priority(task, priority, worker)
