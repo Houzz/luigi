@@ -203,15 +203,11 @@ function visualiserApp(luigi) {
         bindTaskEvents(id, expand);
     }
 
-    function getWorkerList(id, workers) {
-        $(id).append(renderWorkers(workers));
-    }
-
     $(document).ready(function() {
         loadTemplates();
 
         luigi.getWorkerList(function(workers) {
-            getWorkerList("#workerList", workers);
+            $("#workerList").append(renderWorkers(workers));
         });
 
         luigi.getRunningTaskList(function(runningTasks) {
