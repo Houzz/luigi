@@ -142,6 +142,7 @@ class Worker(object):
     def __init__(self, scheduler=CentralPlannerScheduler(), worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
                  wait_interval=None, max_reschedules=None, count_uniques=None):
+        self.worker_processes = int(worker_processes)
         self._worker_info = self._generate_worker_info()
 
         if not worker_id:
@@ -173,10 +174,11 @@ class Worker(object):
         self._id = worker_id
         self._scheduler = scheduler
 
-        self.worker_processes = int(worker_processes)
         self.host = socket.gethostname()
         self._scheduled_tasks = {}
         self._suspended_tasks = {}
+
+        self._first_task = None
 
         self.add_succeeded = True
         self.run_succeeded = True
@@ -227,7 +229,8 @@ class Worker(object):
     def _generate_worker_info(self):
         # Generate as much info as possible about the worker
         # Some of these calls might not be available on all OS's
-        args = [('salt', '%09d' % random.randrange(0, 999999999))]
+        args = [('salt', '%09d' % random.randrange(0, 999999999)),
+                ('workers', self.worker_processes)]
         try:
             args += [('host', socket.gethostname())]
         except:
@@ -238,6 +241,12 @@ class Worker(object):
             pass
         try:
             args += [('pid', os.getpid())]
+        except:
+            pass
+        try:
+            sudo_user = os.getenv("SUDO_USER")
+            if sudo_user:
+                args.append(('sudo_user', sudo_user))
         except:
             pass
         return args
@@ -273,6 +282,8 @@ class Worker(object):
     def add(self, task):
         """ Add a Task for the worker to check and possibly schedule and run.
          Returns True if task and its dependencies were successfully scheduled or completed before"""
+        if self._first_task is None and hasattr(task, 'task_id'):
+            self._first_task = task.task_id
         self.add_succeeded = True
         stack = [task]
         self._validate_task(task)
@@ -368,6 +379,7 @@ class Worker(object):
             raise Exception("Return value of Task.complete() must be boolean (was %r)" % is_complete)
 
     def _add_worker(self):
+        self._worker_info.append(('first_task', self._first_task))
         try:
             self._scheduler.add_worker(self._id, self._worker_info)
         except:
