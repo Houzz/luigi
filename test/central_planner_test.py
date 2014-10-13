@@ -222,6 +222,15 @@ class CentralPlannerTest(unittest.TestCase):
         # now we have enough resources
         self.check_task_order(['B', 'A'])
 
+    def test_hendle_multiple_resources(self):
+        self.sch.add_task(WORKER, task_id='A', resources={'r1': 1, 'r2': 1})
+        self.sch.add_task(WORKER, task_id='B', resources={'r1': 1, 'r2': 1})
+        self.sch.add_task(WORKER, task_id='C', resources={'r1': 1})
+        self.sch.update_resources(r1=2, r2=1)
+
+        self.assertEqual('A', self.sch.get_work(WORKER)['task_id'])
+        self.check_task_order('C')
+
     def check_task_order(self, order):
         for expected_id in order:
             self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)

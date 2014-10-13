@@ -512,8 +512,8 @@ class CentralPlannerScheduler(Scheduler):
                 if len(task.workers) == 1:
                     n_unique_pending += 1
 
-            if not best_task and self._schedulable(task):
-                if worker in task.workers and self._has_resources(task.resources, used_resources):
+            if not best_task and self._schedulable(task) and self._has_resources(task.resources, used_resources):
+                if worker in task.workers:
                     best_task = task
                     best_task_id = task.id
                 else:
