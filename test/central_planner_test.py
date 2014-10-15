@@ -344,7 +344,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
         self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
 
-        self.sch.re_enable('A')
+        self.sch.re_enable_task('A')
 
         # should be enabled at this point
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)
@@ -362,7 +362,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 1)
         self.assertEqual(len(self.sch.task_list('FAILED', '')), 0)
 
-        self.sch.re_enable('A')
+        self.sch.re_enable_task('A')
 
         # should be enabled at this point
         self.assertEqual(len(self.sch.task_list('DISABLED', '')), 0)

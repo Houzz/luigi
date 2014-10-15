@@ -58,27 +58,34 @@ STATUS_TO_UPSTREAM_MAP = {
 
 
 class Failures(object):
-    def __init__(self, capacity, window):
-        assert capacity is None or capacity > 0
-        self.capacity = capacity
+    """ This class tracks the number of failures in a given time window
+
+    Failures added are marked with the current timestamp, and this class counts
+    the number of failures in a sliding time window ending at the present.
+
+    """
+
+    def __init__(self, window):
+        """ Initialize with the given window
+
+        :param window: how long to track failures for, as a datetime.timedelta
+        """
         self.window = window
         self.failures = collections.deque()
 
     def add_failure(self):
-        ''' Adds a failure, returns true if failure queue isn't beyond capacity '''
+        """ Add a failure event with the current timestamp """
+        self.failures.append(datetime.datetime.now())
 
-        if self.capacity is None:
-            return True
-
+    def num_failures(self):
+        """ Return the number of failures in the window """
         min_time = datetime.datetime.now() - self.window
         while self.failures and self.failures[0] < min_time:
             self.failures.popleft()
-        self.failures.append(datetime.datetime.now())
-
-        return len(self.failures) < self.capacity
+        return len(self.failures)
 
     def clear(self):
-        ''' Clear the failure queue '''
+        """ Clear the failure queue """
         self.failures.clear()
 
 
@@ -103,14 +110,24 @@ class Task(object):
         self.resources = resources
         self.family = family
         self.params = params
-        self.failures = Failures(disable_failures, disable_window)
-        self.disabled = False
+        self.disable_failures = disable_failures
+        self.failures = Failures(disable_window)
+        self.scheduler_disable_time = None
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
 
+    def add_failure(self):
+        self.failures.add_failure()
+
+    def has_excessive_failures(self):
+        return self.failures.num_failures() >= self.disable_failures
+
+    def can_disable(self):
+        return self.disable_failures is not None
+
     def re_enable(self):
-        self.disabled = False
+        self.scheduler_disable_time = None
         self.status = FAILED
         self.failures.clear()
 
@@ -253,9 +270,9 @@ class CentralPlannerScheduler(Scheduler):
         self._disable_window = disable_window
         self._make_task = functools.partial(
             Task, disable_failures=disable_failures,
-            disable_window=datetime.timedelta(minutes=disable_window))
+            disable_window=datetime.timedelta(seconds=disable_window))
         self._disable_persist = disable_persist
-        self._disable_time = datetime.timedelta(hours=disable_persist)
+        self._disable_time = datetime.timedelta(seconds=disable_persist)
 
     def load(self):
         self._state.load()
@@ -290,9 +307,9 @@ class CentralPlannerScheduler(Scheduler):
                 self.set_status(task, FAILED)
                 task.retry = time.time() + self._retry_delay
 
-            if task.status == DISABLED and task.disabled:
+            if task.status == DISABLED and task.scheduler_disable_time:
                 # re-enable task after the disable time expires
-                if datetime.datetime.now() - task.disabled > self._disable_time:
+                if datetime.datetime.now() - task.scheduler_disable_time > self._disable_time:
                     task.re_enable()
 
             # Remove tasks that have no stakeholders
@@ -309,41 +326,43 @@ class CentralPlannerScheduler(Scheduler):
 
         logger.info("Done pruning task graph")
 
-    def set_status(self, task, status):
-        # not sure why we have this status, as it can never be set
-        if status == SUSPENDED:
-            status = PENDING
+    def set_status(self, task, new_status):
+        # not sure why we have SUSPENDED, as it can never be set
+        if new_status == SUSPENDED:
+            new_status = PENDING
 
-        if status == DISABLED and task.status == RUNNING:
+        if new_status == DISABLED and task.status == RUNNING:
             return
 
         if task.status == DISABLED:
-            if status == DISABLED:
-                task.disabled = None
-            elif status == DONE:
+            if new_status == DISABLED:
+                task.scheduler_disable_time = None
+            elif new_status == DONE:
                 task.re_enable()
                 task.status = DONE
-            elif task.disabled is None:
+            elif task.scheduler_disable_time is None:
                 # when it is disabled by client, we allow the status change
-                task.status = status
+                task.status = new_status
             return
 
-        if status == FAILED and not task.failures.add_failure():
-            task.disabled = datetime.datetime.now()
-            status = DISABLED
-            notifications.send_error_email(
-                'Luigi Scheduler: DISABLED {task} due to excessive failures'.format(task=task.id),
-                '{task} failed {failures} times in the last {window} minutes, so it is being '
-                'disabled for {persist} hours'.format(
-                    failures=self._disable_failures,
-                    task=task.id,
-                    window=self._disable_window,
-                    persist=self._disable_persist,
-                    ))
-        elif status == DISABLED:
-            task.disabled = None
+        if new_status == FAILED and task.can_disable():
+            task.add_failure()
+            if task.has_excessive_failures():
+                task.scheduler_disable_time = datetime.datetime.now()
+                new_status = DISABLED
+                notifications.send_error_email(
+                    'Luigi Scheduler: DISABLED {task} due to excessive failures'.format(task=task.id),
+                    '{task} failed {failures} times in the last {window} minutes, so it is being '
+                    'disabled for {persist} hours'.format(
+                        failures=self._disable_failures,
+                        task=task.id,
+                        window=self._disable_window,
+                        persist=self._disable_persist,
+                        ))
+        elif new_status == DISABLED:
+            task.scheduler_disable_time = None
 
-        task.status = status
+        task.status = new_status
 
     def update(self, worker_id, worker_reference=None):
         """ Keep track of whenever the worker was last active """
@@ -581,7 +600,7 @@ class CentralPlannerScheduler(Scheduler):
             'resources': task.resources,
         }
         if task.status == DISABLED:
-            ret['re_enable_able'] = task.disabled is not None
+            ret['re_enable_able'] = task.scheduler_disable_time is not None
         if include_deps:
             ret['deps'] = list(task.deps)
         return ret
@@ -711,10 +730,10 @@ class CentralPlannerScheduler(Scheduler):
                 result[task.status][task.id] = serialized
         return result
 
-    def re_enable(self, task_id):
+    def re_enable_task(self, task_id):
         serialized = {}
         task = self._state.get_task(task_id)
-        if task and task.status == DISABLED and task.disabled:
+        if task and task.status == DISABLED and task.scheduler_disable_time:
             task.re_enable()
             serialized = self._serialize_task(task_id)
         return serialized

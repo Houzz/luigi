@@ -206,7 +206,7 @@ class RemoteSchedulerResponder(object):
         return self._scheduler.task_search(task_str)
 
     def task_re_enable(self, task_id):
-        return self._scheduler.re_enable(task_id)
+        return self._scheduler.re_enable_task(task_id)
 
     def resources(self, **kwargs):
         return self._scheduler.resources()

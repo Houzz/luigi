@@ -203,6 +203,12 @@ function visualiserApp(luigi) {
         bindTaskEvents(id, expand);
     }
 
+    function getTaskList(id, tasks, expand) {
+        $(id).append(renderTasks(tasks));
+        $(id).prev("h3").append(" (" + tasks.length + ")");
+        bindTaskEvents(id, expand);
+    }
+
     $(document).ready(function() {
         loadTemplates();
 
