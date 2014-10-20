@@ -173,7 +173,12 @@ class HdfsClient(FileSystem):
     def count(self, path):
         cmd = [load_hadoop_cmd(), 'fs', '-count', path]
         stdout = call_check(cmd)
-        (dir_count, file_count, content_size, ppath) = stdout.split()
+        lines = stdout.split('\n')
+        for line in stdout.split('\n'):
+            if line.startswith("OpenJDK 64-Bit Server VM warning") or line.startswith("It's highly recommended") or not line:
+                lines.pop(lines.index(line))
+            else:
+               (dir_count, file_count, content_size, ppath) = stdout.split() 
         results = {'content_size': content_size, 'dir_count': dir_count, 'file_count': file_count}
         return results
 
@@ -327,7 +332,7 @@ class SnakebiteHdfsClient(HdfsClient):
         :type dest: string
         :return: list of renamed items
         """
-        parts = dest.split('/')
+        parts = dest.rstrip('/').split('/')
         if len(parts) > 1:
             dir_path = '/'.join(parts[0:-1])
             if not self.exists(dir_path):
