@@ -366,7 +366,10 @@ class Worker(object):
                                  deps=deps, runnable=runnable, priority=task.priority,
                                  resources=task.process_resources(),
                                  params=task.to_str_params(),
-                                 family=task.task_family)
+                                 family=task.task_family,
+                                 bucket=task.bucket,
+                                 bucket_priority=task.bucket_priority,
+                                 )
 
         logger.info('Scheduled %s (%s)', task.task_id, status)
 
@@ -474,7 +477,10 @@ class Worker(object):
                                      runnable=None,
                                      params=task.to_str_params(),
                                      family=task.task_family,
-                                     new_deps=new_deps)
+                                     new_deps=new_deps,
+                                     bucket=task.bucket,
+                                     bucket_priority=task.bucket_priority,
+                                     )
 
             if status == RUNNING:
                 continue

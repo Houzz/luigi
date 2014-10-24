@@ -91,7 +91,7 @@ class Failures(object):
 
 class Task(object):
     def __init__(self, id, status, deps, resources={}, priority=0, family='', params={},
-                 disable_failures=None, disable_window=None):
+                 disable_failures=None, disable_window=None, bucket=None, bucket_priority=None):
         self.id = id
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
@@ -107,6 +107,8 @@ class Task(object):
         self.time_running = None  # Timestamp when picked up by worker
         self.expl = None
         self.priority = priority
+        self.bucket = bucket
+        self.bucket_priority = bucket_priority
         self.resources = resources
         self.family = family
         self.params = params
@@ -197,10 +199,24 @@ class SimpleTaskState(object):
         for task in self._tasks.itervalues():
             yield task
 
+    def get_running_tasks(self):
+        for task in self._tasks.itervalues():
+            if task.status == RUNNING:
+                yield task
+
     def get_pending_tasks(self):
         for task in self._tasks.itervalues():
             if task.status in [PENDING, RUNNING]:
                 yield task
+
+    def get_bucket_tasks(self, bucket, bucket_priority):
+        for task in self._tasks.values():
+            if task.bucket == bucket and task.bucket_priority <= bucket_priority:
+                yield task
+
+    def mark_bucket_tasks_done(self, bucket, bucket_priority):
+        for task in self.get_bucket_tasks(bucket, bucket_priority):
+            task.status = DONE
 
     def get_task(self, task_id, default=None, setdefault=None):
         if setdefault:
@@ -239,6 +255,13 @@ class SimpleTaskState(object):
         for task in self.get_active_tasks():
             task.stakeholders.difference_update(delete_workers)
             task.workers.difference_update(delete_workers)
+
+    def task_priority(self, task):
+        if task.bucket is None:
+            return task.priority
+
+        # a task has at least as high priority as things with lower bucket priority in its bucket
+        return max(t.priority for t in self.get_bucket_tasks(task.bucket, task.bucket_priority))
 
 
 class CentralPlannerScheduler(Scheduler):
@@ -358,6 +381,8 @@ class CentralPlannerScheduler(Scheduler):
                         ))
         elif new_status == DISABLED:
             task.scheduler_disable_time = None
+        elif new_status == DONE and task.bucket is not None:
+            self._state.mark_bucket_tasks_done(task.bucket, task.bucket_priority)
 
         task.status = new_status
 
@@ -382,7 +407,8 @@ class CentralPlannerScheduler(Scheduler):
 
     def add_task(self, worker, task_id, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
-                 priority=0, family='', params={}):
+                 priority=0, family='', params={}, bucket=None,
+                 bucket_priority=None):
         """
         * Add task identified by task_id if it doesn't exist
         * If deps is not None, update dependency list
@@ -394,7 +420,8 @@ class CentralPlannerScheduler(Scheduler):
 
         task = self._state.get_task(task_id, setdefault=self._make_task(
                 id=task_id, status=PENDING, deps=deps, resources=resources,
-                priority=priority, family=family, params=params))
+                priority=priority, family=family, params=params, bucket=bucket,
+                bucket_priority=bucket_priority))
 
         # for setting priority, we'll sometimes create tasks with unset family and params
         if not task.family:
@@ -424,6 +451,8 @@ class CentralPlannerScheduler(Scheduler):
 
         task.stakeholders.add(worker)
         task.resources = resources
+        task.bucket = bucket
+        task.bucket_priority = bucket_priority
 
         # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
         # Otherwise the task dependencies might end up being pruned if scheduling takes a long time
@@ -460,11 +489,14 @@ class CentralPlannerScheduler(Scheduler):
     def _used_resources(self):
         used_resources = collections.defaultdict(int)
         if self._resources is not None:
-            for task in self._state.get_active_tasks():
+            for task in self._state.get_running_tasks():
                 if task.status == RUNNING and task.resources:
                     for resource, amount in task.resources.items():
                         used_resources[resource] += amount
         return used_resources
+
+    def _used_buckets(self):
+        return set(t.bucket for t in self._state.get_running_tasks()) - {None}
 
     def _rank(self):
         ''' Return worker's rank function for task scheduling '''
@@ -479,7 +511,7 @@ class CentralPlannerScheduler(Scheduler):
                 for dep in deps:
                     dependents[dep] += inverse_num_deps
 
-        return lambda task: (task.priority, dependents[task.id], -task.time)
+        return lambda t: (self._state.task_priority(t), t.bucket_priority, dependents[t.id], -t.time)
 
     def _schedulable(self, task):
         if task.status != PENDING:
@@ -513,6 +545,7 @@ class CentralPlannerScheduler(Scheduler):
 
         used_resources = self._used_resources()
         greedy_resources = collections.defaultdict(int)
+        used_buckets = self._used_buckets()
         n_unique_pending = 0
         greedy_workers = dict((worker.id, worker.info.get('workers', 1))
                               for worker in self._state.get_active_workers())
@@ -539,8 +572,10 @@ class CentralPlannerScheduler(Scheduler):
                 greedy_workers[task.worker_running] -= 1
                 for resource, amount in (task.resources or {}).items():
                     greedy_resources[resource] += amount
+                if task.bucket is not None:
+                    used_buckets.add(task.bucket)
 
-            if not best_task and self._schedulable(task) and self._has_resources(task.resources, greedy_resources):
+            if not best_task and self._schedulable(task) and self._has_resources(task.resources, greedy_resources) and task.bucket not in used_buckets:
                 if worker in task.workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                     best_task_id = task.id
@@ -549,6 +584,10 @@ class CentralPlannerScheduler(Scheduler):
                         if greedy_workers.get(task_worker, 0) > 0:
                             # use up a worker
                             greedy_workers[task_worker] -= 1
+
+                            # add the bucket
+                            if task.bucket is not None:
+                                used_buckets.add(task.bucket)
 
                             # keep track of the resources used in greedy scheduling
                             for resource, amount in (task.resources or {}).items():
