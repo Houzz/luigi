@@ -540,6 +540,8 @@ class CentralPlannerScheduler(Scheduler):
 
             if task.status == RUNNING and task.worker_running in greedy_workers:
                 greedy_workers[task.worker_running] -= 1
+                for resource, amount in (task.resources or {}).items():
+                    greedy_resources[resource] += amount
 
             if not best_task and self._schedulable(task) and self._has_resources(task.resources, greedy_resources):
                 if worker in task.workers and self._has_resources(task.resources, used_resources):
