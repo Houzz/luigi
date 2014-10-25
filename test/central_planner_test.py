@@ -527,6 +527,11 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'G')
         self.check_task_order('DGF')
 
+    def test_string_bucket_priority(self):
+        self.sch.add_task(WORKER, 'A', bucket='b', bucket_priority='2014-10-23')
+        self.sch.add_task(WORKER, 'B', bucket='b', bucket_priority='2014-10-24')
+        self.check_task_order('B')
+
     def test_only_one_bucket_item_at_once(self):
         self.sch.add_task('X', 'A', bucket='b', bucket_priority=0)
         self.assertEqual('A', self.sch.get_work('X')['task_id'])

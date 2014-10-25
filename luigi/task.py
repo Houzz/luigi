@@ -262,7 +262,7 @@ class Task(object):
     # If multiple items from the same bucket are ready to run, the scheduler
     # will pick the one with highest bucket priority. When it is marked done,
     # so is everything else in the bucket with lower priority. bucket_priority
-    # should be numeric if overridden.
+    # should have a consistent type within a bucket.
     bucket = None
     bucket_priority = None
 
