@@ -95,7 +95,7 @@ class TaskProcess(multiprocessing.Process):
                             break
 
                         new_req = flatten(requires)
-                        status = (RUNNING if all(t.complete() for t in new_req)
+                        status = (RUNNING if all(t.actual_complete() for t in new_req)
                                   else SUSPENDED)
                         new_deps = [(t.task_family, t.to_str_params())
                                     for t in new_req]
