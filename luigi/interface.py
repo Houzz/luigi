@@ -53,11 +53,6 @@ def setup_interface_logging(conf_file=None):
     setup_interface_logging.has_run = True
 
 
-def get_config():
-    warnings.warn('Use luigi.configuration.get_config() instead')
-    return configuration.get_config()
-
-
 def load_task(parent_task, task_name, params):
     """ Imports task and uses ArgParseInterface to initialize it
     """
@@ -453,11 +448,6 @@ class OptParseInterface(Interface):
         task = task_cls.from_str_params(params, global_params)
 
         return [task]
-
-
-class LuigiConfigParser(configuration.LuigiConfigParser):
-    ''' Deprecated class, use configuration.LuigiConfigParser instead. Left for backwards compatibility '''
-    pass
 
 
 def run(cmdline_args=None, existing_optparse=None, use_optparse=False, main_task_cls=None, worker_scheduler_factory=None, use_dynamic_argparse=False):

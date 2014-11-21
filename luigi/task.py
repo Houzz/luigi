@@ -20,6 +20,7 @@ import parameter
 import pymysql
 import warnings
 import traceback
+import itertools
 import pyparsing as pp
 
 Parameter = parameter.Parameter
@@ -481,19 +482,16 @@ class Task(object):
     def complete(self):
         """
             If the task has any outputs, return ``True`` if all outputs exists.
-            Otherwise, return whether or not the task has run or not
+            Otherwise, return ``False`.
+
+            However, you may freely override this method with custom logic.
         """
         outputs = flatten(self.output())
         if len(outputs) == 0:
-            # TODO: unclear if tasks without outputs should always run or never run
             warnings.warn("Task %r without outputs has no custom complete() method" % self)
             return False
 
-        for output in outputs:
-            if not output.exists():
-                return False
-        else:
-            return True
+        return all(itertools.imap(lambda output: output.exists(), outputs))
 
     def actual_complete(self):
         """Check if a task is complete and also not dirty.
@@ -647,6 +645,7 @@ class Task(object):
         This method gets called when :py:meth:`run` completes without raising any exceptions.
         The returned value is json encoded and sent to the scheduler as the `expl` argument.
         Default behavior is to send an None value"""
+        pass
 
 
 def externalize(task):
@@ -726,3 +725,15 @@ def flatten(struct):
         pass
 
     return [struct]
+
+
+def flatten_output(task):
+    """Lists all output targets by recursively walking output-less (wrapper) tasks.
+
+    FIXME order consistently.
+    """
+    r = flatten(task.output())
+    if not r:
+        for dep in flatten(task.requires()):
+            r += flatten_output(dep)
+    return r
