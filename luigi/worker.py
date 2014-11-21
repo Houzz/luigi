@@ -135,6 +135,33 @@ class TaskProcess(multiprocessing.Process):
                 (self.task.task_id, status, error_message, missing, new_deps))
 
 
+class SingleProcessPool(object):
+    """ Dummy process pool for using a single processor
+
+    Imitates the api of multiprocessing.Pool using single-processor equivalents
+    """
+
+    def apply_async(self, function, args):
+        return apply(function, args)
+
+
+class DequeQueue(collections.deque):
+    """ deque wrapper implementing the Queue interface """
+
+    put = collections.deque.append
+    get = collections.deque.pop
+
+
+def check_complete(task, out_queue):
+    """ Checks if task is complete, puts the result to out_queue """
+    logger.debug("Checking if %s is complete", task)
+    try:
+        is_complete = task.complete()
+    except Exception as ex:
+        is_complete = ex
+    out_queue.put((task, is_complete))
+
+
 class Worker(object):
     """ Worker object communicates with a scheduler.
 
@@ -286,23 +313,38 @@ class Worker(object):
         message = "Luigi framework error:\n{traceback}".format(traceback=formatted_traceback)
         notifications.send_error_email(subject, message)
 
-    def add(self, task):
+    def add(self, task, skip_root=False, multiprocess=False):
         """ Add a Task for the worker to check and possibly schedule and run.
          Returns True if task and its dependencies were successfully scheduled or completed before"""
         if self._first_task is None and hasattr(task, 'task_id'):
             self._first_task = task.task_id
         self.add_succeeded = True
-        stack = [task]
-        self._validate_task(task)
-        seen = set([task.task_id])
+        seen = set()
+        if multiprocess:
+            queue = multiprocessing.Manager().Queue()
+            pool = multiprocessing.Pool()
+        else:
+            queue = DequeQueue()
+            pool = SingleProcessPool()
         try:
-            while stack:
-                current = stack.pop()
-                for next in self._add(current):
+            root_tasks = task.deps() if skip_root else [task]
+            for root_task in root_tasks:
+                self._validate_task(root_task)
+                seen.add(root_task.task_id)
+                pool.apply_async(check_complete, [root_task, queue])
+
+            # we track queue size ourselves because len(queue) won't work for multiprocessing
+            queue_size = len(root_tasks)
+            while queue_size:
+                current = queue.get()
+                queue_size -= 1
+                item, is_complete = current
+                for next in self._add(item, is_complete):
                     if next.task_id not in seen:
                         self._validate_task(next)
                         seen.add(next.task_id)
-                        stack.append(next)
+                        pool.apply_async(check_complete, [next, queue])
+                        queue_size += 1
         except (KeyboardInterrupt, TaskException):
             raise
         except Exception as ex:
@@ -313,14 +355,8 @@ class Worker(object):
             self._email_unexpected_error(task, formatted_traceback)
         return self.add_succeeded
 
-    def _check_complete(self, task):
-        return task.complete()
-
-    def _add(self, task):
-        logger.debug("Checking if %s is complete", task)
-        is_complete = False
+    def _add(self, task, is_complete):
         try:
-            is_complete = self._check_complete(task)
             self._check_complete_value(is_complete)
         except KeyboardInterrupt:
             raise
@@ -383,6 +419,8 @@ class Worker(object):
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
+            if isinstance(is_complete, Exception):
+                raise is_complete
             raise Exception("Return value of Task.complete() must be boolean (was %r)" % is_complete)
 
     def _add_worker(self):
