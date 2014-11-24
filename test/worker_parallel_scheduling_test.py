@@ -1,4 +1,3 @@
-import multiprocessing
 import time
 import unittest
 import mock
@@ -55,19 +54,6 @@ class ParallelSchedulingTest(unittest.TestCase):
 
     def added_tasks(self, status):
         return [args[1] for args, kw in self.sch.add_task.call_args_list if kw['status'] == status]
-
-    @unittest.skipIf(multiprocessing.cpu_count() <= 1,
-                     "Cannot test multiprocess scheduling with only one processor")
-    def test_speed_up_scheduling_on_slow_complete(self):
-        self.assertLess(0.4, self.add_time(SlowCompleteWrapper(), True, False))
-        self.assertEqual(self.sch.add_task.call_count, 4)
-        expected_tasks = ['SlowCompleteTask(n=%i)' % i for i in range(4)]
-        self.assertItemsEqual(expected_tasks, self.added_tasks('DONE'))
-
-        self.sch.add_task.reset_mock()
-        self.assertGreater(0.4, self.add_time(SlowCompleteWrapper(), True, True))
-        self.assertEqual(self.sch.add_task.call_count, 4)
-        self.assertItemsEqual(expected_tasks, self.added_tasks('DONE'))
 
     def test_multiprocess_scheduling_with_overlapping_dependencies(self):
         self.w.add(OverlappingSelfDependenciesTask(5, 2), False, True)
