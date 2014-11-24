@@ -63,7 +63,7 @@ setup(
     author_email='erikbern@spotify.com',
     url='https://github.com/spotify/luigi',
     license='Apache License 2.0',
-    install_requires = ['PyMySQL>=0.5'],
+    install_requires = ['PyMySQL>=0.5', 'tblib'],
     packages=[
         'luigi',
         'luigi.contrib',
