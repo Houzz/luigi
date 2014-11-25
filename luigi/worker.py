@@ -36,9 +36,6 @@ from target import Target
 from task import Task, flatten, getpaths
 from event import Event
 
-from tblib import pickling_support
-pickling_support.install()
-
 try:
     import simplejson as json
 except ImportError:
@@ -165,8 +162,8 @@ def check_complete(task, out_queue):
     logger.debug("Checking if %s is complete", task)
     try:
         is_complete = task.actual_complete()
-    except:
-        is_complete = sys.exc_info()
+    except Exception as ex:
+        is_complete = ex
     out_queue.put((task, is_complete))
 
 
@@ -430,7 +427,7 @@ class Worker(object):
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
-            if isinstance(is_complete, tuple):
+            if isinstance(is_complete, Exception):
                 raise is_complete
             raise Exception("Return value of Task.complete() must be boolean (was %r)" % is_complete)
 
