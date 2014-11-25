@@ -157,13 +157,25 @@ class DequeQueue(collections.deque):
     get = collections.deque.pop
 
 
+class AsyncCompletionException(Exception):
+    """ Exception indicating that something went wrong with checking complete """
+    def __init__(self, trace):
+        self.trace = trace
+
+
+class TracebackWrapper(object):
+    """ Class to wrap tracebacks so we can know they're not just strings """
+    def __init__(self, trace):
+        self.trace = trace
+
+
 def check_complete(task, out_queue):
     """ Checks if task is complete, puts the result to out_queue """
     logger.debug("Checking if %s is complete", task)
     try:
         is_complete = task.actual_complete()
-    except Exception as ex:
-        is_complete = ex
+    except:
+        is_complete = TracebackWrapper(traceback.format_exc())
     out_queue.put((task, is_complete))
 
 
@@ -361,13 +373,18 @@ class Worker(object):
         return self.add_succeeded
 
     def _add(self, task, is_complete):
+        formatted_traceback = None
         try:
             self._check_complete_value(is_complete)
         except KeyboardInterrupt:
             raise
+        except AsyncCompletionException as ex:
+            formatted_traceback = ex.trace
         except:
-            self.add_succeeded = False
             formatted_traceback = traceback.format_exc()
+
+        if formatted_traceback is not None:
+            self.add_succeeded = False
             self._log_complete_error(task)
             task.trigger_event(Event.DEPENDENCY_MISSING, task)
             self._email_complete_error(task, formatted_traceback)
@@ -427,8 +444,8 @@ class Worker(object):
 
     def _check_complete_value(self, is_complete):
         if is_complete not in (True, False):
-            if isinstance(is_complete, Exception):
-                raise is_complete
+            if isinstance(is_complete, TracebackWrapper):
+                raise AsyncCompletionException(is_complete.trace)
             raise Exception("Return value of Task.complete() must be boolean (was %r)" % is_complete)
 
     def _add_worker(self):

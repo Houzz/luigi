@@ -1,3 +1,4 @@
+import pickle
 import time
 import unittest
 import mock
@@ -41,6 +42,13 @@ class ExceptionRequiresTask(luigi.Task):
         assert False
 
 
+class UnpicklableExceptionTask(luigi.Task):
+    def complete(self):
+        class UnpicklableException(Exception):
+            pass
+        raise UnpicklableException()
+
+
 class ParallelSchedulingTest(unittest.TestCase):
     def setUp(self):
         self.sch = mock.Mock()
@@ -58,7 +66,7 @@ class ParallelSchedulingTest(unittest.TestCase):
     def test_multiprocess_scheduling_with_overlapping_dependencies(self):
         self.w.add(OverlappingSelfDependenciesTask(5, 2), False, True)
         self.assertEqual(15, self.sch.add_task.call_count)
-        self.assertItemsEqual((
+        self.assertEqual(set((
             'OverlappingSelfDependenciesTask(n=1, k=1)',
             'OverlappingSelfDependenciesTask(n=2, k=1)',
             'OverlappingSelfDependenciesTask(n=2, k=2)',
@@ -67,8 +75,8 @@ class ParallelSchedulingTest(unittest.TestCase):
             'OverlappingSelfDependenciesTask(n=4, k=1)',
             'OverlappingSelfDependenciesTask(n=4, k=2)',
             'OverlappingSelfDependenciesTask(n=5, k=2)',
-        ), self.added_tasks('PENDING'))
-        self.assertItemsEqual((
+        )), set(self.added_tasks('PENDING')))
+        self.assertEqual(set((
             'OverlappingSelfDependenciesTask(n=0, k=0)',
             'OverlappingSelfDependenciesTask(n=0, k=1)',
             'OverlappingSelfDependenciesTask(n=1, k=0)',
@@ -76,7 +84,7 @@ class ParallelSchedulingTest(unittest.TestCase):
             'OverlappingSelfDependenciesTask(n=2, k=0)',
             'OverlappingSelfDependenciesTask(n=3, k=0)',
             'OverlappingSelfDependenciesTask(n=4, k=0)',
-        ), self.added_tasks('DONE'))
+        )), set(self.added_tasks('DONE')))
 
 
     @mock.patch('luigi.notifications.send_error_email')
@@ -84,6 +92,23 @@ class ParallelSchedulingTest(unittest.TestCase):
         self.w.add(ExceptionCompleteTask(), multiprocess=True)
         send.assert_called_once()
         self.assertEqual(0, self.sch.add_task.call_count)
+        self.assertTrue('assert False' in send.call_args[0][1])
+
+    @mock.patch('luigi.notifications.send_error_email')
+    def test_raise_unpicklable_exception_in_complete(self, send):
+        # verify exception can't be pickled
+        self.assertRaises(Exception, UnpicklableExceptionTask().complete)
+        try:
+            UnpicklableExceptionTask().complete()
+        except Exception as ex:
+            pass
+        self.assertRaises(pickle.PicklingError, pickle.dumps, ex)
+
+        # verify this can run async
+        self.w.add(UnpicklableExceptionTask(), multiprocess=True)
+        send.assert_called_once()
+        self.assertEqual(0, self.sch.add_task.call_count)
+        self.assertTrue('raise UnpicklableException()' in send.call_args[0][1])
 
     @mock.patch('luigi.notifications.send_error_email')
     def test_raise_exception_in_requires(self, send):
