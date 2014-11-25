@@ -496,7 +496,7 @@ class CentralPlannerScheduler(Scheduler):
         return used_resources
 
     def _used_buckets(self):
-        return set(t.bucket for t in self._state.get_running_tasks()) - {None}
+        return set(t.bucket for t in self._state.get_running_tasks()) - set([None])
 
     def _rank(self):
         ''' Return worker's rank function for task scheduling '''
