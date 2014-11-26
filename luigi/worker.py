@@ -343,15 +343,15 @@ class Worker(object):
         else:
             queue = DequeQueue()
             pool = SingleProcessPool()
+        # we track queue size ourselves because len(queue) won't work for multiprocessing
+        queue_size = 0
         try:
             root_tasks = task.deps() if skip_root else [task]
             for root_task in root_tasks:
                 self._validate_task(root_task)
                 seen.add(root_task.task_id)
                 pool.apply_async(check_complete, [root_task, queue])
-
-            # we track queue size ourselves because len(queue) won't work for multiprocessing
-            queue_size = len(root_tasks)
+                queue_size += 1
             while queue_size:
                 current = queue.get()
                 queue_size -= 1
