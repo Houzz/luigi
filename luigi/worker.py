@@ -417,7 +417,7 @@ class Worker(object):
             status = DISABLED
 
         if deps:
-            dep_ids = collections.deque()
+            dep_ids = []
             for d in deps:
                 self._validate_dependency(d)
                 task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
