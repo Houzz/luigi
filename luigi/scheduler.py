@@ -568,14 +568,16 @@ class CentralPlannerScheduler(Scheduler):
                 if len(task.workers) == 1:
                     n_unique_pending += 1
 
-            if task.status == RUNNING and task.worker_running in greedy_workers:
+            greedy_schedulable = lambda: (self._has_resources(task.resources, greedy_resources)
+                                          and task.bucket not in used_buckets)
+            if task.status == RUNNING and task.worker_running in greedy_workers and greedy_schedulable():
                 greedy_workers[task.worker_running] -= 1
                 for resource, amount in (task.resources or {}).items():
                     greedy_resources[resource] += amount
                 if task.bucket is not None:
                     used_buckets.add(task.bucket)
 
-            if not best_task and self._schedulable(task) and self._has_resources(task.resources, greedy_resources) and task.bucket not in used_buckets:
+            if not best_task and self._schedulable(task) and greedy_schedulable():
                 if worker in task.workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                     best_task_id = task.id

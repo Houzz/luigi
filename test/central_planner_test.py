@@ -350,6 +350,15 @@ class CentralPlannerTest(unittest.TestCase):
         # C doesn't block B, so it can go first
         self.check_task_order('C')
 
+    def test_run_resources_while_waiting(self):
+        self.sch.add_task(WORKER, task_id='A', resources={'r1': 1, 'r2': 1}, priority=10)
+        self.assertEqual('A', self.sch.get_work(WORKER)['task_id'])
+
+        self.sch.add_task(WORKER, task_id='B', resources={'r1': 1, 'r2': 1}, priority=20)
+        self.sch.add_task(WORKER, task_id='C', resources={'r1': 1}, priority=0)
+        self.sch.update_resources(r1=2, r2=1)
+        self.assertEqual('C', self.sch.get_work(WORKER)['task_id'])
+
     def check_task_order(self, order):
         for expected_id in order:
             self.assertEqual(self.sch.get_work(WORKER)['task_id'], expected_id)
