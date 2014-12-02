@@ -417,12 +417,14 @@ class Worker(object):
             status = DISABLED
 
         if deps:
+            dep_ids = collections.deque()
             for d in deps:
                 self._validate_dependency(d)
                 task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
                 yield d # return additional tasks to add
+                dep_ids.append(d.task_id)
 
-            deps = [d.task_id for d in deps]
+            deps = dep_ids
 
         self._scheduled_tasks[task.task_id] = task
         self._scheduler.add_task(self._id, task.task_id, status=status,
