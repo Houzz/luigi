@@ -264,8 +264,8 @@ class Task(object):
     # will pick the one with highest bucket priority. When it is marked done,
     # so is everything else in the bucket with lower priority. bucket_priority
     # should have a consistent type within a bucket.
-    bucket = None
-    bucket_priority = None
+    supersedes_bucket = None
+    supersedes_priority = None
 
     # Resources used by the task. Should be formatted like {"scp": 1} to indicate that the
     # task requires 1 unit of the scp resource.
