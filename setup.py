@@ -22,7 +22,7 @@ except:
 
 
 def get_static_files(path):
-    return [os.path.join(dirpath.replace("luigi/", ""), ext) 
+    return [os.path.join(dirpath.replace("luigi/", ""), ext)
             for (dirpath, dirnames, filenames) in os.walk(path)
             for ext in ["*.html", "*.js", "*.css", "*.png"]]
 
@@ -47,6 +47,7 @@ install_requires = [
     'tornado',
     'whoops',
     'snakebite>=2.4.10',
+    'PyMySQL>=0.5',
 ]
 
 if sys.version_info[:2] < (2, 7):
@@ -61,7 +62,6 @@ setup(
     author_email='erikbern@spotify.com',
     url='https://github.com/spotify/luigi',
     license='Apache License 2.0',
-    install_requires = ['PyMySQL>=0.5'],
     packages=[
         'luigi',
         'luigi.contrib',
