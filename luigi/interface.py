@@ -139,20 +139,6 @@ class EnvironmentParamsContainer(task.Task):
         return cls()  # instantiate an object with the global params set on it
 
 
-def expose(cls):
-    warnings.warn('expose is no longer used, everything is autoexposed', DeprecationWarning)
-    return cls
-
-
-def expose_main(cls):
-    warnings.warn('expose_main is no longer supported, use luigi.run(..., main_task_cls=cls) instead', DeprecationWarning)
-    return cls
-
-
-def reset():
-    warnings.warn('reset is no longer supported')
-
-
 class WorkerSchedulerFactory(object):
     def create_local_scheduler(self):
         return scheduler.CentralPlannerScheduler()
@@ -216,7 +202,7 @@ class Interface(object):
         success = True
         luigi_state.set_state(luigi_state.SCHEDULING)
         for t in tasks:
-            success &= w.add(t, getattr(t, 'ignored_root', False), env_params.parallel_scheduling)
+            success &= w.add(t, env_params.parallel_scheduling)
         logger = logging.getLogger('luigi-interface')
         logger.info('Done scheduling tasks')
         luigi_state.set_state(luigi_state.RUNNING)

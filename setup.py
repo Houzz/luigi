@@ -17,26 +17,8 @@ import sys
 
 try:
     from setuptools import setup
-    from setuptools.command.test import test as TestCommand
 except:
     from distutils.core import setup
-    from distutils.cmd import Command as TestCommand
-
-
-class Tox(TestCommand):
-    user_options = [('tox-args=', None, "Arguments to pass to tox")]
-    def initialize_options(self):
-        TestCommand.initialize_options(self)
-        self.tox_args = ''
-    def finalize_options(self):
-        TestCommand.finalize_options(self)
-        self.test_args = []
-        self.test_suite = True
-    def run_tests(self):
-        #import here, cause outside the eggs aren't loaded
-        import tox
-        errno = tox.cmdline(args=self.tox_args.split())
-        sys.exit(errno)
 
 
 def get_static_files(path):
@@ -47,12 +29,28 @@ def get_static_files(path):
 
 luigi_package_data = sum(map(get_static_files, ["luigi/static", "luigi/templates"]), [])
 
+readme_note = """\
+.. note::
 
-long_description = ['Note: For the latest source, discussion, etc, please visit the `Github repository <https://github.com/spotify/luigi>`_\n\n']
-for line in open('README.rst'):
-    long_description.append(line)
-long_description = ''.join(long_description)
+   For the latest source, discussion, etc, please visit the
+   `GitHub repository <https://github.com/spotify/luigi>`_\n\n
+"""
 
+with open('README.rst') as fobj:
+    long_description = readme_note + fobj.read()
+
+install_requires = [
+    'boto',
+    'pyparsing',
+    'requests',
+    'sqlalchemy',
+    'tornado',
+    'whoops',
+    'snakebite>=2.4.10',
+]
+
+if sys.version_info[:2] < (2, 7):
+    install_requires.extend(['argparse', 'ordereddict'])
 
 setup(
     name='luigi',
@@ -76,6 +74,5 @@ setup(
         'bin/luigid',
         'bin/luigi'
     ],
-    tests_require=['tox', 'virtualenv'],
-    cmdclass={'test': Tox},
+    install_requires=install_requires,
 )

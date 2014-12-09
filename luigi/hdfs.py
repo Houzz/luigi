@@ -15,7 +15,6 @@
 import subprocess
 import os
 import random
-import tempfile
 import urlparse
 import luigi.format
 import luigi.contrib.target
@@ -27,7 +26,6 @@ import configuration
 import logging
 import getpass
 logger = logging.getLogger('luigi-interface')
-import sys
 
 
 class HDFSCliError(Exception):
@@ -674,7 +672,8 @@ class HdfsTarget(FileSystemTarget):
         self.format = format
         self.is_tmp = is_tmp
         (scheme, netloc, path, query, fragment) = urlparse.urlsplit(path)
-        assert ":" not in path  # colon is not allowed in hdfs filenames
+        if ":" in path:
+            raise ValueError('colon is not allowed in hdfs filenames')
         self._fs = fs or get_autoconfig_client()
 
     def __del__(self):

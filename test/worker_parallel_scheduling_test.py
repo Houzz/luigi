@@ -54,17 +54,11 @@ class ParallelSchedulingTest(unittest.TestCase):
         self.sch = mock.Mock()
         self.w = Worker(scheduler=self.sch, worker_id='x')
 
-    def add_time(self, task, skip_root, multiprocess):
-        start_time = time.time()
-        self.w.add(task, skip_root, multiprocess)
-        end_time = time.time()
-        return end_time - start_time
-
     def added_tasks(self, status):
         return [args[1] for args, kw in self.sch.add_task.call_args_list if kw['status'] == status]
 
     def test_multiprocess_scheduling_with_overlapping_dependencies(self):
-        self.w.add(OverlappingSelfDependenciesTask(5, 2), False, True)
+        self.w.add(OverlappingSelfDependenciesTask(5, 2), True)
         self.assertEqual(15, self.sch.add_task.call_count)
         self.assertEqual(set((
             'OverlappingSelfDependenciesTask(n=1, k=1)',
@@ -85,7 +79,6 @@ class ParallelSchedulingTest(unittest.TestCase):
             'OverlappingSelfDependenciesTask(n=3, k=0)',
             'OverlappingSelfDependenciesTask(n=4, k=0)',
         )), set(self.added_tasks('DONE')))
-
 
     @mock.patch('luigi.notifications.send_error_email')
     def test_raise_exception_in_complete(self, send):
@@ -113,12 +106,6 @@ class ParallelSchedulingTest(unittest.TestCase):
     @mock.patch('luigi.notifications.send_error_email')
     def test_raise_exception_in_requires(self, send):
         self.w.add(ExceptionRequiresTask(), multiprocess=True)
-        send.assert_called_once()
-        self.assertEqual(0, self.sch.add_task.call_count)
-
-    @mock.patch('luigi.notifications.send_error_email')
-    def test_raise_exception_in_requires_with_skip_roopt(self, send):
-        self.w.add(ExceptionRequiresTask(), skip_root=True, multiprocess=True)
         send.assert_called_once()
         self.assertEqual(0, self.sch.add_task.call_count)
 

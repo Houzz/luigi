@@ -25,7 +25,8 @@ logger = logging.getLogger('luigi-interface')
 
 def common_params(task_instance, task_cls):
     """Grab all the values in task_instance that are found in task_cls"""
-    assert isinstance(task_cls, task.Register), "task_cls must be an uninstantiated Task"
+    if not isinstance(task_cls, task.Register):
+        raise TypeError("task_cls must be an uninstantiated Task")
 
     task_instance_param_names = dict(task_instance.get_params()).keys()
     task_cls_param_names = dict(task_cls.get_params()).keys()
@@ -184,7 +185,7 @@ def Derived(parent_cls):
             n = luigi.IntParameter()
             # ...
 
-        class MyTask(luigi.uti.Derived(AnotherTask)):
+        class MyTask(luigi.util.Derived(AnotherTask)):
             def requires(self):
                return self.parent_obj
             def run(self):
@@ -205,7 +206,11 @@ def Derived(parent_cls):
             self.parent_obj = parent_cls(**parent_param_values)
             super(DerivedCls, self).__init__(*args, **kwargs)
 
-    warnings.warn('Derived is deprecated, please use the @inherits decorator instead', DeprecationWarning)
+    warnings.warn(
+        'Derived is deprecated, please use the @inherits decorator instead',
+        DeprecationWarning,
+        stacklevel=2
+    )
 
     # Copy parent's params to child
     for param_name, param_obj in parent_cls.get_params():
@@ -236,7 +241,11 @@ def Copy(parent_cls):
                 f.write(line)
             f.close()
 
-    warnings.warn('Copy is deprecated, please use the @copies decorator instead', DeprecationWarning)
+    warnings.warn(
+        'Copy is deprecated, please use the @copies decorator instead',
+        DeprecationWarning,
+        stacklevel=2
+    )
     return CopyCls
 
 

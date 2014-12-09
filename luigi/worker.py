@@ -23,13 +23,10 @@ import socket
 import configuration
 import traceback
 import logging
-import warnings
 import notifications
 import getpass
 import multiprocessing # Note: this seems to have some stability issues: https://github.com/spotify/luigi/pull/438
 import Queue
-import luigi.interface
-import sys
 import types
 import interface
 from target import Target
@@ -310,9 +307,9 @@ class Worker(object):
             # we can't get the repr of it since it's not initialized...
             raise TaskException('Task of class %s not initialized. Did you override __init__ and forget to call super(...).__init__?' % task.__class__.__name__)
 
-    def _log_complete_error(self, task):
-        log_msg = "Will not schedule {task} or any dependencies due to error in complete() method:".format(task=task)
-        logger.warning(log_msg, exc_info=1)  # Needs to be called from except-clause to work
+    def _log_complete_error(self, task, tb):
+        log_msg = "Will not schedule {task} or any dependencies due to error in complete() method:\n{tb}".format(task=task, tb=tb)
+        logger.warning(log_msg)
 
     def _log_unexpected_error(self, task):
         logger.exception("Luigi unexpected framework error while scheduling %s", task) # needs to be called from within except clause
@@ -330,28 +327,25 @@ class Worker(object):
         message = "Luigi framework error:\n{traceback}".format(traceback=formatted_traceback)
         notifications.send_error_email(subject, message)
 
-    def add(self, task, skip_root=False, multiprocess=False):
+    def add(self, task, multiprocess=False):
         """ Add a Task for the worker to check and possibly schedule and run.
          Returns True if task and its dependencies were successfully scheduled or completed before"""
         if self._first_task is None and hasattr(task, 'task_id'):
             self._first_task = task.task_id
         self.add_succeeded = True
-        seen = set()
         if multiprocess:
             queue = multiprocessing.Manager().Queue()
             pool = multiprocessing.Pool()
         else:
             queue = DequeQueue()
             pool = SingleProcessPool()
+        self._validate_task(task)
+        pool.apply_async(check_complete, [task, queue])
+
         # we track queue size ourselves because len(queue) won't work for multiprocessing
-        queue_size = 0
+        queue_size = 1
         try:
-            root_tasks = task.deps() if skip_root else [task]
-            for root_task in root_tasks:
-                self._validate_task(root_task)
-                seen.add(root_task.task_id)
-                pool.apply_async(check_complete, [root_task, queue])
-                queue_size += 1
+            seen = set([task.task_id])
             while queue_size:
                 current = queue.get()
                 queue_size -= 1
@@ -385,7 +379,7 @@ class Worker(object):
 
         if formatted_traceback is not None:
             self.add_succeeded = False
-            self._log_complete_error(task)
+            self._log_complete_error(task, formatted_traceback)
             task.trigger_event(Event.DEPENDENCY_MISSING, task)
             self._email_complete_error(task, formatted_traceback)
             # abort, i.e. don't schedule any subtasks of a task with
