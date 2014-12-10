@@ -1,6 +1,7 @@
 function visualiserApp(luigi) {
     var templates = {};
     var invertDependencies = false;
+    var typingTimer = 0;
 
     function loadTemplates() {
         $("script[type='text/template']").each(function(i, element) {
@@ -201,10 +202,61 @@ function visualiserApp(luigi) {
         $(id).append(renderTasks(tasks));
         $(id).prev("h3").append(" (" + tasks.length + ")");
         bindTaskEvents(id, expand);
+        filterTasks();
+    }
+
+    function filterTasks() {
+        inputVal = $('#filter-input').val();
+        if (inputVal) {
+            arr = inputVal.split(" ");
+            // hide all columns first
+            $('#taskList .taskRow').addClass('hidden')
+            $('#taskList .taskRow').parent().parent().addClass('hidden')
+
+            // unhide columns that matches filter
+            attrSelector = arr.map(function(a) {
+                return a ? '[data-task-id*=' + a + ']' : '';
+            }).join("");
+            selector = '.taskRow' + attrSelector;
+            $(selector).removeClass('hidden');
+            $(selector).parent().parent().removeClass('hidden');
+        } else {
+            $('#taskList .taskRow').removeClass('hidden');
+            $('#taskList .taskRow').parent().parent().removeClass('hidden');
+        }
+
+        updateCount();
+    }
+
+    function updateCount() {
+        taskGroups = $('#taskList .taskGroup');
+        for (i=0; i<taskGroups.length; i++) {
+            groupCount = 0;
+
+            // update each task family
+            taskFamilies = $(taskGroups[i]).find('.taskFamily:visible');
+            for (j=0; j<taskFamilies.length; j++) {
+                cnt = $(taskFamilies[j]).find('.taskRow:not(.hidden)').length;
+                groupCount += cnt;
+                node = $(taskFamilies[j]).find(".badge-important");
+                node.text(cnt);
+            }
+
+            // update task group
+            newText = $(taskGroups[i]).find('h3').text().replace(/\d+/, groupCount);
+            $(taskGroups[i]).find('h3').text(newText);
+        }
     }
 
     $(document).ready(function() {
         loadTemplates();
+
+        $('#filter-input').bind("keyup paste", function() {
+            clearTimeout(typingTimer);
+            if ($('#filter-input').val) {
+                typingTimer = setTimeout(filterTasks, 300);
+            }
+        });
 
         luigi.getWorkerList(function(workers) {
             $("#workerList").append(renderWorkers(workers));
