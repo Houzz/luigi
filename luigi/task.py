@@ -274,11 +274,6 @@ class Task(object):
     # Number of seconds after which to time out the run function. No timeout if set to 0.
     worker_timeout = configuration.get_config().getint('core', 'worker-timeout', 0)
 
-    # If true, this task will not be scheduled directly when run as a root task from the command
-    # line. This is useful for root wrapper tasks if you don't want to schedule the task itself.
-    # This task will still be scheduled if it shows up as a dependency.
-    ignored_root = False
-
     @classmethod
     def event_handler(cls, event):
         """ Decorator for adding event handlers """
