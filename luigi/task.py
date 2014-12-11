@@ -272,7 +272,7 @@ class Task(object):
     resources = {}
 
     # Number of seconds after which to time out the run function. No timeout if set to 0.
-    worker_timeout = 0
+    worker_timeout = configuration.get_config().getint('core', 'worker-timeout', 0)
 
     # If true, this task will not be scheduled directly when run as a root task from the command
     # line. This is useful for root wrapper tasks if you don't want to schedule the task itself.
