@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import mock
 import time
 from luigi.scheduler import CentralPlannerScheduler
 import luigi.worker
@@ -610,6 +611,17 @@ class SuicidalWorker(luigi.Task):
         os.kill(os.getpid(), self.signal)
 
 
+class HungWorker(luigi.Task):
+    worker_timeout = luigi.IntParameter()
+
+    def run(self):
+        while True:
+            pass
+
+    def complete(self):
+        return False
+
+
 class MultipleWorkersTest(unittest.TestCase):
     def test_multiple_workers(self):
         # Test using multiple workers
@@ -636,6 +648,24 @@ class MultipleWorkersTest(unittest.TestCase):
 
     def test_kill_worker(self):
         luigi.build([SuicidalWorker(signal.SIGKILL)], workers=2, local_scheduler=True)
+
+    def test_time_out_hung_worker(self):
+        luigi.build([HungWorker(0.1)], workers=2, local_scheduler=True)
+
+    @mock.patch('luigi.worker.time')
+    def test_purge_hung_worker_timeout_time(self, mock_time):
+        w = Worker(worker_processes=2, wait_interval=0.01)
+        mock_time.time.return_value = 0
+        w.add(HungWorker(10))
+        w._run_task('HungWorker(worker_timeout=10)')
+
+        mock_time.time.return_value = 9
+        w._handle_next_task()
+        self.assertEqual(1, len(w._running_tasks))
+
+        mock_time.time.return_value = 11
+        w._handle_next_task()
+        self.assertEqual(0, len(w._running_tasks))
 
 if __name__ == '__main__':
     unittest.main()

@@ -59,6 +59,7 @@ class TaskProcess(multiprocessing.Process):
         self.worker_id = worker_id
         self.result_queue = result_queue
         self.random_seed = random_seed
+        self.timeout_time = time.time() + task.worker_timeout if task.worker_timeout else None
 
     def run(self):
         logger.info('[pid %s] Worker %s running   %s', os.getpid(), self.worker_id, self.task.task_id)
@@ -499,9 +500,15 @@ class Worker(object):
         for task_id, p in self._running_tasks.iteritems():
             if not p.is_alive() and p.exitcode:
                 error_msg = 'Worker task %s died unexpectedly with exit code %s' % (task_id, p.exitcode)
-                logger.info(error_msg)
-                self._task_result_queue.put(
-                        (task_id, FAILED, error_msg, [], []))
+            elif p.timeout_time is not None and time.time() > p.timeout_time and p.is_alive():
+                p.terminate()
+                error_msg = 'Worker task %s timed out and was terminated.' % task_id
+            else:
+                continue
+
+            logger.info(error_msg)
+            self._task_result_queue.put((task_id, FAILED, error_msg, [], []))
+
 
     def _handle_next_task(self):
         ''' We have to catch three ways a task can be "done"
