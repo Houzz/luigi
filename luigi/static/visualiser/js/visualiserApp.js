@@ -26,11 +26,11 @@ function visualiserApp(luigi) {
         var taskParams = taskIdParts[2];
         var displayTime = new Date(Math.floor(task.start_time*1000)).toLocaleString();
         if (task.status == "RUNNING" && "time_running" in task) {
-            var current_time = new Date().getTime()
-            var minutes_running = Math.round((current_time - task.time_running * 1000) / 1000 / 60)
-            displayTime += " | " + minutes_running + " minutes"
+            var current_time = new Date().getTime();
+            var minutes_running = Math.round((current_time - task.time_running * 1000) / 1000 / 60);
+            displayTime += " | " + minutes_running + " minutes";
             if (showWorker && "worker_running" in task) {
-              displayTime += " (" + task.worker_running + ")"
+              displayTime += " (" + task.worker_running + ")";
             }
         }
         return {
@@ -120,8 +120,8 @@ function visualiserApp(luigi) {
                       $("#graphContainer").show();
                       bindGraphEvents();
                     } else {
-                      $("#searchError").addClass("alert alert-error")
-                      $("#searchError").append("Couldn't find task " + taskId)
+                      $("#searchError").addClass("alert alert-error");
+                      $("#searchError").append("Couldn't find task " + taskId);
                     }
                 }
                 if (invertDependencies) {
@@ -210,8 +210,8 @@ function visualiserApp(luigi) {
         if (inputVal) {
             arr = inputVal.split(" ");
             // hide all columns first
-            $('#taskList .taskRow').addClass('hidden')
-            $('#taskList .taskRow').parent().parent().addClass('hidden')
+            $('#taskList .taskRow').addClass('hidden');
+            $('#taskList .taskRow').parent().parent().addClass('hidden');
 
             // unhide columns that matches filter
             attrSelector = arr.map(function(a) {
