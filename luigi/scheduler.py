@@ -496,7 +496,7 @@ class CentralPlannerScheduler(Scheduler):
         task.resources = resources
         task.supersedes_bucket = supersedes_bucket
         task.supersedes_priority = supersedes_priority
-        self._state.get_task(task_id)  # update task info
+        self._state.get_task(task_id, setdefault=task)  # update task info
 
         # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
         # Otherwise the task dependencies might end up being pruned if scheduling takes a long time
