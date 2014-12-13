@@ -256,6 +256,7 @@ class SimpleTaskState(object):
         self._state_path = state_path
         self._tasks = {}  # map from id to a Task object
         self._active_workers = {}  # map from id to a Worker object
+        self._supersedes_buckets = collections.defaultdict(set)
 
     def dump(self):
         state = (self._tasks, self._active_workers)
@@ -279,6 +280,9 @@ class SimpleTaskState(object):
                 return
 
             self._tasks, self._active_workers = state
+            self._supersedes_buckets = collections.defaultdict(set)
+            for task in self._tasks.values():
+                self._add_bucket_task(task)
 
             # Convert from old format
             # TODO: this is really ugly, we need something more future-proof
@@ -288,6 +292,11 @@ class SimpleTaskState(object):
                     self._active_workers[k] = Worker(id=k, last_active=v)
         else:
             logger.info("No prior state file exists at %s. Starting with clean slate", self._state_path)
+
+    def _add_bucket_task(self, task):
+        if task.supersedes_bucket is not None:
+            self._supersedes_buckets[task.supersedes_bucket].add(task)
+        return task
 
     def get_active_tasks(self):
         for task in self._tasks.itervalues():
@@ -304,12 +313,8 @@ class SimpleTaskState(object):
                 yield task
 
     def get_supersedes_bucket_tasks(self, supersedes_task):
-        if supersedes_task.supersedes_bucket is None:
-            return
-        for task in self._tasks.values():
-            if (task.supersedes_bucket == supersedes_task.supersedes_bucket
-                    and task.supersedes_priority <= supersedes_task.supersedes_priority):
-                yield task
+        return filter(lambda x: x.supersedes_priority <= supersedes_task.supersedes_priority,
+                      self._supersedes_buckets[supersedes_task.supersedes_bucket])
 
     def mark_supersedes_bucket_tasks_done(self, supersedes_task):
         for task in self.get_supersedes_bucket_tasks(supersedes_task):
@@ -317,7 +322,7 @@ class SimpleTaskState(object):
 
     def get_task(self, task_id, default=None, setdefault=None):
         if setdefault:
-            return self._tasks.setdefault(task_id, setdefault)
+            return self._add_bucket_task(self._tasks.setdefault(task_id, setdefault))
         else:
             return self._tasks.get(task_id, default)
 
@@ -330,6 +335,7 @@ class SimpleTaskState(object):
         # older tasks as well. That's why we call it "inactivate" (as in the verb)
         for task in delete_tasks:
             self._tasks.pop(task)
+            self._supersedes_buckets[getattr(task, 'supersedes_bucket', None)].discard(task)
 
     def get_active_workers(self, last_active_lt=None):
         for worker in self._active_workers.itervalues():
