@@ -20,7 +20,10 @@ import os
 import logging
 import time
 import cPickle as pickle
+
+import configuration
 import task_history as history
+
 logger = logging.getLogger("luigi.server")
 
 from task_status import PENDING, FAILED, DONE, RUNNING, SUSPENDED, UNKNOWN, DISABLED
@@ -515,10 +518,12 @@ class CentralPlannerScheduler(Scheduler):
     def add_worker(self, worker, info):
         self._state.get_worker(worker).add_info(info)
 
-    def update_resources(self, **resources):
-        if self._resources is None:
-            self._resources = {}
-        self._resources.update(resources)
+    def update_resources(self, resources=None):
+        if resources is None:
+            config = configuration.get_config()
+            config.reload()
+            resources = config.getintdict('resources')
+        self._resources = resources
 
     def _has_resources(self, needed_resources, used_resources):
         if needed_resources is None:

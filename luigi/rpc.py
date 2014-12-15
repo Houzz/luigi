@@ -145,7 +145,10 @@ class RemoteScheduler(Scheduler):
         return self._request('/api/task_search', {'task_str': task_str})
 
     def resources(self):
-        return self._request('/api/resources')
+        return self._request('/api/resources', {})
+
+    def update_resources(self, resources=None):
+        return self._request('/api/update_resources', {'resources': resources})
 
     def task_re_enable(self, task_id):
         return self._request('/api/task_re_enable', {'task_id': task_id})
@@ -212,6 +215,10 @@ class RemoteSchedulerResponder(object):
 
     def resources(self, **kwargs):
         return self._scheduler.resources()
+
+    def update_resources(self, resources=None, **kwargs):
+        self._scheduler.update_resources(resources)
+        return True
 
     def fetch_error(self, task_id, **kwargs):
         return self._scheduler.fetch_error(task_id)
