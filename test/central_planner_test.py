@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import mock
 import time
 from luigi.scheduler import CentralPlannerScheduler, DONE, FAILED, DISABLED
 import unittest
@@ -272,6 +273,25 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.update_resources({'R': 1})
 
         self.assertEqual('C', self.sch.get_work('Y')['task_id'])
+
+    @mock.patch('luigi.scheduler.configuration')
+    def test_update_resources_from_config(self, configuration):
+        pre_reload = {'old': 1}
+        post_reload = {'refreshed': 2}
+        config = configuration.get_config()
+
+        config.getintdict.return_value = pre_reload
+        self.sch.update_resources()
+        config.getintdict.assert_called_once_with('resources')
+        self.assertEqual(pre_reload, self.sch._resources)
+
+        def reload_config():
+            config.getintdict.return_value = post_reload
+        config.reload.side_effect = reload_config
+        config.getintdict.reset_mock()
+        self.sch.update_resources()
+        config.getintdict.assert_called_once_with('resources')
+        self.assertEqual(post_reload, self.sch._resources)
 
     def test_priority_update_with_pruning(self):
         self.setTime(0)
