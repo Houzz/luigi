@@ -280,10 +280,14 @@ class CentralPlannerTest(unittest.TestCase):
         post_reload = {'refreshed': 2}
         config = configuration.get_config()
 
+        def check_resources(resources):
+            expected = dict((k, {'used': 0, 'total': v}) for k, v in resources.items())
+            self.assertEqual(expected, self.sch.resources())
+
         config.getintdict.return_value = pre_reload
         self.sch.update_resources()
         config.getintdict.assert_called_once_with('resources')
-        self.assertEqual(pre_reload, self.sch._resources)
+        check_resources(pre_reload)
 
         def reload_config():
             config.getintdict.return_value = post_reload
@@ -291,7 +295,7 @@ class CentralPlannerTest(unittest.TestCase):
         config.getintdict.reset_mock()
         self.sch.update_resources()
         config.getintdict.assert_called_once_with('resources')
-        self.assertEqual(post_reload, self.sch._resources)
+        check_resources(post_reload)
 
     def test_priority_update_with_pruning(self):
         self.setTime(0)
