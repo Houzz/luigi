@@ -38,6 +38,69 @@ class TaskTest(unittest.TestCase):
         other = DummyTask.from_str_params(original.to_str_params(), {})
         self.assertEqual(original, other)
 
+    def test_undo_without_remove(self):
+        class TestTask(luigi.Task):
+            def output(self):
+                return object()
+
+        self.assertRaises(NotImplementedError, TestTask().undo)
+
+    def test_undo_overridden_complete_function(self):
+        class TestTask(luigi.Task):
+            def complete(self):
+                return True
+
+        self.assertRaises(NotImplementedError, TestTask().undo)
+
+    def test_undo_do_not_remove_files_that_dont_exist(self):
+        class RemoveErrorOutput(object):
+            def exists(self):
+                return False
+            def remove(self):
+                assert False
+
+        class TestTask(luigi.Task):
+            def output(self):
+                return RemoveErrorOutput()
+
+        TestTask().undo()
+
+    def test_undo_remove_existing_file(self):
+        class RemovableFile(object):
+            _exists = True
+            def exists(self):
+                return self._exists
+            def remove(self):
+                self._exists = False
+
+        class TestTask(luigi.Task):
+            _output = RemovableFile()
+            def output(self):
+                return self._output
+
+        t = TestTask()
+        self.assertTrue(t.complete())
+        t.undo()
+        self.assertFalse(t.complete())
+
+    def test_undo_mixed_existing_files(self):
+        class RemovableFile(object):
+            def __init__(self, i):
+                self._exists = i % 3 > 0
+            def exists(self):
+                return self._exists
+            def remove(self):
+                self._exists = False
+
+        class TestTask(luigi.Task):
+            _output = map(RemovableFile, range(11))
+            def output(self):
+                return self._output
+
+        t = TestTask()
+        self.assertEqual(7, sum(f.exists() for f in t.output()))
+        t.undo()
+        self.assertFalse(any(f.exists() for f in t.output()))
 
 if __name__ == '__main__':
     unittest.main()

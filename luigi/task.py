@@ -494,6 +494,18 @@ class Task(object):
 
         return all(itertools.imap(lambda output: output.exists(), outputs))
 
+    def undo(self):
+        if self.complete.__func__ is not Task.complete.__func__:
+            raise NotImplementedError("The base undo cannot be used with an overridden complete "
+                                      "function")
+        outputs = flatten(self.output())
+        if not all(itertools.imap(lambda output: hasattr(output, 'remove'), outputs)):
+            raise NotImplementedError("Cannot undo output that lacks a remove function")
+
+        for output in outputs:
+            if output.exists():
+                output.remove()
+
     def actual_complete(self):
         """Check if a task is complete and also not dirty.
 
