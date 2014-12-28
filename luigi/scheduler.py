@@ -277,6 +277,11 @@ class SimpleTaskState(object):
             self.set_status(task, FAILED, config)
             task.failures.clear()
 
+    def set_supersedes_bucket(self, task, new_bucket):
+        self._supersedes_buckets[task.supersedes_bucket].discard(task)
+        task.supersedes_bucket = new_bucket
+        self._supersedes_buckets[task.supersedes_bucket].add(task)
+
     def set_status(self, task, new_status, config=None):
         if new_status == FAILED:
             assert config is not None
@@ -359,7 +364,7 @@ class SimpleTaskState(object):
         for task in delete_tasks:
             task_obj = self._tasks.pop(task)
             self._status_tasks[task_obj.status].pop(task)
-            self._supersedes_buckets[getattr(task, 'supersedes_bucket', None)].discard(task)
+            self._supersedes_buckets[task_obj.supersedes_bucket].discard(task)
 
     def get_active_workers(self, last_active_lt=None):
         for worker in self._active_workers.itervalues():
@@ -521,9 +526,8 @@ class CentralPlannerScheduler(Scheduler):
 
         task.stakeholders.add(worker)
         task.resources = resources
-        task.supersedes_bucket = supersedes_bucket
+        self._state.set_supersedes_bucket(task, supersedes_bucket)
         task.supersedes_priority = supersedes_priority
-        self._state.get_task(task_id, setdefault=task)  # update task info
 
         # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
         # Otherwise the task dependencies might end up being pruned if scheduling takes a long time

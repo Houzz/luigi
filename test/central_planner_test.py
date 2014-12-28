@@ -599,6 +599,12 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertFalse(self.sch.get_work('X')['task_id'])
         self.assertEqual('B', self.sch.get_work('Y')['task_id'])
 
+    def test_change_bucket(self):
+        self.sch.add_task(WORKER, 'A', supersedes_bucket='a', supersedes_priority=10)
+        self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority=10)
+        self.sch.add_task(WORKER, 'B', supersedes_bucket='a', priority=10)
+        self.check_task_order('BA')
+
     def test_unique_tasks(self):
         self.sch.add_task(WORKER, 'A')
         self.sch.add_task(WORKER, 'B')
