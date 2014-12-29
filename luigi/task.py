@@ -271,8 +271,9 @@ class Task(object):
     # task requires 1 unit of the scp resource.
     resources = {}
 
-    # Number of seconds after which to time out the run function. No timeout if set to 0.
-    worker_timeout = configuration.get_config().getint('core', 'worker-timeout', 0)
+    # Number of seconds after which to time out the run function. No timeout if set to 0. Defaults
+    # to 0 or value in client.cfg
+    worker_timeout = None
 
     @classmethod
     def event_handler(cls, event):
@@ -480,7 +481,7 @@ class Task(object):
     def complete(self):
         """
             If the task has any outputs, return ``True`` if all outputs exists.
-            Otherwise, return ``False`.
+            Otherwise, return ``False``.
 
             However, you may freely override this method with custom logic.
         """
@@ -664,7 +665,7 @@ class Task(object):
 def externalize(task):
     """Returns an externalized version of the Task.
 
-    See py:class:`ExternalTask`.
+    See :py:class:`ExternalTask`.
     """
     task.run = NotImplemented
     return task

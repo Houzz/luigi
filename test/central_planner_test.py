@@ -517,14 +517,14 @@ class CentralPlannerTest(unittest.TestCase):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for c in 'ABCD':
             sch.add_task(WORKER, c)
-        self.assertItemsEqual('ABCD', sch.task_list('PENDING', '', False))
+        self.assertEqual(set('ABCD'), set(sch.task_list('PENDING', '', False).keys()))
         self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', ''))
 
     def test_task_list_within_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=4)
         for c in 'ABCD':
             sch.add_task(WORKER, c)
-        self.assertItemsEqual('ABCD', sch.task_list('PENDING', ''))
+        self.assertEqual(set('ABCD'), set(sch.task_list('PENDING', '').keys()))
 
     def test_task_lists_some_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
@@ -532,7 +532,7 @@ class CentralPlannerTest(unittest.TestCase):
             sch.add_task(WORKER, c, 'DONE')
         for c in 'EFG':
             sch.add_task(WORKER, c)
-        self.assertItemsEqual('EFG', sch.task_list('PENDING', ''))
+        self.assertEqual(set('EFG'), set(sch.task_list('PENDING', '').keys()))
         self.assertEqual({'num_tasks': 4}, sch.task_list('DONE', ''))
 
     def test_priority_update_dependency_chain(self):

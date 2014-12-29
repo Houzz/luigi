@@ -53,13 +53,15 @@ class TaskProcess(multiprocessing.Process):
     ''' Wrap all task execution in this class.
 
     Mainly for convenience since this is run in a separate process. '''
-    def __init__(self, task, worker_id, result_queue, random_seed=False):
+    def __init__(self, task, worker_id, result_queue, random_seed=False, worker_timeout=0):
         super(TaskProcess, self).__init__()
         self.task = task
         self.worker_id = worker_id
         self.result_queue = result_queue
         self.random_seed = random_seed
-        self.timeout_time = time.time() + task.worker_timeout if task.worker_timeout else None
+        if task.worker_timeout is not None:
+            worker_timeout = task.worker_timeout
+        self.timeout_time = time.time() + worker_timeout if worker_timeout else None
 
     def run(self):
         logger.info('[pid %s] Worker %s running   %s', os.getpid(), self.worker_id, self.task.task_id)
@@ -145,7 +147,7 @@ class SingleProcessPool(object):
     """
 
     def apply_async(self, function, args):
-        return apply(function, args)
+        return function(*args)
 
 
 class DequeQueue(collections.deque):
@@ -187,7 +189,8 @@ class Worker(object):
 
     def __init__(self, scheduler=CentralPlannerScheduler(), worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
-                 wait_interval=None, max_reschedules=None, count_uniques=None):
+                 wait_interval=None, max_reschedules=None, count_uniques=None,
+                 worker_timeout=None):
         self.worker_processes = int(worker_processes)
         self._worker_info = self._generate_worker_info()
 
@@ -216,6 +219,10 @@ class Worker(object):
         if max_reschedules is None:
             max_reschedules = config.getint('core', 'max-reschedules', 1)
         self.__max_reschedules = max_reschedules
+
+        if worker_timeout is None:
+            worker_timeout = configuration.get_config().getint('core', 'worker-timeout', 0)
+        self.__worker_timeout = worker_timeout
 
         self._id = worker_id
         self._scheduler = scheduler
@@ -482,7 +489,8 @@ class Worker(object):
     def _run_task(self, task_id):
         task = self._scheduled_tasks[task_id]
         p = TaskProcess(task, self._id, self._task_result_queue,
-                        random_seed=bool(self.worker_processes > 1))
+                        random_seed=bool(self.worker_processes > 1),
+                        worker_timeout=self.__worker_timeout)
         self._running_tasks[task_id] = p
 
         if self.worker_processes > 1:
@@ -564,8 +572,8 @@ class Worker(object):
 
                 # keep out of infinite loops by not rescheduling too many times
                 for task_id in missing:
-                    self.unfulfilled_counts[task.task_id] += 1
-                    if (self.unfulfilled_counts[task.task_id] >
+                    self.unfulfilled_counts[task_id] += 1
+                    if (self.unfulfilled_counts[task_id] >
                             self.__max_reschedules):
                         reschedule = False
                 if reschedule:

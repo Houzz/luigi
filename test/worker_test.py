@@ -13,6 +13,7 @@
 # the License.
 
 import mock
+import shutil
 import time
 from luigi.scheduler import CentralPlannerScheduler
 import luigi.worker
@@ -240,14 +241,18 @@ class WorkerTest(unittest.TestCase):
                         for line in d.open('r'):
                             print >>f, '%d: %s' % (i, line.strip())
 
-        t = DynamicRequires(p=tempfile.mktemp())
-        luigi.build([t], local_scheduler=True)
-        self.assertTrue(t.complete())
+        p = tempfile.mkdtemp()
+        try:
+            t = DynamicRequires(p=p)
+            luigi.build([t], local_scheduler=True)
+            self.assertTrue(t.complete())
 
-        # loop through output and verify
-        f = t.output().open('r')
-        for i in xrange(7):
-            self.assertEqual(f.readline().strip(), '%d: Done!' % i)
+            # loop through output and verify
+            f = t.output().open('r')
+            for i in xrange(7):
+                self.assertEqual(f.readline().strip(), '%d: Done!' % i)
+        finally:
+            shutil.rmtree(p)
 
     def test_avoid_infinite_reschedule(self):
         class A(Task):
@@ -263,6 +268,41 @@ class WorkerTest(unittest.TestCase):
 
         self.assertTrue(self.w.add(B()))
         self.assertFalse(self.w.run())
+
+    def test_allow_reschedule_with_many_missing_deps(self):
+        class A(Task):
+            """ Task that must run twice to succeed """
+            i = luigi.IntParameter()
+
+            runs = 0
+
+            def complete(self):
+                return self.runs >= 2
+
+            def run(self):
+                self.runs += 1
+
+        class B(Task):
+            done = False
+
+            def requires(self):
+                return map(A, range(20))
+
+            def complete(self):
+                return self.done
+
+            def run(self):
+                self.done = True
+
+        b = B()
+        w = Worker(scheduler=self.sch, worker_id='X', max_reschedules=1)
+        self.assertTrue(w.add(b))
+        self.assertFalse(w.run())
+
+        # For b to be done, we must have rescheduled its dependencies to run them twice
+        self.assertTrue(b.complete())
+        self.assertTrue(all(a.complete() for a in b.deps()))
+
 
     def test_interleaved_workers(self):
         class A(DummyTask):
@@ -612,7 +652,7 @@ class SuicidalWorker(luigi.Task):
 
 
 class HungWorker(luigi.Task):
-    worker_timeout = luigi.IntParameter()
+    worker_timeout = luigi.IntParameter(default=None)
 
     def run(self):
         while True:
@@ -668,19 +708,35 @@ class MultipleWorkersTest(unittest.TestCase):
         luigi.build([HungWorker(0.1)], workers=2, local_scheduler=True)
 
     @mock.patch('luigi.worker.time')
-    def test_purge_hung_worker_timeout_time(self, mock_time):
-        w = Worker(worker_processes=2, wait_interval=0.01)
+    def test_purge_hung_worker_default_timeout_time(self, mock_time):
+        w = Worker(worker_processes=2, wait_interval=0.01, worker_timeout=5)
+        mock_time.time.return_value = 0
+        w.add(HungWorker())
+        w._run_task('HungWorker(worker_timeout=None)')
+
+        mock_time.time.return_value = 5
+        w._handle_next_task()
+        self.assertEqual(1, len(w._running_tasks))
+
+        mock_time.time.return_value = 6
+        w._handle_next_task()
+        self.assertEqual(0, len(w._running_tasks))
+
+    @mock.patch('luigi.worker.time')
+    def test_purge_hung_worker_override_timeout_time(self, mock_time):
+        w = Worker(worker_processes=2, wait_interval=0.01, worker_timeout=5)
         mock_time.time.return_value = 0
         w.add(HungWorker(10))
         w._run_task('HungWorker(worker_timeout=10)')
 
-        mock_time.time.return_value = 9
+        mock_time.time.return_value = 10
         w._handle_next_task()
         self.assertEqual(1, len(w._running_tasks))
 
         mock_time.time.return_value = 11
         w._handle_next_task()
         self.assertEqual(0, len(w._running_tasks))
+
 
 if __name__ == '__main__':
     unittest.main()
