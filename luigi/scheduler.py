@@ -364,7 +364,7 @@ class SimpleTaskState(object):
         for task in delete_tasks:
             task_obj = self._tasks.pop(task)
             self._status_tasks[task_obj.status].pop(task)
-            self._supersedes_buckets[task_obj.supersedes_bucket].remove(task_obj)
+            self._supersedes_buckets[task_obj.supersedes_bucket].discard(task_obj)
 
     def get_active_workers(self, last_active_lt=None):
         for worker in self._active_workers.itervalues():
