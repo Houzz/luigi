@@ -42,7 +42,6 @@ class TaskTest(unittest.TestCase):
         class TestTask(luigi.Task):
             def output(self):
                 return object()
-
         self.assertRaises(NotImplementedError, TestTask().undo)
 
     def test_undo_overridden_complete_function(self):
@@ -101,6 +100,25 @@ class TaskTest(unittest.TestCase):
         self.assertEqual(7, sum(f.exists() for f in t.output()))
         t.undo()
         self.assertFalse(any(f.exists() for f in t.output()))
+
+    def test_id_to_name_and_params(self):
+        task_id = "InputText(date=2014-12-29)"
+        (name, params) = luigi.task.id_to_name_and_params(task_id)
+        self.assertEquals(name, "InputText")
+        self.assertEquals(params, dict(date="2014-12-29"))
+
+    def test_id_to_name_and_params_multiple_args(self):
+        task_id = "InputText(date=2014-12-29,foo=bar)"
+        (name, params) = luigi.task.id_to_name_and_params(task_id)
+        self.assertEquals(name, "InputText")
+        self.assertEquals(params, dict(date="2014-12-29", foo="bar"))
+
+    def test_id_to_name_and_params_list_args(self):
+        task_id = "InputText(date=2014-12-29,foo=[bar,baz-foo])"
+        (name, params) = luigi.task.id_to_name_and_params(task_id)
+        self.assertEquals(name, "InputText")
+        self.assertEquals(params, dict(date="2014-12-29", foo=["bar","baz-foo"]))
+
 
 if __name__ == '__main__':
     unittest.main()

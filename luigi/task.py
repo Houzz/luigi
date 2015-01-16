@@ -48,18 +48,20 @@ def id_to_name_and_params(task_id):
         ``('Foo', {'bar': 'bar', 'baz': 'baz'})``
     '''
     name_chars = pp.alphanums + '_'
+    # modified version of pp.printables. Removed '[]', '()', ','
+    value_chars = pp.alphanums + '\'!"#$%&*+-./:;<=>?@\\^_`{|}~'
     parameter = (
         (pp.Word(name_chars) +
          pp.Literal('=').suppress() +
          ((pp.Literal('(').suppress() | pp.Literal('[').suppress()) +
-          pp.ZeroOrMore(pp.Word(name_chars) +
+          pp.ZeroOrMore(pp.Word(value_chars) +
                         pp.ZeroOrMore(pp.Literal(',')).suppress()) +
           (pp.Literal(')').suppress() |
            pp.Literal(']').suppress()))).setResultsName('list_params',
                                                         listAllMatches=True) |
         (pp.Word(name_chars) +
          pp.Literal('=').suppress() +
-         pp.Word(name_chars)).setResultsName('params', listAllMatches=True))
+         pp.Word(value_chars)).setResultsName('params', listAllMatches=True))
 
     parser = (
         pp.Word(name_chars).setResultsName('task') +
@@ -512,6 +514,15 @@ class Task(object):
 
         """
         return self.complete() and not self.is_dirty()
+
+    @classmethod
+    def bulk_complete(cls, parameter_tuples):
+        """Returns those of parameter_tuples for which this Task is complete.
+
+        Override (with an efficient implementation) for efficient scheduling
+        with range tools. Keep the logic consistent with that of complete().
+        """
+        raise NotImplementedError
 
     def output(self):
         """The output that this Task produces.

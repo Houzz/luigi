@@ -218,6 +218,9 @@ client
 client_version
   Optionally specifies hadoop client version for snakebite.
 
+effective_user
+  Optionally specifies the effective user for snakebite.
+
 namenode_host
   The hostname of the namenode. Needed for snakebite if
   snakebite_autoconfig is not set.
@@ -333,6 +336,8 @@ scalding-libjars
   Libjars directory for scalding on your machine. Defaults to either
   SCALDING_HOME/libjars or /usr/share/scalding/libjars
 
+
+.. _scheduler-config:
 
 [scheduler]
 -----------
