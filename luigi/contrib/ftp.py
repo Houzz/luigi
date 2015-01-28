@@ -7,6 +7,7 @@ You can also find unittest for each class.
 
 Be aware that normal ftp do not provide secure communication.
 """
+import datetime
 import os
 import random
 import ftplib
@@ -17,27 +18,38 @@ from luigi.format import FileWrapper
 
 
 class RemoteFileSystem(luigi.target.FileSystem):
-    def __init__(self, host, username=None, password=None):
+    def __init__(self, host, username=None, password=None, port=21):
         self.host = host
         self.username = username
         self.password = password
+        self.port = port
 
     def _connect(self):
         """ Log in to ftp """
-        self.ftpcon = ftplib.FTP(self.host, self.username, self.password)
+        self.ftpcon = ftplib.FTP()
+        self.ftpcon.connect(self.host, self.port)
+        self.ftpcon.login(self.username, self.password)
 
-    def exists(self, path):
-        """ Return `True` if file or directory at `path` exist, False otherwise """
+    def exists(self, path, mtime=None):
+        """ Return `True` if file or directory at `path` exist, False otherwise
+            Additional check on modified time when mtime is passed in. Return
+            False if the file's modified time is older mtime.
+        """
         self._connect()
         files = self.ftpcon.nlst(path)
 
-        # empty list, means do not exists
-        if not files:
-            return False
+        result = False
+        if files:
+            if mtime:
+                mdtm = self.ftpcon.sendcmd('MDTM ' + path)
+                modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S")
+                result = modified > mtime
+            else:
+                result = True
 
         self.ftpcon.quit()
 
-        return True
+        return result
 
     def _rm_recursive(self, ftp, path):
         """
@@ -174,10 +186,11 @@ class RemoteTarget(luigi.target.FileSystemTarget):
     Target used for reading from remote files. The target is implemented using
     ssh commands streaming data over the network.
     """
-    def __init__(self, path, host, format=None, username=None, password=None):
+    def __init__(self, path, host, format=None, username=None, password=None, port=21, mtime=None):
         self.path = path
+        self.mtime = mtime
         self.format = format
-        self._fs = RemoteFileSystem(host, username, password)
+        self._fs = RemoteFileSystem(host, username, password, port)
 
     @property
     def fs(self):
@@ -211,6 +224,9 @@ class RemoteTarget(luigi.target.FileSystemTarget):
             return fileobj
         else:
             raise Exception('mode must be r/w')
+
+    def exists(self):
+        return self.fs.exists(self.path, self.mtime)
 
     def put(self, local_path):
         self.fs.put(local_path, self.path)
