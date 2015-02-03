@@ -18,17 +18,23 @@ from luigi.format import FileWrapper
 
 
 class RemoteFileSystem(luigi.target.FileSystem):
-    def __init__(self, host, username=None, password=None, port=21):
+    def __init__(self, host, username=None, password=None, port=21, tls=False):
         self.host = host
         self.username = username
         self.password = password
         self.port = port
+        self.tls = tls
 
     def _connect(self):
         """ Log in to ftp """
-        self.ftpcon = ftplib.FTP()
+        if self.tls:
+            self.ftpcon = ftplib.FTP_TLS()
+        else:
+            self.ftpcon = ftplib.FTP()
         self.ftpcon.connect(self.host, self.port)
         self.ftpcon.login(self.username, self.password)
+        if self.tls:
+            self.ftpcon.prot_p()
 
     def exists(self, path, mtime=None):
         """ Return `True` if file or directory at `path` exist, False otherwise
@@ -186,11 +192,12 @@ class RemoteTarget(luigi.target.FileSystemTarget):
     Target used for reading from remote files. The target is implemented using
     ssh commands streaming data over the network.
     """
-    def __init__(self, path, host, format=None, username=None, password=None, port=21, mtime=None):
+    def __init__(self, path, host, format=None, username=None, password=None, port=21, mtime=None, tls=False):
         self.path = path
         self.mtime = mtime
         self.format = format
-        self._fs = RemoteFileSystem(host, username, password, port)
+        self.tls = tls
+        self._fs = RemoteFileSystem(host, username, password, port, tls)
 
     @property
     def fs(self):
