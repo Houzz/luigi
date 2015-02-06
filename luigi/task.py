@@ -24,6 +24,7 @@ import pymysql
 import traceback
 import warnings
 
+import luigi_state
 import parameter
 
 Parameter = parameter.Parameter
@@ -261,6 +262,8 @@ class Task(object):
     # Number of seconds after which to time out the run function. No timeout if set to 0. Defaults
     # to 0 or value in client.cfg
     worker_timeout = None
+
+    _dirty_job_created = None
 
     @classmethod
     def event_handler(cls, event):
@@ -616,16 +619,24 @@ class Task(object):
         if not dirty_jobs_enabled:
             return False
 
-        with self._dirty_jobs_db_cursor() as cursor:
-            table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
+        table = config.get('core', 'worker-dirty-jobs-table', 'table_name')
+        if luigi_state.get_state() == luigi_state.SCHEDULING:
+            if Task._dirty_job_created is None:
+                sql = "SELECT task_id, created FROM `%s`" % table
+                with self._dirty_jobs_db_cursor() as cursor:
+                    cursor.execute(sql)
+                    Task._dirty_job_created = dict(cursor.fetchall())
+            dirty_created = Task._dirty_job_created.get(self.task_id)
+
+        else:
             sql = "SELECT created FROM `%s` WHERE task_id = '%s'" % (table, self.task_id)
-            rows = cursor.execute(sql)
-            if rows < 1:
-                return False
-            else:
-                r = cursor.fetchone()
-                self._dirty_created = r[0]
-                return True
+            with self._dirty_jobs_db_cursor() as cursor:
+                rows = cursor.execute(sql)
+                dirty_created = cursor.fetchone()[0] if rows > 0 else None
+
+        if dirty_created is not None:
+            self._dirty_created = dirty_created
+        return dirty_created is not None
 
     def _dirty_jobs_table(self):
         config = configuration.get_config()
