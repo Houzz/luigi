@@ -1,46 +1,66 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
 import logging
 import os
 import re
 import subprocess
 
-from luigi import LocalTarget
-from luigi.task import flatten
 import luigi.configuration
 import luigi.hadoop
 import luigi.hadoop_jar
 import luigi.hdfs
+from luigi import LocalTarget
+from luigi.task import flatten
 
 logger = logging.getLogger('luigi-interface')
 
 """
 Scalding support for Luigi.
 
-Example configuration section in client.cfg:
-[scalding]
-# scala home directory, which should include a lib subdir with scala jars.
-scala-home: /usr/share/scala
+Example configuration section in client.cfg::
 
-# scalding home directory, which should include a lib subdir with
-# scalding-*-assembly-* jars as built from the official Twitter build script.
-scalding-home: /usr/share/scalding
+    [scalding]
+    # scala home directory, which should include a lib subdir with scala jars.
+    scala-home: /usr/share/scala
 
-# provided dependencies, e.g. jars required for compiling but not executing
-# scalding jobs. Currently requred jars:
-# org.apache.hadoop/hadoop-core/0.20.2
-# org.slf4j/slf4j-log4j12/1.6.6
-# log4j/log4j/1.2.15
-# commons-httpclient/commons-httpclient/3.1
-# commons-cli/commons-cli/1.2
-# org.apache.zookeeper/zookeeper/3.3.4
-scalding-provided: /usr/share/scalding/provided
+    # scalding home directory, which should include a lib subdir with
+    # scalding-*-assembly-* jars as built from the official Twitter build script.
+    scalding-home: /usr/share/scalding
 
-# additional jars required.
-scalding-libjars: /usr/share/scalding/libjars
+    # provided dependencies, e.g. jars required for compiling but not executing
+    # scalding jobs. Currently requred jars:
+    # org.apache.hadoop/hadoop-core/0.20.2
+    # org.slf4j/slf4j-log4j12/1.6.6
+    # log4j/log4j/1.2.15
+    # commons-httpclient/commons-httpclient/3.1
+    # commons-cli/commons-cli/1.2
+    # org.apache.zookeeper/zookeeper/3.3.4
+    scalding-provided: /usr/share/scalding/provided
+
+    # additional jars required.
+    scalding-libjars: /usr/share/scalding/libjars
 """
 
 
 class ScaldingJobRunner(luigi.hadoop.JobRunner):
-    """JobRunner for `pyscald` commands. Used to run a ScaldingJobTask"""
+    """
+    JobRunner for `pyscald` commands. Used to run a ScaldingJobTask.
+    """
 
     def __init__(self):
         conf = luigi.configuration.get_config()
@@ -129,8 +149,7 @@ class ScaldingJobRunner(luigi.hadoop.JobRunner):
         job_jar = job.jar()
         if job_jar:
             if not os.path.exists(job_jar):
-                logger.error("Can't find jar: {0}, full path {1}".format(
-                             job_jar, os.path.abspath(job_jar)))
+                logger.error("Can't find jar: %s, full path %s", job_jar, os.path.abspath(job_jar))
                 raise Exception("job jar does not exist")
             if not job.job_class():
                 logger.error("Undefined job_class()")
@@ -142,8 +161,7 @@ class ScaldingJobRunner(luigi.hadoop.JobRunner):
             logger.error("Both source() and jar() undefined")
             raise Exception("Both source() and jar() undefined")
         if not os.path.exists(job_src):
-            logger.error("Can't find source: {0}, full path {1}".format(
-                         job_src, os.path.abspath(job_src)))
+            logger.error("Can't find source: %s, full path %s", job_src, os.path.abspath(job_src))
             raise Exception("job source does not exist")
 
         job_src = job.source()
@@ -203,58 +221,79 @@ class ScaldingJobRunner(luigi.hadoop.JobRunner):
 
 
 class ScaldingJobTask(luigi.hadoop.BaseHadoopJobTask):
-    """A job task for Scalding that define a scala source and (optional) main
-    method
+    """
+    A job task for Scalding that define a scala source and (optional) main method.
 
     requires() should return a dictionary where the keys are Scalding argument
-    names and values are sub tasks or lists of subtasks. For example:
-    {'input1': A, 'input2': C} => --input1 <Aoutput> --input2 <Coutput>
-    {'input1': [A, B], 'input2': [C]} => --input1 <Aoutput> <Boutput> --input2 <Coutput>
+    names and values are sub tasks or lists of subtasks.
+
+    For example:
+
+    .. code-block:: python
+
+        {'input1': A, 'input2': C} => --input1 <Aoutput> --input2 <Coutput>
+        {'input1': [A, B], 'input2': [C]} => --input1 <Aoutput> <Boutput> --input2 <Coutput>
     """
 
     def relpath(self, current_file, rel_path):
-        """Compute path given current file and relative path"""
+        """
+        Compute path given current file and relative path.
+        """
         script_dir = os.path.dirname(os.path.abspath(current_file))
         rel_path = os.path.abspath(os.path.join(script_dir, rel_path))
         return rel_path
 
     def source(self):
-        """Path to the scala source for this Scalding Job
+        """
+        Path to the scala source for this Scalding Job
+
         Either one of source() or jar() must be specified.
         """
         return None
 
     def jar(self):
-        """Path to the jar file for this Scalding Job
+        """
+        Path to the jar file for this Scalding Job
+
         Either one of source() or jar() must be specified.
         """
         return None
 
     def extra_jars(self):
-        """Extra jars for building and running this Scalding Job"""
+        """
+        Extra jars for building and running this Scalding Job.
+        """
         return []
 
     def job_class(self):
-        """optional main job class for this Scalding Job"""
+        """
+        optional main job class for this Scalding Job.
+        """
         return None
 
     def job_runner(self):
         return ScaldingJobRunner()
 
     def atomic_output(self):
-        """If True, then rewrite output arguments to be temp locations and
-        atomically move them into place after the job finishes"""
+        """
+        If True, then rewrite output arguments to be temp locations and
+        atomically move them into place after the job finishes.
+        """
         return True
 
     def requires(self):
         return {}
 
     def job_args(self):
-        """Extra arguments to pass to the Scalding job"""
+        """
+        Extra arguments to pass to the Scalding job.
+        """
         return []
 
     def args(self):
-        """returns an array of args to pass to the job."""
+        """
+        Returns an array of args to pass to the job.
+        """
         arglist = []
         for k, v in self.requires_hadoop().iteritems():
             arglist.append('--' + k)

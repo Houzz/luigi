@@ -1,16 +1,36 @@
-from unittest import TestCase
-from mock import patch
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
 import random
-from luigi import Task, build, Event
+from unittest import TestCase
+
+import luigi
+from luigi import Event, Task, build
 from luigi.mock import MockFile, MockFileSystem
 from luigi.task import flatten
-import luigi
+from mock import patch
+
 
 class DummyException(Exception):
     pass
 
+
 class EmptyTask(Task):
-    fail = luigi.BooleanParameter()
+    fail = luigi.BoolParameter()
 
     def run(self):
         if self.fail:
@@ -18,12 +38,14 @@ class EmptyTask(Task):
 
 
 class TaskWithCallback(Task):
+
     def run(self):
         print "Triggering event"
         self.trigger_event("foo event")
 
 
 class TestEventCallbacks(TestCase):
+
     def test_start_handler(self):
         saved_tasks = []
 
@@ -100,7 +122,9 @@ def eval_contents(f):
     with f.open('r') as i:
         return eval(i.read())
 
+
 class ConsistentMockOutput(object):
+
     '''
     Computes output location and contents from the task and its parameters. Rids us of writing ad-hoc boilerplate output() et al.
     '''
@@ -113,29 +137,41 @@ class ConsistentMockOutput(object):
         with self.output().open('w') as o:
             o.write(repr([self.task_id] + sorted([eval_contents(i) for i in flatten(self.input())])))
 
+
 class HappyTestFriend(ConsistentMockOutput, luigi.Task):
+
     '''
     Does trivial "work", outputting the list of inputs. Results in a convenient lispy comparable.
     '''
+
     def run(self):
         self.produce_output()
+
 
 class D(ConsistentMockOutput, luigi.ExternalTask):
     pass
 
+
 class C(HappyTestFriend):
+
     def requires(self):
         return [D(self.param), D(self.param + 1)]
 
+
 class B(HappyTestFriend):
+
     def requires(self):
         return C(self.param)
 
+
 class A(HappyTestFriend):
+
     def requires(self):
         return [B(1), B(2)]
 
+
 class TestDependencyEvents(TestCase):
+
     def tearDown(self):
         MockFileSystem().remove('')
 
@@ -146,9 +182,11 @@ class TestDependencyEvents(TestCase):
         @luigi.Task.event_handler(Event.DEPENDENCY_DISCOVERED)
         def callback_dependency_discovered(*args):
             actual_events.setdefault(Event.DEPENDENCY_DISCOVERED, set()).add(tuple(map(lambda t: t.task_id, args)))
+
         @luigi.Task.event_handler(Event.DEPENDENCY_MISSING)
         def callback_dependency_missing(*args):
             actual_events.setdefault(Event.DEPENDENCY_MISSING, set()).add(tuple(map(lambda t: t.task_id, args)))
+
         @luigi.Task.event_handler(Event.DEPENDENCY_PRESENT)
         def callback_dependency_present(*args):
             actual_events.setdefault(Event.DEPENDENCY_PRESENT, set()).add(tuple(map(lambda t: t.task_id, args)))

@@ -1,5 +1,22 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 """
-This library is a wrapper of ftplib. It is convenient to move data from/to FTP.
+This library is a wrapper of ftplib.
+It is convenient to move data from/to FTP.
 
 There is an example on how to use it (example/ftp_experiment_outputs.py)
 
@@ -7,17 +24,20 @@ You can also find unittest for each class.
 
 Be aware that normal ftp do not provide secure communication.
 """
+
 import datetime
+import ftplib
 import os
 import random
-import ftplib
+
 import luigi
-import luigi.target
 import luigi.format
+import luigi.target
 from luigi.format import FileWrapper
 
 
 class RemoteFileSystem(luigi.target.FileSystem):
+
     def __init__(self, host, username=None, password=None, port=21, tls=False):
         self.host = host
         self.username = username
@@ -26,7 +46,9 @@ class RemoteFileSystem(luigi.target.FileSystem):
         self.tls = tls
 
     def _connect(self):
-        """ Log in to ftp """
+        """
+        Log in to ftp.
+        """
         if self.tls:
             self.ftpcon = ftplib.FTP_TLS()
         else:
@@ -37,9 +59,12 @@ class RemoteFileSystem(luigi.target.FileSystem):
             self.ftpcon.prot_p()
 
     def exists(self, path, mtime=None):
-        """ Return `True` if file or directory at `path` exist, False otherwise
-            Additional check on modified time when mtime is passed in. Return
-            False if the file's modified time is older mtime.
+        """
+        Return `True` if file or directory at `path` exist, False otherwise.
+
+        Additional check on modified time when mtime is passed in.
+
+        Return False if the file's modified time is older mtime.
         """
         self._connect()
         files = self.ftpcon.nlst(path)
@@ -88,11 +113,14 @@ class RemoteFileSystem(luigi.target.FileSystem):
             print('_rm_recursive: Could not remove {0}: {1}'.format(path, e))
 
     def remove(self, path, recursive=True):
-        """ Remove file or directory at location ``path``
+        """
+        Remove file or directory at location ``path``.
 
-        :param str path: a path within the FileSystem to remove.
-        :param bool recursive: if the path is a directory, recursively remove the directory and all
-                               of its descendants. Defaults to ``True``.
+        :param path: a path within the FileSystem to remove.
+        :type path: str
+        :param recursive: if the path is a directory, recursively remove the directory and
+                          all of its descendants. Defaults to ``True``.
+        :type recursive: bool
         """
         self._connect()
 
@@ -100,7 +128,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
             self._rm_recursive(self.ftpcon, path)
         else:
             try:
-                #try delete file
+                # try delete file
                 self.ftpcon.delete(path)
             except ftplib.all_errors:
                 # it is a folder, delete it
@@ -143,18 +171,28 @@ class RemoteFileSystem(luigi.target.FileSystem):
         tmp_local_path = local_path + '-luigi-tmp-%09d' % random.randrange(0, 1e10)
         # download file
         self._connect()
-        self.ftpcon.retrbinary('RETR %s' % path,  open(tmp_local_path, 'wb').write)
+        self.ftpcon.retrbinary('RETR %s' % path, open(tmp_local_path, 'wb').write)
         self.ftpcon.quit()
 
         os.rename(tmp_local_path, local_path)
 
 
 class AtomicFtpfile(file):
-    """ Simple class that writes to a temp file and upload to ftp on close().
-     Also cleans up the temp file if close is not invoked.
     """
+    Simple class that writes to a temp file and upload to ftp on close().
+
+    Also cleans up the temp file if close is not invoked.
+    """
+
     def __init__(self, fs, path):
-        self.__tmp_path = self.path + '-luigi-tmp-%09d' % random.randrange(0, 1e10)
+        """
+        Initializes an AtomicFtpfile instance.
+
+        :param fs:
+        :param path:
+        :type path: str
+        """
+        self.__tmp_path = '%s-luigi-tmp-%09d' % (path, random.randrange(0, 1e10))
         self._fs = fs
         self.path = path
         super(AtomicFtpfile, self).__init__(self.__tmp_path, 'w')
@@ -180,6 +218,7 @@ class AtomicFtpfile(file):
     def __exit__(self, exc_type, exc, traceback):
         """
         Close/commit the file if there are no exception
+
         Upload file to ftp
         """
         if exc_type:
@@ -189,9 +228,11 @@ class AtomicFtpfile(file):
 
 class RemoteTarget(luigi.target.FileSystemTarget):
     """
-    Target used for reading from remote files. The target is implemented using
-    ssh commands streaming data over the network.
+    Target used for reading from remote files.
+
+    The target is implemented using ssh commands streaming data over the network.
     """
+
     def __init__(self, path, host, format=None, username=None, password=None, port=21, mtime=None, tls=False):
         self.path = path
         self.mtime = mtime
@@ -204,14 +245,16 @@ class RemoteTarget(luigi.target.FileSystemTarget):
         return self._fs
 
     def open(self, mode):
-        """Open the FileSystem target.
+        """
+        Open the FileSystem target.
 
         This method returns a file-like object which can either be read from or written to depending
         on the specified mode.
 
-        :param str mode: the mode `r` opens the FileSystemTarget in read-only mode, whereas `w` will
-                         open the FileSystemTarget in write mode. Subclasses can implement
-                         additional options.
+        :param mode: the mode `r` opens the FileSystemTarget in read-only mode, whereas `w` will
+                     open the FileSystemTarget in write mode. Subclasses can implement
+                     additional options.
+        :type mode: str
         """
         if mode == 'w':
             if self.format:

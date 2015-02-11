@@ -1,27 +1,31 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-from luigi import File
-from luigi.file import LocalFileSystem 
-import unittest
-import os
-import gzip
 import bz2
-import luigi.format
-import random
 import gc
+import gzip
+import os
+import random
 import shutil
+import unittest
+
+import luigi.format
+from luigi import File
+from luigi.file import LocalFileSystem
 
 
 class FileTest(unittest.TestCase):
@@ -117,7 +121,6 @@ class FileTest(unittest.TestCase):
         self.assertTrue(test_data == f.read())
         f.close()
 
-
     def test_copy(self):
         t = File(self.path)
         f = t.open('w')
@@ -133,6 +136,7 @@ class FileTest(unittest.TestCase):
 
     def test_format_injection(self):
         class CustomFormat(luigi.format.Format):
+
             def pipe_reader(self, input_pipe):
                 input_pipe.foo = "custom read property"
                 return input_pipe
@@ -173,6 +177,7 @@ class FileRelativeTest(FileTest):
 
 
 class TmpFileTest(unittest.TestCase):
+
     def test_tmp(self):
         t = File(is_tmp=True)
         self.assertFalse(t.exists())

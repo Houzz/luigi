@@ -1,23 +1,27 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-import subprocess
 import signal
+import subprocess
 
 
 class FileWrapper(object):
-    """Wrap `file` in a "real" so stuff can be added to it after creation
+    """
+    Wrap `file` in a "real" so stuff can be added to it after creation.
     """
 
     def __init__(self, file_object):
@@ -42,12 +46,15 @@ class FileWrapper(object):
 
 
 class InputPipeProcessWrapper(object):
+
     def __init__(self, command, input_pipe=None):
-        '''
-        @param command a subprocess.Popen instance with stdin=input_pipe and
-        stdout=subprocess.PIPE. Alternatively, just its args argument as a
-        convenience.
-        '''
+        """
+        Initializes a InputPipeProcessWrapper instance.
+
+        :param command: a subprocess.Popen instance with stdin=input_pipe and
+                        stdout=subprocess.PIPE.
+                        Alternatively, just its args argument as a convenience.
+        """
         self._command = command
         self._input_pipe = input_pipe
         self._process = command if isinstance(command, subprocess.Popen) else self.create_subprocess(command)
@@ -94,12 +101,14 @@ class InputPipeProcessWrapper(object):
         return self
 
     def _abort(self):
-        "Call _finish, but eat the exception (if any)."
+        """
+        Call _finish, but eat the exception (if any).
+        """
         try:
             self._finish()
         except KeyboardInterrupt:
             raise
-        except:
+        except BaseException:
             pass
 
     def __exit__(self, type, value, traceback):
@@ -144,7 +153,9 @@ class OutputPipeProcessWrapper(object):
         self.write(line + '\n')
 
     def _finish(self):
-        """ Closes and waits for subprocess to exit """
+        """
+        Closes and waits for subprocess to exit.
+        """
         if self._process.returncode is None:
             self._process.stdin.flush()
             self._process.stdin.close()
@@ -182,7 +193,9 @@ class OutputPipeProcessWrapper(object):
 
 
 class Format(object):
-    """ Interface for format specifications """
+    """
+    Interface for format specifications.
+    """
 
     # TODO Move this to somewhere else?
     @classmethod
@@ -204,6 +217,7 @@ class Format(object):
 
 
 class Gzip(Format):
+
     @classmethod
     def pipe_reader(cls, input_pipe):
         return InputPipeProcessWrapper(['gunzip'], input_pipe)
@@ -214,6 +228,7 @@ class Gzip(Format):
 
 
 class Bzip2(Format):
+
     @classmethod
     def pipe_reader(cls, input_pipe):
         return InputPipeProcessWrapper(['bzcat'], input_pipe)
@@ -221,4 +236,3 @@ class Bzip2(Format):
     @classmethod
     def pipe_writer(cls, output_pipe):
         return OutputPipeProcessWrapper(['bzip2'], output_pipe)
-

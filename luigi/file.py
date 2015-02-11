@@ -1,29 +1,34 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 import os
 import random
-import tempfile
 import shutil
+import tempfile
+
 import luigi.util
-from target import FileSystem, FileSystemTarget
 from luigi.format import FileWrapper
+from target import FileSystem, FileSystemTarget
 
 
 class atomic_file(file):
     # Simple class that writes to a temp file and moves it on close()
     # Also cleans up the temp file if close is not invoked
+
     def __init__(self, path):
         self.__tmp_path = path + '-luigi-tmp-%09d' % random.randrange(0, 1e10)
         self.path = path
@@ -49,14 +54,16 @@ class atomic_file(file):
 
 
 class LocalFileSystem(FileSystem):
-    """ Wrapper for access to file system operations
-
-    Work in progress - add things as needed
     """
+    Wrapper for access to file system operations.
+
+    Work in progress - add things as needed.
+    """
+
     def exists(self, path):
         return os.path.exists(path)
 
-    def mkdir(self, path):
+    def mkdir(self, path, parents=True, raise_if_exists=False):
         os.makedirs(path)
 
     def isdir(self, path):
@@ -81,14 +88,18 @@ class File(FileSystemTarget):
         self.format = format
         self.is_tmp = is_tmp
 
+    def makedirs(self):
+        """
+        Create all parent folders if they do not exist.
+        """
+        normpath = os.path.normpath(self.path)
+        parentfolder = os.path.dirname(normpath)
+        if parentfolder and not os.path.exists(parentfolder):
+            os.makedirs(parentfolder)
+
     def open(self, mode='r'):
         if mode == 'w':
-            # Create folder if it does not exist
-            normpath = os.path.normpath(self.path)
-            parentfolder = os.path.dirname(normpath)
-            if parentfolder and not os.path.exists(parentfolder):
-                os.makedirs(parentfolder)
-
+            self.makedirs()
             if self.format:
                 return self.format.pipe_writer(atomic_file(self.path))
             else:
@@ -122,7 +133,7 @@ class File(FileSystemTarget):
         if fail_if_exists and os.path.exists(new_path):
             raise RuntimeError('Destination exists: %s' % new_path)
         tmp = File(new_path + '-luigi-tmp-%09d' % random.randrange(0, 1e10), is_tmp=True)
-        tmp.open('w')
+        tmp.makedirs()
         shutil.copy(self.path, tmp.fn)
         tmp.move(new_path)
 

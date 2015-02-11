@@ -1,12 +1,29 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 """
 Provides a WebHdfsTarget and WebHdfsClient using the
 python [hdfs](https://pypi.python.org/pypi/hdfs/) library.
 """
+
 from __future__ import absolute_import
 
+import logging
 import os
 import random
-import logging
 import tempfile
 
 from luigi import configuration
@@ -39,6 +56,7 @@ class WebHdfsTarget(FileSystemTarget):
 
 
 class ReadableWebHdfsFile(object):
+
     def __init__(self, path, client):
         self.path = path
         self.client = client
@@ -77,6 +95,7 @@ class AtomicWebHdfsFile(file):
     """
     An Hdfs file that writes to a temp file and put to WebHdfs on close.
     """
+
     def __init__(self, path, client):
         unique_name = 'luigi-webhdfs-tmp-%09d' % random.randrange(0, 1e10)
         self.tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
@@ -93,13 +112,17 @@ class AtomicWebHdfsFile(file):
         return self
 
     def __exit__(self, exc_type, exc, traceback):
-        """Close/commit the file if there are no exception"""
+        """
+        Close/commit the file if there are no exception.
+        """
         if exc_type:
             return
         return file.__exit__(self, exc_type, exc, traceback)
 
     def __del__(self):
-        """Remove the temporary directory"""
+        """
+        Remove the temporary directory.
+        """
         if os.path.exists(self.tmp_path):
             os.remove(self.tmp_path)
 
@@ -126,11 +149,13 @@ class WebHdfsClient(object):
         return self.webhdfs.walk(path, depth=depth)
 
     def exists(self, path):
-        """Returns true if the path exists and false otherwise"""
+        """
+        Returns true if the path exists and false otherwise.
+        """
         try:
             self.webhdfs.status(path)
             return True
-        except webhdfs.util.HdfsError, e:
+        except webhdfs.util.HdfsError as e:
             if str(e).startswith('File does not exist: '):
                 return False
             else:

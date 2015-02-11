@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 
-from collections import defaultdict
-
 import argparse
 import json
 import urllib2
-
+from collections import defaultdict
 
 parser = argparse.ArgumentParser(
     "luigi-grep is used to search for workflows using the luigi scheduler's json api")
@@ -18,6 +16,7 @@ parser.add_argument("--status", help="search for jobs with the given status", de
 
 
 class LuigiGrep(object):
+
     def __init__(self, host, port):
         self._host = host
         self._port = port

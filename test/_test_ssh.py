@@ -1,14 +1,33 @@
-"""Integration tests for ssh module"""
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+"""
+Integration tests for ssh module.
+"""
+
 import gc
 import gzip
 import os
 import random
-import luigi.format
-
-from luigi.contrib.ssh import RemoteContext, RemoteTarget
-import unittest
-import subprocess
 import socket
+import subprocess
+import unittest
+
+import luigi.format
+from luigi.contrib.ssh import RemoteContext, RemoteTarget
 
 working_ssh_host = None  # set this to a working ssh host string (e.g. "localhost") to activate integration tests
 # The following tests require a working ssh server at `working_ssh_host`
@@ -31,6 +50,7 @@ conn.sendall('hello')
 
 
 class TestRemoteContext(unittest.TestCase):
+
     def setUp(self):
         self.context = RemoteContext(working_ssh_host)
 
@@ -71,9 +91,11 @@ class TestRemoteContext(unittest.TestCase):
 
 
 class TestRemoteTarget(unittest.TestCase):
+
     """ These tests assume RemoteContext working
     in order for setUp and tearDown to work
     """
+
     def setUp(self):
         self.ctx = RemoteContext(working_ssh_host)
         self.filepath = "/tmp/luigi_remote_test.dat"
@@ -123,7 +145,7 @@ class TestRemoteTargetAtomicity(unittest.TestCase):
     def _exists(self, path):
         try:
             self.ctx.check_output(["test", "-e", path])
-        except subprocess.CalledProcessError, e:
+        except subprocess.CalledProcessError as e:
             if e.returncode == 1:
                 return False
             else:

@@ -1,22 +1,40 @@
-import subprocess
-import StringIO
-import unittest
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-from mock import patch
+import StringIO
+import subprocess
+import unittest
 
 import luigi
 import luigi.hdfs
-from luigi.mock import MockFile
-from luigi.contrib.spark import SparkJobError, SparkJob, Spark1xJob, PySpark1xJob
 from helpers import with_config
+from luigi.contrib.spark import PySpark1xJob, Spark1xJob, SparkJob, SparkJobError
+from luigi.mock import MockFile
+from mock import patch
 
 
 class HdfsJob(luigi.ExternalTask):
+
     def output(self):
         return luigi.hdfs.HdfsTarget('test')
 
 
 class TestJob(SparkJob):
+
     def requires_hadoop(self):
         return HdfsJob()
 
@@ -51,6 +69,7 @@ class SparkTest(unittest.TestCase):
             arglist_result.append(arglist)
 
             class P(object):
+
                 def wait(self):
                     pass
 
@@ -83,6 +102,7 @@ class SparkTest(unittest.TestCase):
     def test_handle_failed_job(self):
         def Popen_fake(arglist, stdout=None, stderr=None, env=None, close_fds=True):
             class P(object):
+
                 def wait(self):
                     pass
 
@@ -91,7 +111,6 @@ class SparkTest(unittest.TestCase):
 
                 def communicate(self):
                     return 'end'
-
 
             p = P()
             p.returncode = 1
@@ -111,7 +130,7 @@ class SparkTest(unittest.TestCase):
             job = TestJob()
             job.run()
         except SparkJobError as e:
-            self.assertEqual(e.err, ['stderr'])
+            self.assertEqual(e.err, 'stderr')
         else:
             self.fail("Should have thrown SparkJobError")
         finally:
@@ -119,6 +138,7 @@ class SparkTest(unittest.TestCase):
 
 
 class Test1xJob(Spark1xJob):
+
     def requires_hadoop(self):
         return HdfsJob()
 
@@ -155,6 +175,7 @@ class Spark1xTest(unittest.TestCase):
             arglist_result.append(arglist)
 
             class P(object):
+
                 def wait(self):
                     pass
 
@@ -189,6 +210,7 @@ class Spark1xTest(unittest.TestCase):
         def Popen_fake(arglist, stdout=None, stderr=None, env=None,
                        close_fds=True):
             class P(object):
+
                 def wait(self):
                     pass
 
@@ -197,7 +219,6 @@ class Spark1xTest(unittest.TestCase):
 
                 def communicate(self):
                     return 'end'
-
 
             p = P()
             p.returncode = 1
@@ -217,7 +238,7 @@ class Spark1xTest(unittest.TestCase):
             job = Test1xJob()
             job.run()
         except SparkJobError as e:
-            self.assertEqual(e.err, ['stderr'])
+            self.assertEqual(e.err, 'stderr')
         else:
             self.fail("Should have thrown SparkJobError")
         finally:
@@ -225,6 +246,7 @@ class Spark1xTest(unittest.TestCase):
 
 
 class TestPySpark1xJob(PySpark1xJob):
+
     def requires_hadoop(self):
         return HdfsJob()
 
@@ -258,6 +280,7 @@ class PySpark1xTest(unittest.TestCase):
             arglist_result.append(arglist)
 
             class P(object):
+
                 def wait(self):
                     pass
 
@@ -281,7 +304,7 @@ class PySpark1xTest(unittest.TestCase):
             job.run()
             self.assertEqual(len(arglist_result), 1)
             self.assertEqual(arglist_result[0][0:6],
-                             [self.ss,'--master', 'yarn-client', job.program()])
+                             [self.ss, '--master', 'yarn-client', job.program()])
         finally:
             luigi.hdfs.HdfsTarget, subprocess.Popen = h, p  # restore
 
@@ -291,6 +314,7 @@ class PySpark1xTest(unittest.TestCase):
         def Popen_fake(arglist, stdout=None, stderr=None, env=None,
                        close_fds=True):
             class P(object):
+
                 def wait(self):
                     pass
 
@@ -299,7 +323,6 @@ class PySpark1xTest(unittest.TestCase):
 
                 def communicate(self):
                     return 'end'
-
 
             p = P()
             p.returncode = 1
@@ -319,7 +342,7 @@ class PySpark1xTest(unittest.TestCase):
             job = TestPySpark1xJob()
             job.run()
         except SparkJobError as e:
-            self.assertEqual(e.err, ['stderr'])
+            self.assertEqual(e.err, 'stderr')
         else:
             self.fail("Should have thrown SparkJobError")
         finally:

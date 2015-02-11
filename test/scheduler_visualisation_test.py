@@ -1,25 +1,29 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-import time
-import tempfile
 import os
-import luigi
-import luigi.server
-import luigi.worker
+import tempfile
+import time
 import unittest
+
+import luigi
 import luigi.notifications
+import luigi.scheduler
+import luigi.worker
 
 luigi.notifications.DEBUG = True
 
@@ -56,7 +60,7 @@ class FactorTask(luigi.Task):
 
 
 class BadReqTask(luigi.Task):
-    succeed = luigi.BooleanParameter()
+    succeed = luigi.BoolParameter()
 
     def requires(self):
         assert self.succeed
@@ -78,6 +82,7 @@ class FailingTask(luigi.Task):
 
 class SchedulerVisualisationTest(unittest.TestCase):
     # The following 2 are required to retain compatibility with python 2.6
+
     def assertGreaterEqual(self, a, b):
         self.assertTrue(a >= b)
 
@@ -85,7 +90,7 @@ class SchedulerVisualisationTest(unittest.TestCase):
         self.assertTrue(a <= b)
 
     def setUp(self):
-        self.scheduler = luigi.server._create_scheduler()
+        self.scheduler = luigi.scheduler.CentralPlannerScheduler()
 
     def tearDown(self):
         pass
@@ -240,22 +245,27 @@ class SchedulerVisualisationTest(unittest.TestCase):
             pass
 
         class B(luigi.ExternalTask):
+
             def complete(self):
                 return True
 
         class C(luigi.Task):
+
             def requires(self):
                 return [A(), B()]
 
         class F(luigi.Task):
+
             def run(self):
                 raise Exception()
 
         class D(luigi.Task):
+
             def requires(self):
                 return [F()]
 
         class E(luigi.Task):
+
             def requires(self):
                 return [C(), D()]
 
@@ -327,6 +337,7 @@ class SchedulerVisualisationTest(unittest.TestCase):
             pass
 
         class Y(luigi.Task):
+
             def requires(self):
                 return [X()]
 
@@ -337,6 +348,7 @@ class SchedulerVisualisationTest(unittest.TestCase):
                 return [Y()]
 
         class ZZ(luigi.Task):
+
             def requires(self):
                 return [Z(1), Z(2)]
 
@@ -356,6 +368,7 @@ class SchedulerVisualisationTest(unittest.TestCase):
 
     def test_simple_worker_list(self):
         class X(luigi.Task):
+
             def run(self):
                 self._complete = True
 
@@ -376,10 +389,12 @@ class SchedulerVisualisationTest(unittest.TestCase):
 
     def test_worker_list_pending_uniques(self):
         class X(luigi.Task):
+
             def complete(self):
                 return False
 
         class Y(X):
+
             def requires(self):
                 return X()
 
@@ -420,7 +435,6 @@ class SchedulerVisualisationTest(unittest.TestCase):
         self.assertEqual(3, worker['num_running'])
         self.assertEqual(1, worker['num_pending'])
         self.assertEqual(1, worker['num_uniques'])
-
 
 
 if __name__ == '__main__':

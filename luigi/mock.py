@@ -1,28 +1,33 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-import StringIO
-import target
-import sys
-import os
-import luigi.util
 import multiprocessing
+import os
+import StringIO
+import sys
+
+import luigi.util
+import target
 
 
 class MockFileSystem(target.FileSystem):
-    """MockFileSystem inspects/modifies _data to simulate
-    file system operations"""
+    """
+    MockFileSystem inspects/modifies _data to simulate file system operations.
+    """
     _data = None
 
     def get_all_data(self):
@@ -38,9 +43,11 @@ class MockFileSystem(target.FileSystem):
         return MockFile(path).exists()
 
     def remove(self, path, recursive=True, skip_trash=True):
-        """Removes the given mockfile. skip_trash doesn't have any meaning."""
+        """
+        Removes the given mockfile. skip_trash doesn't have any meaning.
+        """
         if recursive:
-            to_delete=[]
+            to_delete = []
             for s in self.get_all_data().keys():
                 if s.startswith(path):
                     to_delete.append(s)
@@ -50,13 +57,16 @@ class MockFileSystem(target.FileSystem):
             self.get_all_data().pop(path)
 
     def listdir(self, path):
-        """listdir does a prefix match of self.get_all_data(), but
-        doesn't yet support globs"""
+        """
+        listdir does a prefix match of self.get_all_data(), but doesn't yet support globs.
+        """
         return [s for s in self.get_all_data().keys()
                 if s.startswith(path)]
 
-    def mkdir(self, path):
-        """mkdir is a noop"""
+    def mkdir(self, path, parents=True, raise_if_exists=False):
+        """
+        mkdir is a noop.
+        """
         pass
 
     def clear(self):
@@ -80,9 +90,6 @@ class MockFile(target.FileSystemTarget):
         contents = self.fs.get_all_data().pop(self._fn)
         self.fs.get_all_data()[path] = contents
 
-    def move_dir(self, path):
-        self.move(path, raise_if_exists=True)
-
     @property
     def path(self):
         return self._fn
@@ -92,6 +99,7 @@ class MockFile(target.FileSystemTarget):
 
         class StringBuffer(StringIO.StringIO):
             # Just to be able to do writing + reading from the same buffer
+
             def write(self2, data):
                 if self._mirror_on_stderr:
                     self2.seek(-1, os.SEEK_END)
@@ -105,8 +113,8 @@ class MockFile(target.FileSystemTarget):
                     self.fs.get_all_data()[fn] = self2.getvalue()
                 StringIO.StringIO.close(self2)
 
-            def __exit__(self, type, value, traceback):
-                if not type:
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if not exc_type:
                     self.close()
 
             def __enter__(self):
@@ -119,7 +127,9 @@ class MockFile(target.FileSystemTarget):
 
 
 def skip(func):
-    """ Sort of a substitute for unittest.skip*, which is 2.7+ """
+    """
+    Sort of a substitute for unittest.skip*, which is 2.7+.
+    """
     def wrapper():
         pass
     return wrapper

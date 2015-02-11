@@ -1,15 +1,32 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
 import doctest
 import unittest
-
-import luigi.task
-import luigi
 from datetime import datetime, timedelta
+
+import luigi
+import luigi.task
 
 
 class DummyTask(luigi.Task):
 
     param = luigi.Parameter()
-    bool_param = luigi.BooleanParameter()
+    bool_param = luigi.BoolParameter()
     int_param = luigi.IntParameter()
     float_param = luigi.FloatParameter()
     date_param = luigi.DateParameter()
@@ -35,7 +52,7 @@ class TaskTest(unittest.TestCase):
             list_param=['in', 'flames'])
 
         original = DummyTask(**params)
-        other = DummyTask.from_str_params(original.to_str_params(), {})
+        other = DummyTask.from_str_params(original.to_str_params())
         self.assertEqual(original, other)
 
     def test_undo_without_remove(self):
@@ -117,7 +134,7 @@ class TaskTest(unittest.TestCase):
         task_id = "InputText(date=2014-12-29,foo=[bar,baz-foo])"
         (name, params) = luigi.task.id_to_name_and_params(task_id)
         self.assertEquals(name, "InputText")
-        self.assertEquals(params, dict(date="2014-12-29", foo=["bar","baz-foo"]))
+        self.assertEquals(params, dict(date="2014-12-29", foo=["bar", "baz-foo"]))
 
 
 if __name__ == '__main__':

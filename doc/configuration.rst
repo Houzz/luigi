@@ -17,7 +17,32 @@ each controlling a different part of the config. Example
     default-scheduler-host: luigi-host.mycompany.foo
     error-email: foo@bar.baz
 
-Below, we describe each section and the parameters available within it.
+By default, all parameters will be overridden by matching values in the
+configuration file. For instance if you have a Task definition:
+
+.. code:: python
+
+    class DailyReport(luigi.hadoop.JobTask):
+        date = luigi.DateParameter(default=datetime.date.today())
+        # ...
+
+Then you can override the default value for date by providing it in the
+configuration:
+
+::
+
+    [DailyReport]
+    date: 2012-01-01
+
+You can also use ``config_path`` as an argument to the ``Parameter`` if
+you want to use a specific section in the config.
+
+
+Configurable options
+====================
+
+Luigi comes with a lot of configurable options. Below, we describe each
+section and the parameters available within it.
 
 
 [core]
@@ -73,6 +98,7 @@ max-reschedules
 
 max-shown-tasks
   .. versionadded:: 1.0.20
+
   The maximum number of tasks returned in a task_list api call. This
   will restrict the number of tasks shown in any section in the
   visualiser. Small values can alleviate frozen browsers when there are
@@ -85,6 +111,20 @@ parallel-scheduling
   If true, the scheduler will compute complete functions of tasks in
   parallel using multiprocessing. This can significantly speed up
   scheduling, but requires that all tasks can be pickled.
+
+retry-external-tasks
+  If true, incomplete external tasks (i.e. tasks where the `run()` method is
+  NotImplemented) will be retested for completion while Luigi is running.
+  This means that if external dependencies are satisfied after a workflow has
+  started, any tasks dependent on that resource will be eligible for running.
+  Note: Every time the task remains incomplete, it will count as FAILED, so
+  normal retry logic applies (see: `disable-num-failures` and `retry-delay`).
+  This setting works best with `worker-keep-alive: true`.
+  If false, external tasks will only be evaluated when Luigi is first invoked.
+  In this case, Luigi will not check whether external dependencies are
+  satisfied  while a workflow is in progress, so dependent tasks will remain
+  PENDING until the workflow is reinvoked.
+  Defaults to false for backwards compatibility.
 
 rpc-connect-timeout
   Number of seconds to wait before timing out when making an API call.
@@ -127,7 +167,7 @@ worker-count-uniques
 worker-keep-alive
   If true, workers will stay alive when they run out of jobs to run, as
   long as they have some pending job waiting to be run. Defaults to
-  true.
+  false.
 
 worker-ping-interval
   Number of seconds to wait between pinging scheduler to let it know
@@ -135,6 +175,7 @@ worker-ping-interval
 
 worker-timeout
   .. versionadded:: 1.0.20
+
   Number of seconds after which to kill a task which has been running
   for too long. This provides a default value for all tasks, which can
   be overridden by setting the worker-timeout property in any task. This

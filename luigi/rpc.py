@@ -1,36 +1,43 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
+import json
+import logging
+import time
 import urllib
 import urllib2
-import logging
-import json
-import time
-from scheduler import Scheduler, PENDING
+
 import configuration
+from scheduler import PENDING, Scheduler
 
 logger = logging.getLogger('luigi-interface')  # TODO: 'interface'?
 
 
 class RPCError(Exception):
+
     def __init__(self, message, sub_exception=None):
         super(RPCError, self).__init__(message)
         self.sub_exception = sub_exception
 
 
 class RemoteScheduler(Scheduler):
-    ''' Scheduler proxy object. Talks to a RemoteSchedulerResponder '''
+    """
+    Scheduler proxy object. Talks to a RemoteSchedulerResponder.
+    """
 
     def __init__(self, host='localhost', port=8082, connect_timeout=None):
         self._host = host
@@ -93,7 +100,7 @@ class RemoteScheduler(Scheduler):
         self._request('/api/ping', {'worker': worker}, attempts=1)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=False,
-                 deps=None, new_deps=None, expl=None, resources={},priority=0,
+                 deps=None, new_deps=None, expl=None, resources={}, priority=0,
                  family='', params={}, supersedes_bucket=None, supersedes_priority=None):
         self._request('/api/add_task', {
             'task_id': task_id,
@@ -112,19 +119,11 @@ class RemoteScheduler(Scheduler):
         })
 
     def get_work(self, worker, host=None):
-        ''' Ugly work around for an older scheduler version, where get_work doesn't have a host argument. Try once passing
-            host to it, falling back to the old version. Should be removed once people have had time to update everything
-        '''
-        try:
-            return self._request(
-                '/api/get_work',
-                {'worker': worker, 'host': host},
-                log_exceptions=False,
-                attempts=1
-            )
-        except:
-            logger.info("get_work RPC call failed, is it possible that you need to update your scheduler?")
-            raise
+        return self._request(
+            '/api/get_work',
+            {'worker': worker, 'host': host},
+            log_exceptions=False,
+            attempts=1)
 
     def graph(self):
         return self._request('/api/graph', {})
@@ -158,71 +157,3 @@ class RemoteScheduler(Scheduler):
 
     def add_worker(self, worker, info):
         return self._request('/api/add_worker', {'worker': worker, 'info': info})
-
-
-class RemoteSchedulerResponder(object):
-    """ Use on the server side for responding to requests
-
-    The kwargs are there for forwards compatibility in case workers add
-    new (optional) arguments. That way there's no dependency on the server
-    component when upgrading Luigi on the worker side.
-
-    TODO(erikbern): what is this class actually used for? Other than an
-    unnecessary layer of indirection around central scheduler
-    """
-
-    def __init__(self, scheduler):
-        self._scheduler = scheduler
-
-    def add_task(self, worker, task_id, status, runnable, deps, new_deps, expl,
-                 resources=None, priority=0, family='', params={}, supersedes_bucket=None,
-                 supersedes_priority=None, **kwargs):
-        return self._scheduler.add_task(
-            worker, task_id, status, runnable, deps, new_deps, expl,
-            resources, priority, family, params, supersedes_bucket, supersedes_priority)
-
-    def add_worker(self, worker, info, **kwargs):
-        return self._scheduler.add_worker(worker, info)
-
-    def get_work(self, worker, host=None, **kwargs):
-        return self._scheduler.get_work(worker, host)
-
-    def ping(self, worker, **kwargs):
-        return self._scheduler.ping(worker)
-
-    def graph(self, **kwargs):
-        return self._scheduler.graph()
-
-    index = graph
-
-    def dep_graph(self, task_id, **kwargs):
-        return self._scheduler.dep_graph(task_id)
-
-    def inverse_dep_graph(self, task_id, **kwargs):
-        return self._scheduler.inverse_dependencies(task_id)
-
-    def task_list(self, status, upstream_status, **kwargs):
-        return self._scheduler.task_list(status, upstream_status)
-
-    def worker_list(self, **kwargs):
-        return self._scheduler.worker_list()
-
-    def task_search(self, task_str, **kwargs):
-        return self._scheduler.task_search(task_str)
-
-    def task_re_enable(self, task_id):
-        return self._scheduler.re_enable_task(task_id)
-
-    def resources(self, **kwargs):
-        return self._scheduler.resources()
-
-    def update_resources(self, resources=None, **kwargs):
-        self._scheduler.update_resources(resources)
-        return True
-
-    def fetch_error(self, task_id, **kwargs):
-        return self._scheduler.fetch_error(task_id)
-
-    @property
-    def task_history(self):
-        return self._scheduler.task_history

@@ -1,25 +1,29 @@
-# Copyright (c) 2014 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-import fnmatch
 import datetime
-import luigi
-from luigi.tools.range import RangeEvent, RangeHourly, RangeHourlyBase, _constrain_glob, _get_filesystems_and_globs
-from luigi.mock import MockFile, MockFileSystem
-import mock
-import time
+import fnmatch
 import unittest
+
+import luigi
+import mock
+from luigi.mock import MockFile, MockFileSystem
+from luigi.tools.range import (RangeDaily, RangeDailyBase, RangeEvent, RangeHourly, RangeHourlyBase, _constrain_glob,
+                               _get_filesystems_and_globs)
 
 
 class CommonDateHourTask(luigi.Task):
@@ -29,7 +33,14 @@ class CommonDateHourTask(luigi.Task):
         return MockFile(self.dh.strftime('/n2000y01a05n/%Y_%m-_-%daww/21mm%Hdara21/ooo'))
 
 
-mock_contents = [
+class CommonDateTask(luigi.Task):
+    d = luigi.DateParameter()
+
+    def output(self):
+        return MockFile(self.d.strftime('/n2000y01a05n/%Y_%m-_-%daww/21mm01dara21/ooo'))
+
+
+task_a_paths = [
     'TaskA/2014-03-20/18',
     'TaskA/2014-03-20/21',
     'TaskA/2014-03-20/23',
@@ -46,12 +57,18 @@ mock_contents = [
     'TaskA/2014-03-21/04.attempt-temp-2014-03-21T13-23-09.078249',
     'TaskA/2014-03-21/12',
     'TaskA/2014-03-23/12',
+]
+
+task_b_paths = [
     'TaskB/no/worries2014-03-20/23',
     'TaskB/no/worries2014-03-21/01',
     'TaskB/no/worries2014-03-21/03',
     'TaskB/no/worries2014-03-21/04.attempt-yadayada',
     'TaskB/no/worries2014-03-21/05',
 ]
+
+mock_contents = task_a_paths + task_b_paths
+
 
 expected_a = [
     'TaskA(dh=2014-03-20T17)',
@@ -86,6 +103,13 @@ class TaskB(luigi.Task):
         return MockFile(self.dh.strftime('TaskB/%%s%Y-%m-%d/%H') % self.complicator)
 
 
+class TaskC(luigi.Task):
+    dh = luigi.DateHourParameter()
+
+    def output(self):
+        return MockFile(self.dh.strftime('not/a/real/path/%Y-%m-%d/%H'))
+
+
 class CommonWrapperTask(luigi.WrapperTask):
     dh = luigi.DateHourParameter()
 
@@ -99,7 +123,16 @@ def mock_listdir(_, glob):
         yield path
 
 
+def mock_exists_always_true(_, _2):
+    yield True
+
+
+def mock_exists_always_false(_, _2):
+    yield False
+
+
 class ConstrainGlobTest(unittest.TestCase):
+
     def test_limit(self):
         glob = '/[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]'
         paths = [(datetime.datetime(2013, 12, 31, 5) + datetime.timedelta(hours=h)).strftime('/%Y/%m/%d/%H') for h in xrange(40)]
@@ -139,6 +172,119 @@ def datetime_to_epoch(dt):
     return td.days * 86400 + td.seconds + td.microseconds / 1E6
 
 
+class RangeDailyBaseTest(unittest.TestCase):
+    maxDiff = None
+
+    def setUp(self):
+        # yucky to create separate callbacks; would be nicer if the callback received an instance of a subclass of Event, so one callback could accumulate all types
+        @RangeDailyBase.event_handler(RangeEvent.DELAY)
+        def callback_delay(*args):
+            self.events.setdefault(RangeEvent.DELAY, []).append(args)
+
+        @RangeDailyBase.event_handler(RangeEvent.COMPLETE_COUNT)
+        def callback_complete_count(*args):
+            self.events.setdefault(RangeEvent.COMPLETE_COUNT, []).append(args)
+
+        @RangeDailyBase.event_handler(RangeEvent.COMPLETE_FRACTION)
+        def callback_complete_fraction(*args):
+            self.events.setdefault(RangeEvent.COMPLETE_FRACTION, []).append(args)
+
+        self.events = {}
+
+    def test_consistent_formatting(self):
+        task = RangeDailyBase(of='CommonDateTask',
+                              start=datetime.date(2016, 1, 1))
+        self.assertEqual(task._format_range([datetime.datetime(2016, 1, 2, 13), datetime.datetime(2016, 2, 29, 23)]), '[2016-01-02, 2016-02-29]')
+
+    def _empty_subcase(self, kwargs, expected_events):
+        calls = []
+
+        class RangeDailyDerived(RangeDailyBase):
+            def missing_datetimes(*args):
+                calls.append(args)
+                return args[-1][:5]
+
+        task = RangeDailyDerived(of='CommonDateTask',
+                                 **kwargs)
+        self.assertEqual(task.requires(), [])
+        self.assertEqual(calls, [])
+        self.assertEqual(task.requires(), [])
+        self.assertEqual(calls, [])  # subsequent requires() should return the cached result, never call missing_datetimes
+        self.assertEqual(self.events, expected_events)
+        self.assertTrue(task.complete())
+
+    def test_stop_before_days_back(self):
+        # nothing to do because stop is earlier
+        self._empty_subcase(
+            {
+                'now': datetime_to_epoch(datetime.datetime(2015, 1, 1, 4)),
+                'stop': datetime.date(2014, 3, 20),
+                'days_back': 4,
+                'days_forward': 20,
+                'reverse': True,
+            },
+            {
+                'event.tools.range.delay': [
+                    ('CommonDateTask', 0),
+                ],
+                'event.tools.range.complete.count': [
+                    ('CommonDateTask', 0),
+                ],
+                'event.tools.range.complete.fraction': [
+                    ('CommonDateTask', 1.),
+                ],
+            }
+        )
+
+    def _nonempty_subcase(self, kwargs, expected_finite_datetimes_range, expected_requires, expected_events):
+        calls = []
+
+        class RangeDailyDerived(RangeDailyBase):
+            def missing_datetimes(*args):
+                calls.append(args)
+                return args[-1][:7]
+
+        task = RangeDailyDerived(of='CommonDateTask',
+                                 **kwargs)
+        self.assertEqual(map(str, task.requires()), expected_requires)
+        self.assertEqual(calls[0][1], CommonDateTask)
+        self.assertEqual((min(calls[0][2]), max(calls[0][2])), expected_finite_datetimes_range)
+        self.assertEqual(map(str, task.requires()), expected_requires)
+        self.assertEqual(len(calls), 1)  # subsequent requires() should return the cached result, not call missing_datetimes again
+        self.assertEqual(self.events, expected_events)
+        self.assertFalse(task.complete())
+
+    def test_start_long_before_long_days_back_and_with_long_days_forward(self):
+        self._nonempty_subcase(
+            {
+                'now': datetime_to_epoch(datetime.datetime(2017, 10, 22, 12, 4, 29)),
+                'start': datetime.date(2011, 3, 20),
+                'stop': datetime.date(2025, 1, 29),
+                'task_limit': 4,
+                'days_back': 3 * 365,
+                'days_forward': 3 * 365,
+            },
+            (datetime.datetime(2014, 10, 24), datetime.datetime(2020, 10, 21)),
+            [
+                'CommonDateTask(d=2014-10-24)',
+                'CommonDateTask(d=2014-10-25)',
+                'CommonDateTask(d=2014-10-26)',
+                'CommonDateTask(d=2014-10-27)',
+            ],
+            {
+                'event.tools.range.delay': [
+                    ('CommonDateTask', 3750),
+                ],
+                'event.tools.range.complete.count': [
+                    ('CommonDateTask', 5057),
+                ],
+                'event.tools.range.complete.fraction': [
+                    ('CommonDateTask', 5057. / (5057 + 7)),
+                ],
+            }
+        )
+
+
 class RangeHourlyBaseTest(unittest.TestCase):
     maxDiff = None
 
@@ -147,19 +293,27 @@ class RangeHourlyBaseTest(unittest.TestCase):
         @RangeHourlyBase.event_handler(RangeEvent.DELAY)
         def callback_delay(*args):
             self.events.setdefault(RangeEvent.DELAY, []).append(args)
+
         @RangeHourlyBase.event_handler(RangeEvent.COMPLETE_COUNT)
         def callback_complete_count(*args):
             self.events.setdefault(RangeEvent.COMPLETE_COUNT, []).append(args)
+
         @RangeHourlyBase.event_handler(RangeEvent.COMPLETE_FRACTION)
         def callback_complete_fraction(*args):
             self.events.setdefault(RangeEvent.COMPLETE_FRACTION, []).append(args)
+
         self.events = {}
+
+    def test_consistent_formatting(self):
+        task = RangeHourlyBase(of='CommonDateHourTask',
+                               start=datetime.datetime(2016, 1, 1))
+        self.assertEqual(task._format_range([datetime.datetime(2016, 1, 2, 13), datetime.datetime(2016, 2, 29, 23)]), '[2016-01-02T13, 2016-02-29T23]')
 
     def _empty_subcase(self, kwargs, expected_events):
         calls = []
 
         class RangeHourlyDerived(RangeHourlyBase):
-            def missing_datehours(*args):
+            def missing_datetimes(*args):
                 calls.append(args)
                 return args[-1][:5]
 
@@ -168,7 +322,7 @@ class RangeHourlyBaseTest(unittest.TestCase):
         self.assertEqual(task.requires(), [])
         self.assertEqual(calls, [])
         self.assertEqual(task.requires(), [])
-        self.assertEqual(calls, [])  # subsequent requires() should return the cached result, never call missing_datehours
+        self.assertEqual(calls, [])  # subsequent requires() should return the cached result, never call missing_datetimes
         self.assertEqual(self.events, expected_events)
         self.assertTrue(task.complete())
 
@@ -183,7 +337,7 @@ class RangeHourlyBaseTest(unittest.TestCase):
             },
             {
                 'event.tools.range.delay': [
-                    ('CommonDateHourTask', 0.),
+                    ('CommonDateHourTask', 0),
                 ],
                 'event.tools.range.complete.count': [
                     ('CommonDateHourTask', 0),
@@ -194,11 +348,11 @@ class RangeHourlyBaseTest(unittest.TestCase):
             }
         )
 
-    def _nonempty_subcase(self, kwargs, expected_finite_datehours_range, expected_requires, expected_events):
+    def _nonempty_subcase(self, kwargs, expected_finite_datetimes_range, expected_requires, expected_events):
         calls = []
 
         class RangeHourlyDerived(RangeHourlyBase):
-            def missing_datehours(*args):
+            def missing_datetimes(*args):
                 calls.append(args)
                 return args[-1][:7]
 
@@ -206,9 +360,9 @@ class RangeHourlyBaseTest(unittest.TestCase):
                                   **kwargs)
         self.assertEqual(map(str, task.requires()), expected_requires)
         self.assertEqual(calls[0][1], CommonDateHourTask)
-        self.assertEqual((min(calls[0][2]), max(calls[0][2])), expected_finite_datehours_range)
+        self.assertEqual((min(calls[0][2]), max(calls[0][2])), expected_finite_datetimes_range)
         self.assertEqual(map(str, task.requires()), expected_requires)
-        self.assertEqual(len(calls), 1)  # subsequent requires() should return the cached result, not call missing_datehours again
+        self.assertEqual(len(calls), 1)  # subsequent requires() should return the cached result, not call missing_datetimes again
         self.assertEqual(self.events, expected_events)
         self.assertFalse(task.complete())
 
@@ -220,7 +374,7 @@ class RangeHourlyBaseTest(unittest.TestCase):
                 'hours_back': 5,
                 'hours_forward': 20,
             },
-            (datetime.datetime(1999, 12, 31, 23), datetime.datetime(2000, 1, 2, 0)),
+            (datetime.datetime(1999, 12, 31, 23), datetime.datetime(2000, 1, 1, 23)),
             [
                 'CommonDateHourTask(dh=1999-12-31T23)',
                 'CommonDateHourTask(dh=2000-01-01T00)',
@@ -232,13 +386,13 @@ class RangeHourlyBaseTest(unittest.TestCase):
             ],
             {
                 'event.tools.range.delay': [
-                    ('CommonDateHourTask', 26.),  # because of short hours_back we're oblivious to those 40 preceding years
+                    ('CommonDateHourTask', 25),  # because of short hours_back we're oblivious to those 40 preceding years
                 ],
                 'event.tools.range.complete.count': [
-                    ('CommonDateHourTask', 349193),
+                    ('CommonDateHourTask', 349192),
                 ],
                 'event.tools.range.complete.fraction': [
-                    ('CommonDateHourTask', 349193. / (349193 + 7)),
+                    ('CommonDateHourTask', 349192. / (349192 + 7)),
                 ],
             }
         )
@@ -260,7 +414,7 @@ class RangeHourlyBaseTest(unittest.TestCase):
             ],
             {
                 'event.tools.range.delay': [
-                    ('CommonDateHourTask', 5180.),
+                    ('CommonDateHourTask', 5180),
                 ],
                 'event.tools.range.complete.count': [
                     ('CommonDateHourTask', 5173),
@@ -280,16 +434,16 @@ class RangeHourlyBaseTest(unittest.TestCase):
                 'hours_back': 3 * 365 * 24,
                 'hours_forward': 3 * 365 * 24,
             },
-            (datetime.datetime(2014, 10, 23, 12), datetime.datetime(2020, 10, 21, 12)),
+            (datetime.datetime(2014, 10, 23, 13), datetime.datetime(2020, 10, 21, 12)),
             [
-                'CommonDateHourTask(dh=2014-10-23T12)',
                 'CommonDateHourTask(dh=2014-10-23T13)',
                 'CommonDateHourTask(dh=2014-10-23T14)',
                 'CommonDateHourTask(dh=2014-10-23T15)',
+                'CommonDateHourTask(dh=2014-10-23T16)',
             ],
             {
                 'event.tools.range.delay': [
-                    ('CommonDateHourTask', 52561.),
+                    ('CommonDateHourTask', 52560),
                 ],
                 'event.tools.range.complete.count': [
                     ('CommonDateHourTask', 84061),
@@ -301,7 +455,34 @@ class RangeHourlyBaseTest(unittest.TestCase):
         )
 
 
+class RangeDailyTest(unittest.TestCase):
+    def test_bulk_complete_correctly_interfaced(self):
+        class BulkCompleteDailyTask(luigi.Task):
+            d = luigi.DateParameter()
+
+            @classmethod
+            def bulk_complete(self, parameter_tuples):
+                return parameter_tuples[:-2]
+
+            def output(self):
+                raise RuntimeError("Shouldn't get called while resolving deps via bulk_complete")
+
+        task = RangeDaily(now=datetime_to_epoch(datetime.datetime(2015, 12, 1)),
+                          of='BulkCompleteDailyTask',
+                          start=datetime.date(2015, 11, 1),
+                          stop=datetime.date(2015, 12, 1))
+
+        expected = [
+            'BulkCompleteDailyTask(d=2015-11-29)',
+            'BulkCompleteDailyTask(d=2015-11-30)',
+        ]
+
+        actual = [t.task_id for t in task.requires()]
+        self.assertEqual(actual, expected)
+
+
 class RangeHourlyTest(unittest.TestCase):
+
     def _test_filesystems_and_globs(self, task_cls, expected):
         actual = list(_get_filesystems_and_globs(task_cls))
         self.assertEqual(len(actual), len(expected))
@@ -319,46 +500,66 @@ class RangeHourlyTest(unittest.TestCase):
         ])
 
     @mock.patch('luigi.mock.MockFileSystem.listdir', new=mock_listdir)  # fishy to mock the mock, but MockFileSystem doesn't support globs yet
+    @mock.patch('luigi.mock.MockFileSystem.exists',
+                new=mock_exists_always_true)
     def test_missing_tasks_correctly_required(self):
-        task = RangeHourly(now=datetime_to_epoch(datetime.datetime(2040, 4, 1)),
+        for task_path in task_a_paths:
+            MockFile(task_path)
+        task = RangeHourly(now=datetime_to_epoch(datetime.datetime(2016, 4, 1)),
                            of='TaskA',
                            start=datetime.datetime(2014, 3, 20, 17),
                            task_limit=3,
-                           hours_back=30 * 365 * 24)  # this test takes around a minute for me. Since stop is not defined, finite_datehours constitute many years to consider
+                           hours_back=3 * 365 * 24)  # this test takes a few seconds. Since stop is not defined, finite_datetimes constitute many years to consider
         actual = [t.task_id for t in task.requires()]
-        self.assertEqual(str(actual), str(expected_a))
         self.assertEqual(actual, expected_a)
 
     @mock.patch('luigi.mock.MockFileSystem.listdir', new=mock_listdir)
+    @mock.patch('luigi.mock.MockFileSystem.exists',
+                new=mock_exists_always_true)
     def test_missing_wrapper_tasks_correctly_required(self):
-        task = RangeHourly(now=datetime_to_epoch(datetime.datetime(2040, 4, 1)),
-                           of='CommonWrapperTask',
-                           start=datetime.datetime(2014, 3, 20, 23),
-                           stop=datetime.datetime(2014, 3, 21, 6),
-                           hours_back=30 * 365 * 24)
+        task = RangeHourly(
+            now=datetime_to_epoch(datetime.datetime(2040, 4, 1)),
+            of='CommonWrapperTask',
+            start=datetime.datetime(2014, 3, 20, 23),
+            stop=datetime.datetime(2014, 3, 21, 6),
+            hours_back=30 * 365 * 24)
         actual = [t.task_id for t in task.requires()]
         self.assertEqual(actual, expected_wrapper)
 
     def test_bulk_complete_correctly_interfaced(self):
-        class BulkCompleteTask(luigi.Task):
+        class BulkCompleteHourlyTask(luigi.Task):
             dh = luigi.DateHourParameter()
 
             @classmethod
-            def bulk_complete(self, parameter_tuples):
+            def bulk_complete(cls, parameter_tuples):
                 return parameter_tuples[:-2]
 
             def output(self):
                 raise RuntimeError("Shouldn't get called while resolving deps via bulk_complete")
 
         task = RangeHourly(now=datetime_to_epoch(datetime.datetime(2015, 12, 1)),
-                           of='BulkCompleteTask',
+                           of='BulkCompleteHourlyTask',
                            start=datetime.datetime(2015, 11, 1),
                            stop=datetime.datetime(2015, 12, 1))
 
         expected = [
-            'BulkCompleteTask(dh=2015-11-30T22)',
-            'BulkCompleteTask(dh=2015-11-30T23)',
+            'BulkCompleteHourlyTask(dh=2015-11-30T22)',
+            'BulkCompleteHourlyTask(dh=2015-11-30T23)',
         ]
 
         actual = [t.task_id for t in task.requires()]
         self.assertEqual(actual, expected)
+
+    @mock.patch('luigi.mock.MockFileSystem.exists',
+                new=mock_exists_always_false)
+    def test_missing_directory(self):
+        task = RangeHourly(now=datetime_to_epoch(
+                           datetime.datetime(2014, 4, 1)),
+                           of='TaskC',
+                           start=datetime.datetime(2014, 3, 20, 23),
+                           stop=datetime.datetime(2014, 3, 21, 1))
+        self.assertFalse(task.complete())
+        expected = [
+            'TaskC(dh=2014-03-20T23)',
+            'TaskC(dh=2014-03-21T00)']
+        self.assertEqual([t.task_id for t in task.requires()], expected)

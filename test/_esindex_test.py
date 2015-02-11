@@ -1,5 +1,19 @@
-# coding: utf-8
-
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 """
 Tests for Elasticsearch index (esindex) target and indexing.
 
@@ -17,15 +31,15 @@ Example running tests against port 9201 with basic auth:
 """
 
 # pylint: disable=C0103,E1101,F0401
-from elasticsearch.connection import Urllib3HttpConnection
-from luigi.contrib.esindex import ElasticsearchTarget, CopyToIndex
 import collections
 import datetime
-import elasticsearch
-import luigi
 import os
 import unittest
 
+import elasticsearch
+import luigi
+from elasticsearch.connection import Urllib3HttpConnection
+from luigi.contrib.esindex import CopyToIndex, ElasticsearchTarget
 
 HOST = os.getenv('ESINDEX_TEST_HOST', 'localhost')
 PORT = os.getenv('ESINDEX_TEST_PORT', 9200)
@@ -50,7 +64,9 @@ target.marker_doc_type = MARKER_DOC_TYPE
 
 
 class ElasticsearchTargetTest(unittest.TestCase):
+
     """ Test touch and exists. """
+
     def test_touch_and_exists(self):
         """ Basic test. """
         delete()
@@ -71,6 +87,7 @@ def delete():
 
 
 class CopyToTestIndex(CopyToIndex):
+
     """ Override the default `marker_index` table with a test name. """
     host = HOST
     port = PORT
@@ -89,23 +106,27 @@ class CopyToTestIndex(CopyToIndex):
             doc_type=self.doc_type,
             update_id=self.update_id(),
             marker_index_hist_size=self.marker_index_hist_size
-         )
+        )
         target.marker_index = MARKER_INDEX
         target.marker_doc_type = MARKER_DOC_TYPE
         return target
 
 
 class IndexingTask1(CopyToTestIndex):
+
     """ Test the redundant version, where `_index` and `_type` are
     given in the `docs` as well. A more DRY example is `IndexingTask2`. """
+
     def docs(self):
         """ Return a list with a single doc. """
         return [{'_id': 123, '_index': self.index, '_type': self.doc_type,
-                'name': 'sample', 'date': 'today'}]
+                 'name': 'sample', 'date': 'today'}]
 
 
 class IndexingTask2(CopyToTestIndex):
+
     """ Just another task. """
+
     def docs(self):
         """ Return a list with a single doc. """
         return [{'_id': 234, '_index': self.index, '_type': self.doc_type,
@@ -113,8 +134,10 @@ class IndexingTask2(CopyToTestIndex):
 
 
 class IndexingTask3(CopyToTestIndex):
+
     """ This task will request an empty index to start with. """
     purge_existing_index = True
+
     def docs(self):
         """ Return a list with a single doc. """
         return [{'_id': 234, '_index': self.index, '_type': self.doc_type,
@@ -131,6 +154,7 @@ def _cleanup():
 
 
 class CopyToIndexTest(unittest.TestCase):
+
     """ Test indexing tasks. """
 
     @classmethod
@@ -156,7 +180,7 @@ class CopyToIndexTest(unittest.TestCase):
         self.assertEqual(1, self.es.count(index=task.index).get('count'))
         self.assertEqual({u'date': u'today', u'name': u'sample'},
                          self.es.get_source(index=task.index,
-                                        doc_type=task.doc_type, id=123))
+                                            doc_type=task.doc_type, id=123))
 
     def test_copy_to_index_incrementally(self):
         """ Test two tasks that upload docs into the same index. """
@@ -176,11 +200,11 @@ class CopyToIndexTest(unittest.TestCase):
 
         self.assertEqual({u'date': u'today', u'name': u'sample'},
                          self.es.get_source(index=task1.index,
-                                        doc_type=task1.doc_type, id=123))
+                                            doc_type=task1.doc_type, id=123))
 
         self.assertEqual({u'date': u'today', u'name': u'another'},
                          self.es.get_source(index=task2.index,
-                                        doc_type=task2.doc_type, id=234))
+                                            doc_type=task2.doc_type, id=234))
 
     def test_copy_to_index_purge_existing(self):
         """ Test purge_existing_index purges index. """
@@ -195,7 +219,7 @@ class CopyToIndexTest(unittest.TestCase):
 
         self.assertEqual({u'date': u'today', u'name': u'yet another'},
                          self.es.get_source(index=task3.index,
-                                        doc_type=task3.doc_type, id=234))
+                                            doc_type=task3.doc_type, id=234))
 
 
 class MarkerIndexTest(unittest.TestCase):
@@ -215,17 +239,17 @@ class MarkerIndexTest(unittest.TestCase):
     def test_update_marker(self):
         with self.assertRaises(elasticsearch.NotFoundError):
             result = self.es.count(index=MARKER_INDEX, doc_type=MARKER_DOC_TYPE,
-                              body={'query': {'match_all': {}}})
+                                   body={'query': {'match_all': {}}})
 
         task1 = IndexingTask1()
         luigi.build([task1], local_scheduler=True)
 
         result = self.es.count(index=MARKER_INDEX, doc_type=MARKER_DOC_TYPE,
-                           body={'query': {'match_all': {}}})
+                               body={'query': {'match_all': {}}})
         self.assertEqual(1, result.get('count'))
 
         result = self.es.search(index=MARKER_INDEX, doc_type=MARKER_DOC_TYPE,
-                           body={'query': {'match_all': {}}})
+                                body={'query': {'match_all': {}}})
         marker_doc = result.get('hits').get('hits')[0].get('_source')
         self.assertEqual('IndexingTask1()', marker_doc.get('update_id'))
         self.assertEqual(INDEX, marker_doc.get('target_index'))
@@ -236,12 +260,11 @@ class MarkerIndexTest(unittest.TestCase):
         luigi.build([task2], local_scheduler=True)
 
         result = self.es.count(index=MARKER_INDEX, doc_type=MARKER_DOC_TYPE,
-                           body={'query': {'match_all': {}}})
+                               body={'query': {'match_all': {}}})
         self.assertEqual(2, result.get('count'))
 
-
         result = self.es.search(index=MARKER_INDEX, doc_type=MARKER_DOC_TYPE,
-                           body={'query': {'match_all': {}}})
+                                body={'query': {'match_all': {}}})
         hits = result.get('hits').get('hits')
         Entry = collections.namedtuple('Entry', ['date', 'update_id'])
         dates_update_id = []
@@ -260,6 +283,7 @@ class MarkerIndexTest(unittest.TestCase):
 
 
 class IndexingTask4(CopyToTestIndex):
+
     """ Just another task. """
     date = luigi.DateParameter(default=datetime.date(1970, 1, 1))
     marker_index_hist_size = 1
@@ -268,6 +292,7 @@ class IndexingTask4(CopyToTestIndex):
         """ Return a list with a single doc. """
         return [{'_id': 234, '_index': self.index, '_type': self.doc_type,
                  'name': 'another', 'date': 'today'}]
+
 
 class IndexHistSizeTest(unittest.TestCase):
 
@@ -295,10 +320,10 @@ class IndexHistSizeTest(unittest.TestCase):
         luigi.build([task4_3], local_scheduler=True)
 
         result = self.es.count(index=MARKER_INDEX, doc_type=MARKER_DOC_TYPE,
-                          body={'query': {'match_all': {}}})
+                               body={'query': {'match_all': {}}})
         self.assertEqual(1, result.get('count'))
         marker_index_document_id = task4_3.output().marker_index_document_id()
         result = self.es.get(id=marker_index_document_id, index=MARKER_INDEX,
-                        doc_type=MARKER_DOC_TYPE)
+                             doc_type=MARKER_DOC_TYPE)
         self.assertEqual('IndexingTask4(date=2002-01-01)',
-                          result.get('_source').get('update_id'))
+                         result.get('_source').get('update_id'))

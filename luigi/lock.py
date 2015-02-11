@@ -1,24 +1,30 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-import os
 import hashlib
+import os
 
 
 def getpcmd(pid):
-    ''' Returns command of process
-    '''
+    """
+    Returns command of process.
+
+    :param pid:
+    """
     cmd = 'ps -p %s -o command=' % (pid,)
     p = os.popen(cmd, 'r')
     return p.readline().strip()
@@ -35,20 +41,21 @@ def get_info(pid_dir):
 
 
 def acquire_for(pid_dir, num_available=1):
-    ''' Makes sure the process is only run once at the same time with the same name.
+    """
+    Makes sure the process is only run once at the same time with the same name.
 
     Notice that we since we check the process name, different parameters to the same
     command can spawn multiple processes at the same time, i.e. running
     "/usr/bin/my_process" does not prevent anyone from launching
     "/usr/bin/my_process --foo bar".
-    '''
+    """
 
     my_pid, my_cmd, pid_file = get_info(pid_dir)
 
     # Check if there is a pid file corresponding to this name
     if not os.path.exists(pid_dir):
         os.mkdir(pid_dir)
-        os.chmod(pid_dir, 0777)
+        os.chmod(pid_dir, 0o777)
 
     pids = set()
     pid_cmds = {}
@@ -78,6 +85,6 @@ def acquire_for(pid_dir, num_available=1):
     else:
         s = os.stat(pid_file)
         if os.getuid() == s.st_uid:
-            os.chmod(pid_file, s.st_mode | 0777)
+            os.chmod(pid_file, s.st_mode | 0o777)
 
     return True

@@ -1,28 +1,34 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+import datetime
+import unittest
 
 import luigi
-from luigi.mock import MockFile
-import unittest
-from luigi.util import Derived
-import datetime
 import luigi.notifications
+from luigi.mock import MockFile
+from luigi.util import inherits
+
 luigi.notifications.DEBUG = True
 File = MockFile
 
 
 class A(luigi.Task):
+
     def output(self):
         return File('/tmp/a.txt')
 
@@ -45,9 +51,11 @@ class B(luigi.Task):
 
 
 def XMLWrapper(cls):
-    class XMLWrapperCls(Derived(cls)):
+    @inherits(cls)
+    class XMLWrapperCls(luigi.Task):
+
         def requires(self):
-            return self.parent_obj
+            return self.clone_parent()
 
         def run(self):
             f = self.input().open('r')
@@ -61,20 +69,24 @@ def XMLWrapper(cls):
 
 
 class AXML(XMLWrapper(A)):
+
     def output(self):
         return File('/tmp/a.xml')
 
 
 class BXML(XMLWrapper(B)):
+
     def output(self):
         return File(self.date.strftime('/tmp/b-%Y-%m-%d.xml'))
 
 
 class WrapperTest(unittest.TestCase):
+
     ''' This test illustrates how a task class can wrap another task class by modifying its behavior.
 
     See instance_wrap_test.py for an example of how instances can wrap each other. '''
     workers = 1
+
     def setUp(self):
         MockFile.fs.clear()
 

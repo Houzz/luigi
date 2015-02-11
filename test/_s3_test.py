@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+#
 # Copyright (c) 2013 Mortar Data
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -11,20 +13,19 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
+#
 
 import gc
-import tempfile
 import os
 import sys
+import tempfile
 import unittest
 
-from luigi import configuration
-from luigi.s3 import (S3Target, S3Client, InvalidDeleteException,
-                      FileNotFoundException)
 import luigi.format
-
-from boto.s3 import key
 from boto.exception import S3ResponseError
+from boto.s3 import key
+from luigi import configuration
+from luigi.s3 import FileNotFoundException, InvalidDeleteException, S3Client, S3Target
 
 # moto does not yet work with
 # python 2.6. Until it does,
@@ -187,7 +188,7 @@ class TestS3Client(unittest.TestCase):
             self._s3_config_path = f.name
             f.write('[s3]\n{}\n'.format(
                 '\n'.join(['{}: {}'.format(k, v)
-                           for k, v in self.s3_config.items()])))
+                           for k, v in self.s3_config.iteritems()])))
         self._old_config_paths = configuration.LuigiConfigParser._config_paths
         configuration.LuigiConfigParser._config_paths = self._s3_config_path
 
@@ -237,7 +238,7 @@ class TestS3Client(unittest.TestCase):
         Test a multipart put with two parts, where the parts are not exactly the split size.
         """
         # 5MB is minimum part size
-        part_size = (1024**2)*5
+        part_size = (1024 ** 2) * 5
         file_size = (part_size * 2) - 5000
         self._run_multipart_test(part_size, file_size)
 
@@ -247,7 +248,7 @@ class TestS3Client(unittest.TestCase):
         Test a multipart put with multiple parts, where the parts are exactly the split size.
         """
         # 5MB is minimum part size
-        part_size = (1024**2)*5
+        part_size = (1024 ** 2) * 5
         file_size = part_size * 2
         self._run_multipart_test(part_size, file_size)
 
@@ -257,7 +258,7 @@ class TestS3Client(unittest.TestCase):
         Test a multipart put with a file smaller than split size; should revert to regular put.
         """
         # 5MB is minimum part size
-        part_size = (1024**2)*5
+        part_size = (1024 ** 2) * 5
         file_size = 5000
         self._run_multipart_test(part_size, file_size)
 
@@ -267,7 +268,7 @@ class TestS3Client(unittest.TestCase):
         Test a multipart put with an empty file.
         """
         # 5MB is minimum part size
-        part_size = (1024**2)*5
+        part_size = (1024 ** 2) * 5
         file_size = 0
         self._run_multipart_test(part_size, file_size)
 
@@ -343,7 +344,7 @@ class TestS3Client(unittest.TestCase):
 
     def _run_multipart_test(self, part_size, file_size):
         file_contents = "a" * file_size
-        
+
         s3_path = 's3://mybucket/putMe'
         tmp_file = tempfile.NamedTemporaryFile(mode='wb', delete=True)
         tmp_file_path = tmp_file.name
@@ -354,7 +355,7 @@ class TestS3Client(unittest.TestCase):
         s3_client.s3.create_bucket('mybucket')
         s3_client.put_multipart(tmp_file_path, s3_path, part_size=part_size)
         self.assertTrue(s3_client.exists(s3_path))
-        # b/c of https://github.com/spulec/moto/issues/131 have to 
+        # b/c of https://github.com/spulec/moto/issues/131 have to
         # get contents to check size
         key_contents = s3_client.get_key(s3_path).get_contents_as_string()
         self.assertEqual(len(file_contents), len(key_contents))
