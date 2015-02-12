@@ -66,7 +66,7 @@ var LuigiAPI = (function() {
     };
 
     LuigiAPI.prototype.reEnable = function(taskId, callback) {
-        jsonRPC(this.urlRoot + "/task_re_enable", {task_id: taskId}, function(response) {
+        jsonRPC(this.urlRoot + "/re_enable_task", {task_id: taskId}, function(response) {
             callback(response.response);
         });
     };
