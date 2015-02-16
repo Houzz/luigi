@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import print_function
 
 import abc
 import binascii
@@ -27,7 +28,10 @@ import random
 import re
 import shutil
 import signal
-import StringIO
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 import subprocess
 import sys
 import tempfile
@@ -35,10 +39,13 @@ import warnings
 from hashlib import md5
 from itertools import groupby
 
-import configuration
+from luigi import six
+
+from luigi import configuration
 import luigi
 import luigi.hdfs
-import mrrunner
+import luigi.s3
+from luigi import mrrunner
 
 logger = logging.getLogger('luigi-interface')
 
@@ -352,7 +359,10 @@ class HadoopJobRunner(JobRunner):
     TODO: add code to support Elastic Mapreduce (using boto) and local execution.
     """
 
-    def __init__(self, streaming_jar, modules=None, streaming_args=None, libjars=None, libjars_in_hdfs=None, jobconfs=None, input_format=None, output_format=None):
+    def __init__(self, streaming_jar, modules=None, streaming_args=None,
+                 libjars=None, libjars_in_hdfs=None, jobconfs=None,
+                 input_format=None, output_format=None,
+                 end_job_with_atomic_move_dir=True):
         def get(x, default):
             return x is not None and x or default
         self.streaming_jar = streaming_jar
@@ -363,6 +373,7 @@ class HadoopJobRunner(JobRunner):
         self.jobconfs = get(jobconfs, {})
         self.input_format = input_format
         self.output_format = output_format
+        self.end_job_with_atomic_move_dir = end_job_with_atomic_move_dir
         self.tmp_dir = False
 
     def run_job(self, job):
@@ -398,10 +409,17 @@ class HadoopJobRunner(JobRunner):
         cmb_cmd = '{0} mrrunner.py combiner'.format(python_executable)
         red_cmd = '{0} mrrunner.py reduce'.format(python_executable)
 
-        # replace output with a temporary work directory
         output_final = job.output().path
-        output_tmp_fn = output_final + '-temp-' + datetime.datetime.now().isoformat().replace(':', '-')
-        tmp_target = luigi.hdfs.HdfsTarget(output_tmp_fn)
+        # atomic output: replace output with a temporary work directory
+        if self.end_job_with_atomic_move_dir:
+            if isinstance(job.output(), luigi.s3.S3FlagTarget):
+                raise TypeError("end_job_with_atomic_move_dir is not supported"
+                                " for S3FlagTarget")
+            output_hadoop = '{output}-temp-{time}'.format(
+                output=output_final,
+                time=datetime.datetime.now().isoformat().replace(':', '-'))
+        else:
+            output_hadoop = output_final
 
         arglist = luigi.hdfs.load_hadoop_cmd() + ['jar', self.streaming_jar]
 
@@ -430,7 +448,7 @@ class HadoopJobRunner(JobRunner):
 
         jobconfs = job.jobconfs()
 
-        for k, v in self.jobconfs.iteritems():
+        for k, v in six.iteritems(self.jobconfs):
             jobconfs.append('%s=%s' % (k, v))
 
         for conf in jobconfs:
@@ -454,13 +472,15 @@ class HadoopJobRunner(JobRunner):
             arglist += ['-inputformat', self.input_format]
 
         for target in luigi.task.flatten(job.input_hadoop()):
-            if not isinstance(target, luigi.hdfs.HdfsTarget):
-                raise TypeError('target must be an HdfsTarget')
+            if not isinstance(target, luigi.hdfs.HdfsTarget) \
+                    and not isinstance(target, luigi.s3.S3Target):
+                raise TypeError('target must be an HdfsTarget or S3Target')
             arglist += ['-input', target.path]
 
-        if not isinstance(job.output(), luigi.hdfs.HdfsTarget):
-            raise TypeError('outout must be an HdfsTarget')
-        arglist += ['-output', output_tmp_fn]
+        if not isinstance(job.output(), luigi.hdfs.HdfsTarget) \
+                and not isinstance(job.output(), luigi.s3.S3FlagTarget):
+            raise TypeError('output must be an HdfsTarget or S3FlagTarget')
+        arglist += ['-output', output_hadoop]
 
         # submit job
         create_packages_archive(packages, self.tmp_dir + '/packages.tar')
@@ -469,7 +489,8 @@ class HadoopJobRunner(JobRunner):
 
         run_and_track_hadoop_job(arglist)
 
-        tmp_target.move_dir(output_final)
+        if self.end_job_with_atomic_move_dir:
+            luigi.hdfs.HdfsTarget(output_hadoop).move_dir(output_final)
         self.finish()
 
     def finish(self):
@@ -513,7 +534,7 @@ class LocalJobRunner(JobRunner):
             output.write(line)
 
     def group(self, input_stream):
-        output = StringIO.StringIO()
+        output = StringIO()
         lines = []
         for i, line in enumerate(input_stream):
             parts = line.rstrip('\n').split('\t')
@@ -525,7 +546,7 @@ class LocalJobRunner(JobRunner):
         return output
 
     def run_job(self, job):
-        map_input = StringIO.StringIO()
+        map_input = StringIO()
 
         for i in luigi.task.flatten(job.input_hadoop()):
             self.sample(i.open('r'), self.samplelines, map_input)
@@ -541,7 +562,7 @@ class LocalJobRunner(JobRunner):
 
         job.init_mapper()
         # run job now...
-        map_output = StringIO.StringIO()
+        map_output = StringIO()
         job.run_mapper(map_input, map_output)
         map_output.seek(0)
 
@@ -549,7 +570,7 @@ class LocalJobRunner(JobRunner):
             reduce_input = self.group(map_output)
         else:
             combine_input = self.group(map_output)
-            combine_output = StringIO.StringIO()
+            combine_output = StringIO()
             job.run_combiner(combine_input, combine_output)
             combine_output.seek(0)
             reduce_input = self.group(combine_output)
@@ -703,9 +724,9 @@ class JobTask(BaseHadoopJobTask):
         """
         for output in outputs:
             try:
-                print >> stdout, "\t".join(map(str, flatten(output)))
+                print("\t".join(map(str, flatten(output))), file=stdout)
             except:
-                print >> stderr, output
+                print(output, file=stderr)
                 raise
 
     def mapper(self, item):
@@ -745,7 +766,7 @@ class JobTask(BaseHadoopJobTask):
         """
         Increments any unflushed counter values.
         """
-        for key, count in self._counter_dict.iteritems():
+        for key, count in six.iteritems(self._counter_dict):
             if count == 0:
                 continue
             args = list(key) + [count]
@@ -762,10 +783,10 @@ class JobTask(BaseHadoopJobTask):
         if len(args) == 2:
             # backwards compatibility with existing hadoop jobs
             group_name, count = args
-            print >> sys.stderr, 'reporter:counter:%s,%s' % (group_name, count)
+            print('reporter:counter:%s,%s' % (group_name, count), file=sys.stderr)
         else:
             group, name, count = args
-            print >> sys.stderr, 'reporter:counter:%s,%s,%s' % (group, name, count)
+            print('reporter:counter:%s,%s,%s' % (group, name, count), file=sys.stderr)
 
     def extra_modules(self):
         return []  # can be overridden in subclass
@@ -890,7 +911,7 @@ class JobTask(BaseHadoopJobTask):
         Writer which outputs the python repr for each item.
         """
         for output in outputs:
-            print >> stdout, "\t".join(map(repr, output))
+            print("\t".join(map(repr, output)), file=stdout)
 
 
 def pickle_reader(job, input_stream):
@@ -905,4 +926,4 @@ def pickle_writer(job, outputs, stdout):
     def encode(item):
         return binascii.b2a_base64(pickle.dumps(item))[:-1]  # remove trailing newline
     for keyval in outputs:
-        print >> stdout, "\t".join(map(encode, keyval))
+        print("\t".join(map(encode, keyval)), file=stdout)

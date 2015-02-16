@@ -17,10 +17,15 @@
 
 import datetime
 import warnings
-from ConfigParser import NoOptionError, NoSectionError
+try:
+    from ConfigParser import NoOptionError, NoSectionError
+except ImportError:
+    from configparser import NoOptionError, NoSectionError
 
-import configuration
-from deprecate_kwarg import deprecate_kwarg
+from luigi import six
+
+from luigi import configuration
+from luigi.deprecate_kwarg import deprecate_kwarg
 
 _no_value = object()
 
@@ -345,9 +350,9 @@ class Parameter(object):
         dest = self.parser_dest(param_name, task_name, glob=True, is_without_section=is_without_section)
         if dest is not None:
             value = getattr(args, dest, None)
-            if value is not None:
+            if value:
                 self.set_global(self.parse_from_input(param_name, value))
-            else:
+            else:  # either False (bools) or None (everything else)
                 self.reset_global()
 
 
@@ -477,7 +482,7 @@ class DateIntervalParameter(Parameter):
         """
         # TODO: can we use xml.utils.iso8601 or something similar?
 
-        import date_interval as d
+        from luigi import date_interval as d
 
         for cls in [d.Year, d.Month, d.Week, d.Date, d.Custom]:
             i = cls.parse(s)
@@ -506,7 +511,7 @@ class TimeDeltaParameter(Parameter):
         if re_match:
             kwargs = {}
             has_val = False
-            for k, v in re_match.groupdict(default="0").iteritems():
+            for k, v in six.iteritems(re_match.groupdict(default="0")):
                 val = int(v)
                 has_val = has_val or val != 0
                 kwargs[k] = val

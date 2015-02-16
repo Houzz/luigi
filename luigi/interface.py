@@ -23,15 +23,24 @@ import os
 import sys
 import tempfile
 
-import configuration
-import lock
-import luigi_state
-import parameter
-import rpc
-import scheduler
-import task
-import worker
-from task import Register
+from luigi import configuration
+from luigi import lock
+from luigi import luigi_state
+from luigi import parameter
+from luigi import rpc
+from luigi import scheduler
+from luigi import task
+from luigi import worker
+from luigi.task import Register
+
+
+def load_task(module, task_name, params_str):
+    """
+    Imports task dynamically given a module and a task name.
+    """
+    __import__(module)
+    task_cls = Register.get_task_cls(task_name)
+    return task_cls.from_str_params(params_str)
 
 
 def setup_interface_logging(conf_file=None):
@@ -375,15 +384,6 @@ class OptParseInterface(Interface):
         task_params = get_task_parameters(task_cls, options)
 
         return [task_cls(**task_params)]
-
-
-def load_task(module, task_name, params_str):
-    """
-    Imports task dynamically given a module and a task name.
-    """
-    __import__(module)
-    task_cls = Register.get_task_cls(task_name)
-    return task_cls.from_str_params(params_str)
 
 
 def run(cmdline_args=None, existing_optparse=None, use_optparse=False, main_task_cls=None,
