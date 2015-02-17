@@ -883,7 +883,7 @@ class CentralPlannerScheduler(Scheduler):
                 ret[resource]['used'] = 0
         return ret
 
-    def inverse_dependencies(self, task_id, **kwargs):
+    def inverse_dep_graph(self, task_id, **kwargs):
         self.prune()
         serialized = {}
         if self._state.has_task(task_id):
