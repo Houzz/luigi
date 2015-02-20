@@ -537,6 +537,16 @@ class WorkerTest(unittest.TestCase):
         w.stop()
 
 
+    def test_disable_bad_complete(self):
+        class BadCompleteTask(DummyTask):
+            disabled = True
+
+            def complete(self):
+                assert False
+
+        self.assertTrue(self.w.add(BadCompleteTask()))
+
+
 class DynamicDependenciesTest(unittest.TestCase):
     n_workers = 1
     timeout = float('inf')

@@ -255,7 +255,7 @@ def check_complete(task, out_queue):
     """
     logger.debug("Checking if %s is complete", task)
     try:
-        is_complete = task.actual_complete()
+        is_complete = not task.disabled and task.actual_complete()
     except BaseException:
         is_complete = TracebackWrapper(traceback.format_exc())
     out_queue.put((task, is_complete))
