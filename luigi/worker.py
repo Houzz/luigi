@@ -525,7 +525,10 @@ class Worker(object):
 
             deps = dep_ids
 
-        self._scheduled_tasks[task.task_id] = task
+        if status == PENDING:
+            self._scheduled_tasks[task.task_id] = task
+        else:
+            runnable = False
         self._scheduler.add_task(self._id, task.task_id, status=status,
                                  deps=deps, runnable=runnable, priority=task.priority,
                                  resources=task.process_resources(),
