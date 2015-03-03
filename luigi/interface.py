@@ -110,8 +110,10 @@ class core(task.ConfigWithoutSection):
     parallel_scheduling = parameter.BoolParameter(
         default=False,
         description='Use multiprocessing to do scheduling in parallel.',
-        config_path={'section': 'core', 'name': 'parallel-scheduling'},
-    )
+        config_path={'section': 'core', 'name': 'parallel-scheduling'})
+    assistant = parameter.BoolParameter(
+        default=False,
+        description='Run any task from the scheduler.')
 
 
 class WorkerSchedulerFactory(object):
@@ -122,10 +124,10 @@ class WorkerSchedulerFactory(object):
     def create_remote_scheduler(self, host, port):
         return rpc.RemoteScheduler(host=host, port=port)
 
-    def create_worker(self, scheduler, worker_processes):
+    def create_worker(self, scheduler, worker_processes, assistant=False):
         from luigi import worker
         return worker.Worker(
-            scheduler=scheduler, worker_processes=worker_processes)
+            scheduler=scheduler, worker_processes=worker_processes, assistant=assistant)
 
 
 class Interface(object):
@@ -172,7 +174,7 @@ class Interface(object):
                 port=env_params.scheduler_port)
 
         w = worker_scheduler_factory.create_worker(
-            scheduler=sch, worker_processes=env_params.workers)
+            scheduler=sch, worker_processes=env_params.workers, assistant=env_params.assistant)
 
         success = True
         luigi_state.set_state(luigi_state.SCHEDULING)
