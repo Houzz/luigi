@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""
+This module contains the bindings for command line integration and dynamic loading of tasks
+"""
 
 import argparse
 import logging
@@ -30,7 +33,6 @@ from luigi import parameter
 from luigi import rpc
 from luigi import scheduler
 from luigi import task
-from luigi import worker
 from luigi.task import Register
 
 
@@ -38,7 +40,8 @@ def load_task(module, task_name, params_str):
     """
     Imports task dynamically given a module and a task name.
     """
-    __import__(module)
+    if module is not None:
+        __import__(module)
     task_cls = Register.get_task_cls(task_name)
     return task_cls.from_str_params(params_str)
 
@@ -120,6 +123,7 @@ class WorkerSchedulerFactory(object):
         return rpc.RemoteScheduler(host=host, port=port)
 
     def create_worker(self, scheduler, worker_processes):
+        from luigi import worker
         return worker.Worker(
             scheduler=scheduler, worker_processes=worker_processes)
 
@@ -141,6 +145,8 @@ class Interface(object):
 
         if worker_scheduler_factory is None:
             worker_scheduler_factory = WorkerSchedulerFactory()
+        if override_defaults is None:
+            override_defaults = {}
         env_params = core(**override_defaults)
         # search for logging configuration path first on the command line, then
         # in the application config file

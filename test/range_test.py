@@ -17,7 +17,7 @@
 
 import datetime
 import fnmatch
-import unittest
+from helpers import unittest
 
 import luigi
 import mock
@@ -118,9 +118,12 @@ class CommonWrapperTask(luigi.WrapperTask):
         yield TaskB(dh=self.dh, complicator='no/worries')  # str(self.dh) would complicate beyond working
 
 
-def mock_listdir(_, glob):
-    for path in fnmatch.filter(mock_contents, glob + '*'):
-        yield path
+def mock_listdir(contents):
+    def contents_listdir(_, glob):
+        for path in fnmatch.filter(contents, glob + '*'):
+            yield path
+
+    return contents_listdir
 
 
 def mock_exists_always_true(_, _2):
@@ -135,7 +138,7 @@ class ConstrainGlobTest(unittest.TestCase):
 
     def test_limit(self):
         glob = '/[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]'
-        paths = [(datetime.datetime(2013, 12, 31, 5) + datetime.timedelta(hours=h)).strftime('/%Y/%m/%d/%H') for h in xrange(40)]
+        paths = [(datetime.datetime(2013, 12, 31, 5) + datetime.timedelta(hours=h)).strftime('/%Y/%m/%d/%H') for h in range(40)]
         self.assertEqual(sorted(_constrain_glob(glob, paths)), [
             '/2013/12/31/[0-2][0-9]',
             '/2014/01/01/[0-2][0-9]',
@@ -246,10 +249,10 @@ class RangeDailyBaseTest(unittest.TestCase):
 
         task = RangeDailyDerived(of='CommonDateTask',
                                  **kwargs)
-        self.assertEqual(map(str, task.requires()), expected_requires)
+        self.assertEqual(list(map(str, task.requires())), expected_requires)
         self.assertEqual(calls[0][1], CommonDateTask)
         self.assertEqual((min(calls[0][2]), max(calls[0][2])), expected_finite_datetimes_range)
-        self.assertEqual(map(str, task.requires()), expected_requires)
+        self.assertEqual(list(map(str, task.requires())), expected_requires)
         self.assertEqual(len(calls), 1)  # subsequent requires() should return the cached result, not call missing_datetimes again
         self.assertEqual(self.events, expected_events)
         self.assertFalse(task.complete())
@@ -358,10 +361,10 @@ class RangeHourlyBaseTest(unittest.TestCase):
 
         task = RangeHourlyDerived(of='CommonDateHourTask',
                                   **kwargs)
-        self.assertEqual(map(str, task.requires()), expected_requires)
+        self.assertEqual(list(map(str, task.requires())), expected_requires)
         self.assertEqual(calls[0][1], CommonDateHourTask)
         self.assertEqual((min(calls[0][2]), max(calls[0][2])), expected_finite_datetimes_range)
-        self.assertEqual(map(str, task.requires()), expected_requires)
+        self.assertEqual(list(map(str, task.requires())), expected_requires)
         self.assertEqual(len(calls), 1)  # subsequent requires() should return the cached result, not call missing_datetimes again
         self.assertEqual(self.events, expected_events)
         self.assertFalse(task.complete())
@@ -455,14 +458,89 @@ class RangeHourlyBaseTest(unittest.TestCase):
         )
 
 
+class FilesystemInferenceTest(unittest.TestCase):
+
+    def _test_filesystems_and_globs(self, datetime_to_task, datetime_to_re, expected):
+        actual = list(_get_filesystems_and_globs(datetime_to_task, datetime_to_re))
+        self.assertEqual(len(actual), len(expected))
+        for (actual_filesystem, actual_glob), (expected_filesystem, expected_glob) in zip(actual, expected):
+            self.assertTrue(isinstance(actual_filesystem, expected_filesystem))
+            self.assertEqual(actual_glob, expected_glob)
+
+    def test_date_glob_successfully_inferred(self):
+        self._test_filesystems_and_globs(
+            lambda d: CommonDateTask(d),
+            lambda d: d.strftime('(%Y).*(%m).*(%d)'),
+            [
+                (MockFileSystem, '/n2000y01a05n/[0-9][0-9][0-9][0-9]_[0-9][0-9]-_-[0-9][0-9]aww/21mm01dara21'),
+            ]
+        )
+
+    def test_datehour_glob_successfully_inferred(self):
+        self._test_filesystems_and_globs(
+            lambda d: CommonDateHourTask(d),
+            lambda d: d.strftime('(%Y).*(%m).*(%d).*(%H)'),
+            [
+                (MockFileSystem, '/n2000y01a05n/[0-9][0-9][0-9][0-9]_[0-9][0-9]-_-[0-9][0-9]aww/21mm[0-9][0-9]dara21'),
+            ]
+        )
+
+    def test_wrapped_datehour_globs_successfully_inferred(self):
+        self._test_filesystems_and_globs(
+            lambda d: CommonWrapperTask(d),
+            lambda d: d.strftime('(%Y).*(%m).*(%d).*(%H)'),
+            [
+                (MockFileSystem, 'TaskA/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+                (MockFileSystem, 'TaskB/no/worries[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+            ]
+        )
+
+    def test_inconsistent_output_datehour_glob_not_inferred(self):
+        class InconsistentlyOutputtingDateHourTask(luigi.Task):
+            dh = luigi.DateHourParameter()
+
+            def output(self):
+                base = self.dh.strftime('/even/%Y%m%d%H')
+                if self.dh.hour % 2 == 0:
+                    return MockFile(base)
+                else:
+                    return {
+                        'spi': MockFile(base + '/something.spi'),
+                        'spl': MockFile(base + '/something.spl'),
+                    }
+
+        def test_raise_not_implemented():
+            list(_get_filesystems_and_globs(
+                lambda d: InconsistentlyOutputtingDateHourTask(d),
+                lambda d: d.strftime('(%Y).*(%m).*(%d).*(%H)')))
+
+        self.assertRaises(NotImplementedError, test_raise_not_implemented)
+
+    def test_wrapped_inconsistent_datehour_globs_not_inferred(self):
+        class InconsistentlyParameterizedWrapperTask(luigi.WrapperTask):
+            dh = luigi.DateHourParameter()
+
+            def requires(self):
+                yield TaskA(dh=self.dh - datetime.timedelta(days=1))
+                yield TaskB(dh=self.dh, complicator='no/worries')
+
+        def test_raise_not_implemented():
+            list(_get_filesystems_and_globs(
+                lambda d: InconsistentlyParameterizedWrapperTask(d),
+                lambda d: d.strftime('(%Y).*(%m).*(%d).*(%H)')))
+
+        self.assertRaises(NotImplementedError, test_raise_not_implemented)
+
+
 class RangeDailyTest(unittest.TestCase):
+
     def test_bulk_complete_correctly_interfaced(self):
         class BulkCompleteDailyTask(luigi.Task):
             d = luigi.DateParameter()
 
             @classmethod
             def bulk_complete(self, parameter_tuples):
-                return parameter_tuples[:-2]
+                return list(parameter_tuples)[:-2]
 
             def output(self):
                 raise RuntimeError("Shouldn't get called while resolving deps via bulk_complete")
@@ -480,26 +558,38 @@ class RangeDailyTest(unittest.TestCase):
         actual = [t.task_id for t in task.requires()]
         self.assertEqual(actual, expected)
 
+    @mock.patch('luigi.mock.MockFileSystem.listdir',
+                new=mock_listdir([
+                    '/data/2014/p/v/z/2014_/_03-_-21octor/20/ZOOO',
+                    '/data/2014/p/v/z/2014_/_03-_-23octor/20/ZOOO',
+                    '/data/2014/p/v/z/2014_/_03-_-24octor/20/ZOOO',
+                ]))
+    @mock.patch('luigi.mock.MockFileSystem.exists',
+                new=mock_exists_always_true)
+    def test_missing_tasks_correctly_required(self):
+        class SomeDailyTask(luigi.Task):
+            d = luigi.DateParameter()
+
+            def output(self):
+                return MockFile(self.d.strftime('/data/2014/p/v/z/%Y_/_%m-_-%doctor/20/ZOOO'))
+
+        task = RangeDaily(now=datetime_to_epoch(datetime.datetime(2016, 4, 1)),
+                          of='SomeDailyTask',
+                          start=datetime.date(2014, 3, 20),
+                          task_limit=3,
+                          days_back=3 * 365)
+        expected = [
+            'SomeDailyTask(d=2014-03-20)',
+            'SomeDailyTask(d=2014-03-22)',
+            'SomeDailyTask(d=2014-03-25)',
+        ]
+        actual = [t.task_id for t in task.requires()]
+        self.assertEqual(actual, expected)
+
 
 class RangeHourlyTest(unittest.TestCase):
 
-    def _test_filesystems_and_globs(self, task_cls, expected):
-        actual = list(_get_filesystems_and_globs(task_cls))
-        self.assertEqual(len(actual), len(expected))
-        for (actual_filesystem, actual_glob), (expected_filesystem, expected_glob) in zip(actual, expected):
-            self.assertTrue(isinstance(actual_filesystem, expected_filesystem))
-            self.assertEqual(actual_glob, expected_glob)
-
-    def test_successfully_inferred(self):
-        self._test_filesystems_and_globs(CommonDateHourTask, [
-            (MockFileSystem, '/n2000y01a05n/[0-9][0-9][0-9][0-9]_[0-9][0-9]-_-[0-9][0-9]aww/21mm[0-9][0-9]dara21'),
-        ])
-        self._test_filesystems_and_globs(CommonWrapperTask, [
-            (MockFileSystem, 'TaskA/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-            (MockFileSystem, 'TaskB/no/worries[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-        ])
-
-    @mock.patch('luigi.mock.MockFileSystem.listdir', new=mock_listdir)  # fishy to mock the mock, but MockFileSystem doesn't support globs yet
+    @mock.patch('luigi.mock.MockFileSystem.listdir', new=mock_listdir(mock_contents))  # fishy to mock the mock, but MockFileSystem doesn't support globs yet
     @mock.patch('luigi.mock.MockFileSystem.exists',
                 new=mock_exists_always_true)
     def test_missing_tasks_correctly_required(self):
@@ -513,7 +603,7 @@ class RangeHourlyTest(unittest.TestCase):
         actual = [t.task_id for t in task.requires()]
         self.assertEqual(actual, expected_a)
 
-    @mock.patch('luigi.mock.MockFileSystem.listdir', new=mock_listdir)
+    @mock.patch('luigi.mock.MockFileSystem.listdir', new=mock_listdir(mock_contents))
     @mock.patch('luigi.mock.MockFileSystem.exists',
                 new=mock_exists_always_true)
     def test_missing_wrapper_tasks_correctly_required(self):

@@ -16,10 +16,11 @@
 #
 """
 Apache Pig support.
-Example configuration section in client.cfg:
-[pig]
-# pig home directory
-home: /usr/share/pig
+Example configuration section in client.cfg::
+
+    [pig]
+    # pig home directory
+    home: /usr/share/pig
 """
 
 import logging
@@ -50,7 +51,7 @@ class PigJobTask(luigi.Task):
         """
         Dictionary of environment variables that should be set when running Pig.
 
-        Ex:
+        Ex::
             return { 'PIG_CLASSPATH': '/your/path' }
         """
         return {}
@@ -59,7 +60,8 @@ class PigJobTask(luigi.Task):
         """
         Dictionary of properties that should be set when running Pig.
 
-        Ex:
+        Example::
+
             return { 'pig.additional.jars':'/path/to/your/jar' }
         """
         return {}
@@ -67,7 +69,9 @@ class PigJobTask(luigi.Task):
     def pig_parameters(self):
         """
         Dictionary of parameters that should be set for the Pig job.
-        Ex:
+
+        Example::
+
             return { 'YOUR_PARAM_NAME':'Your param value' }
         """
         return {}
@@ -75,7 +79,9 @@ class PigJobTask(luigi.Task):
     def pig_options(self):
         """
         List of options that will be appended to the Pig command.
-        Ex:
+
+        Example::
+
             return ['-x', 'local']
         """
         return []
@@ -127,10 +133,10 @@ class PigJobTask(luigi.Task):
                 ret = select.select(reads, [], [])
                 for fd in ret[0]:
                     if fd == proc.stderr.fileno():
-                        line = proc.stderr.readline()
+                        line = proc.stderr.readline().decode('utf8')
                         err_lines.append(line)
                     if fd == proc.stdout.fileno():
-                        line = proc.stdout.readline()
+                        line = proc.stdout.readline().decode('utf8')
                         temp_stdout.write(line)
 
                 err_line = line.lower()
@@ -142,7 +148,7 @@ class PigJobTask(luigi.Task):
                         logger.info(t)
 
         # Read the rest + stdout
-        err = ''.join(err_lines + [err_line for err_line in proc.stderr])
+        err = ''.join(err_lines + [err_line.decode('utf8') for err_line in proc.stderr])
         if proc.returncode == 0:
             logger.info("Job completed successfully!")
         else:

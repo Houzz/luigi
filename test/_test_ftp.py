@@ -19,8 +19,11 @@ import datetime
 import ftplib
 import os
 import time
-import unittest
-from cStringIO import StringIO
+from helpers import unittest
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import StringIO
 
 from luigi.contrib.ftp import RemoteFileSystem, RemoteTarget
 

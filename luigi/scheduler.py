@@ -14,6 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""
+The system for scheduling tasks and executing them in order.
+Deals with dependencies, priorities, resources, etc.
+The :py:class:`~luigi.worker.Worker` pulls tasks from the scheduler (usually over the REST interface) and executes them.
+See :doc:`/central_scheduler` for more info.
+"""
 
 import collections
 try:
@@ -76,7 +82,7 @@ class scheduler(Config):
     retry_delay = parameter.FloatParameter(default=900.0,
                                            config_path=dict(section='scheduler', name='retry-delay'))
     remove_delay = parameter.FloatParameter(default=600.0,
-                                            config_path=dict(section='scheduler', name='remote-delay'))
+                                            config_path=dict(section='scheduler', name='remove-delay'))
     worker_disconnect_delay = parameter.FloatParameter(default=60.0,
                                                        config_path=dict(section='scheduler', name='worker-disconnect-delay'))
     state_path = parameter.Parameter(default='/var/lib/luigi-server/state.pickle',
@@ -255,7 +261,7 @@ class SimpleTaskState(object):
         if os.path.exists(self._state_path):
             logger.info("Attempting to load state from %s", self._state_path)
             try:
-                with open(self._state_path) as fobj:
+                with open(self._state_path, 'rb') as fobj:
                     state = pickle.load(fobj)
             except BaseException:
                 logger.exception("Error when loading state. Starting from clean slate.")
@@ -650,7 +656,7 @@ class CentralPlannerScheduler(Scheduler):
                 return False
         return True
 
-    def get_work(self, worker, host=None, **kwargs):
+    def get_work(self, worker, host=None, assistant=False, **kwargs):
         # TODO: remove any expired nodes
 
         # Algo: iterate over all nodes, find the highest priority node no dependencies and available
@@ -691,14 +697,14 @@ class CentralPlannerScheduler(Scheduler):
                     more_info.update(other_worker.info)
                     running_tasks.append(more_info)
 
-            if task.status == PENDING and worker in task.workers:
+            if task.status == PENDING and (worker in task.workers or assistant):
                 locally_pending_tasks += 1
                 if len(task.workers) == 1:
                     n_unique_pending += 1
 
             greedy_schedulable = lambda: (self._has_resources(task.resources, greedy_resources)
                                           and task.supersedes_bucket not in supersedes_buckets)
-            if task.status == RUNNING and task.worker_running in greedy_workers and greedy_schedulable():
+            if task.status == RUNNING and ((task.worker_running in greedy_workers and greedy_schedulable()) or assistant):
                 greedy_workers[task.worker_running] -= 1
                 for resource, amount in six.iteritems((task.resources or {})):
                     greedy_resources[resource] += amount
@@ -706,7 +712,7 @@ class CentralPlannerScheduler(Scheduler):
                     supersedes_buckets.add(task.supersedes_bucket)
 
             if not best_task and self._schedulable(task) and greedy_schedulable():
-                if worker in task.workers and self._has_resources(task.resources, used_resources):
+                if (worker in task.workers or assistant) and self._has_resources(task.resources, used_resources):
                     best_task = task
                     best_task_id = task.id
                 else:
@@ -725,16 +731,22 @@ class CentralPlannerScheduler(Scheduler):
 
                             break
 
+        reply = {'n_pending_tasks': locally_pending_tasks,
+                 'running_tasks': running_tasks,
+                 'task_id': None,
+                 'n_unique_pending': n_unique_pending}
+
         if best_task:
             self._state.set_status(best_task, RUNNING, self._config)
             best_task.worker_running = worker
             best_task.time_running = time.time()
             self._update_task_history(best_task.id, RUNNING, host=host)
 
-        return {'n_pending_tasks': locally_pending_tasks,
-                'n_unique_pending': n_unique_pending,
-                'task_id': best_task_id,
-                'running_tasks': running_tasks}
+            reply['task_id'] = best_task.id
+            reply['task_family'] = best_task.family
+            reply['task_params'] = best_task.params
+
+        return reply
 
     def ping(self, worker, **kwargs):
         self.update(worker)

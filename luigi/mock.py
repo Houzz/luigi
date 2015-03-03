@@ -14,17 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""
+This moduel provides a class :class:`MockFile`, an implementation of :py:class:`~luigi.target.Target`.
+:class:`MockFile` contains all data in-memory.
+The main purpose is unit testing workflows without writing to disk.
+"""
 
 import multiprocessing
-import os
-try:
-    from StringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import BytesIO
+
 import sys
 
+from luigi import six
 import luigi.util
 from luigi import target
+from luigi.format import get_default_format, MixedUnicodeBytes
 
 
 class MockFileSystem(target.FileSystem):
@@ -79,9 +83,17 @@ class MockFileSystem(target.FileSystem):
 class MockFile(target.FileSystemTarget):
     fs = MockFileSystem()
 
-    def __init__(self, fn, is_tmp=None, mirror_on_stderr=False):
+    def __init__(self, fn, is_tmp=None, mirror_on_stderr=False, format=None):
         self._mirror_on_stderr = mirror_on_stderr
         self._fn = fn
+        if format is None:
+            format = get_default_format()
+
+        # Allow to write unicode in file for retrocompatibility
+        if six.PY2:
+            format = format >> MixedUnicodeBytes
+
+        self.format = format
 
     def exists(self,):
         return self._fn in self.fs.get_all_data()
@@ -100,39 +112,58 @@ class MockFile(target.FileSystemTarget):
     def open(self, mode):
         fn = self._fn
 
-        class StringBuffer(StringIO):
+        class Buffer(BytesIO):
             # Just to be able to do writing + reading from the same buffer
 
+            _write_line = True
+
+            def set_wrapper(self, wrapper):
+                self.wrapper = wrapper
+
             def write(self2, data):
+                if six.PY3:
+                    stderrbytes = sys.stderr.buffer
+                else:
+                    stderrbytes = sys.stderr
+
                 if self._mirror_on_stderr:
-                    self2.seek(-1, os.SEEK_END)
-                    if self2.tell() <= 0 or self2.read(1) == '\n':
+                    if self2._write_line:
                         sys.stderr.write(fn + ": ")
-                    sys.stderr.write(data)
-                StringIO.write(self2, data)
+                    stderrbytes.write(data)
+                    if (data[-1]) == '\n':
+                        self2._write_line = True
+                    else:
+                        self2._write_line = False
+                super(Buffer, self2).write(data)
 
             def close(self2):
                 if mode == 'w':
+                    try:
+                        self.wrapper.flush()
+                    except AttributeError:
+                        pass
                     self.fs.get_all_data()[fn] = self2.getvalue()
-                StringIO.close(self2)
+                super(Buffer, self2).close()
 
             def __exit__(self, exc_type, exc_val, exc_tb):
                 if not exc_type:
                     self.close()
 
-            def __enter__(self):
-                return self
+            def __enter__(self2):
+                return self2
+
+            def readable(self2):
+                return mode == 'r'
+
+            def writeable(self2):
+                return mode == 'w'
+
+            def seekable(self2):
+                return False
 
         if mode == 'w':
-            return StringBuffer()
+            wrapper = self.format.pipe_writer(Buffer())
+            wrapper.set_wrapper(wrapper)
+            return wrapper
         else:
-            return StringBuffer(self.fs.get_all_data()[fn])
-
-
-def skip(func):
-    """
-    Sort of a substitute for unittest.skip*, which is 2.7+.
-    """
-    def wrapper():
-        pass
-    return wrapper
+            return self.format.pipe_reader(Buffer(self.fs.get_all_data()[fn]))

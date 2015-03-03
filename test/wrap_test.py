@@ -14,9 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import print_function
 
 import datetime
-import unittest
+from helpers import unittest
 
 import luigi
 import luigi.notifications
@@ -24,17 +25,17 @@ from luigi.mock import MockFile
 from luigi.util import inherits
 
 luigi.notifications.DEBUG = True
-File = MockFile
+LocalTarget = MockFile
 
 
 class A(luigi.Task):
 
     def output(self):
-        return File('/tmp/a.txt')
+        return LocalTarget('/tmp/a.txt')
 
     def run(self):
         f = self.output().open('w')
-        print >>f, 'hello, world'
+        print('hello, world', file=f)
         f.close()
 
 
@@ -42,11 +43,11 @@ class B(luigi.Task):
     date = luigi.DateParameter()
 
     def output(self):
-        return File(self.date.strftime('/tmp/b-%Y-%m-%d.txt'))
+        return LocalTarget(self.date.strftime('/tmp/b-%Y-%m-%d.txt'))
 
     def run(self):
         f = self.output().open('w')
-        print >>f, 'goodbye, space'
+        print('goodbye, space', file=f)
         f.close()
 
 
@@ -60,9 +61,9 @@ def XMLWrapper(cls):
         def run(self):
             f = self.input().open('r')
             g = self.output().open('w')
-            print >>g, '<?xml version="1.0" ?>'
+            print('<?xml version="1.0" ?>', file=g)
             for line in f:
-                print >>g, '<dummy-xml>' + line.strip() + '</dummy-xml>'
+                print('<dummy-xml>' + line.strip() + '</dummy-xml>', file=g)
             g.close()
 
     return XMLWrapperCls
@@ -71,13 +72,13 @@ def XMLWrapper(cls):
 class AXML(XMLWrapper(A)):
 
     def output(self):
-        return File('/tmp/a.xml')
+        return LocalTarget('/tmp/a.xml')
 
 
 class BXML(XMLWrapper(B)):
 
     def output(self):
-        return File(self.date.strftime('/tmp/b-%Y-%m-%d.xml'))
+        return LocalTarget(self.date.strftime('/tmp/b-%Y-%m-%d.xml'))
 
 
 class WrapperTest(unittest.TestCase):
@@ -92,11 +93,11 @@ class WrapperTest(unittest.TestCase):
 
     def test_a(self):
         luigi.build([AXML()], local_scheduler=True, no_lock=True, workers=self.workers)
-        self.assertEqual(MockFile.fs.get_data('/tmp/a.xml'), '<?xml version="1.0" ?>\n<dummy-xml>hello, world</dummy-xml>\n')
+        self.assertEqual(MockFile.fs.get_data('/tmp/a.xml'), b'<?xml version="1.0" ?>\n<dummy-xml>hello, world</dummy-xml>\n')
 
     def test_b(self):
         luigi.build([BXML(datetime.date(2012, 1, 1))], local_scheduler=True, no_lock=True, workers=self.workers)
-        self.assertEqual(MockFile.fs.get_data('/tmp/b-2012-01-01.xml'), '<?xml version="1.0" ?>\n<dummy-xml>goodbye, space</dummy-xml>\n')
+        self.assertEqual(MockFile.fs.get_data('/tmp/b-2012-01-01.xml'), b'<?xml version="1.0" ?>\n<dummy-xml>goodbye, space</dummy-xml>\n')
 
 
 class WrapperWithMultipleWorkersTest(WrapperTest):

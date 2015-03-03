@@ -14,13 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import print_function
 
-import ConfigParser
+try:
+    import ConfigParser
+except ImportError:
+    import configparser as ConfigParser
 import logging
 import os
 import subprocess
-import unittest
+from helpers import unittest
 import warnings
+
+from luigi import six
 
 import luigi
 import mock
@@ -31,7 +37,7 @@ class SomeTask(luigi.Task):
     n = luigi.IntParameter()
 
     def output(self):
-        return File('/tmp/test_%d' % self.n)
+        return LocalTarget('/tmp/test_%d' % self.n)
 
     def run(self):
         f = self.output().open('w')
@@ -78,26 +84,26 @@ class WriteToFile(luigi.Task):
 
     def run(self):
         f = self.output().open('w')
-        print >>f, 'foo'
+        print('foo', file=f)
         f.close()
 
 
 class CmdlineTest(unittest.TestCase):
 
     def setUp(self):
-        global File
-        File = MockFile
+        global LocalTarget
+        LocalTarget = MockFile
         MockFile.fs.clear()
 
     @mock.patch("logging.getLogger")
     def test_cmdline_main_task_cls(self, logger):
         luigi.run(['--local-scheduler', '--no-lock', '--n', '100'], main_task_cls=SomeTask)
-        self.assertEqual(dict(MockFile.fs.get_all_data()), {'/tmp/test_100': 'done'})
+        self.assertEqual(dict(MockFile.fs.get_all_data()), {'/tmp/test_100': b'done'})
 
     @mock.patch("logging.getLogger")
     def test_cmdline_other_task(self, logger):
         luigi.run(['--local-scheduler', '--no-lock', 'SomeTask', '--n', '1000'])
-        self.assertEqual(dict(MockFile.fs.get_all_data()), {'/tmp/test_1000': 'done'})
+        self.assertEqual(dict(MockFile.fs.get_all_data()), {'/tmp/test_1000': b'done'})
 
     @mock.patch("logging.getLogger")
     def test_cmdline_ambiguous_class(self, logger):
@@ -118,7 +124,11 @@ class CmdlineTest(unittest.TestCase):
             self.assertEqual([mock.call(handler.return_value)], logger.return_value.addHandler.call_args_list)
 
         with mock.patch("luigi.interface.setup_interface_logging.has_run", new=False):
-            self.assertRaises(ConfigParser.NoSectionError, luigi.interface.setup_interface_logging, '/blah')
+            if six.PY2:
+                error = ConfigParser.NoSectionError
+            else:
+                error = KeyError
+            self.assertRaises(error, luigi.interface.setup_interface_logging, '/blah')
 
     @mock.patch("warnings.warn")
     @mock.patch("luigi.interface.setup_interface_logging")
@@ -130,7 +140,7 @@ class CmdlineTest(unittest.TestCase):
 
         with mock.patch("luigi.configuration.get_config") as getconf:
             getconf.return_value.get.side_effect = ConfigParser.NoOptionError(section='foo', option='bar')
-            getconf.return_value.get_boolean.return_value = True
+            getconf.return_value.getint.return_value = 0
 
             luigi.interface.setup_interface_logging.call_args_list = []
             luigi.run(['SomeTask', '--n', '42', '--local-scheduler', '--no-lock'])

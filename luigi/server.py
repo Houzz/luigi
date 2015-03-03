@@ -14,8 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""
+Simple REST server that takes commands in a JSON payload.
+Interface to the :py:class:`~luigi.scheduler.CentralPlannerScheduler` class.
+See :doc:`/central_scheduler` for more info.
+"""
 
-# Simple REST server that takes commands in a JSON payload
 import atexit
 import json
 import logging

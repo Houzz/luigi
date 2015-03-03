@@ -17,7 +17,7 @@
 
 import pickle
 import time
-import unittest
+from helpers import unittest
 
 import luigi
 import mock
@@ -114,8 +114,8 @@ class ParallelSchedulingTest(unittest.TestCase):
         self.assertRaises(Exception, UnpicklableExceptionTask().complete)
         try:
             UnpicklableExceptionTask().complete()
-        except Exception as ex:
-            pass
+        except Exception as e:
+            ex = e
         self.assertRaises(pickle.PicklingError, pickle.dumps, ex)
 
         # verify this can run async

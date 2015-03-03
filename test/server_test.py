@@ -15,57 +15,52 @@
 # limitations under the License.
 #
 
-import mock
+import multiprocessing
 import random
 import time
-import threading
-import unittest
-import urllib2
+from helpers import unittest
+try:
+    from urllib2 import Request, urlopen, HTTPError
+except ImportError:
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError
 
 import luigi.server
 
 
+def run_server(api_port):
+    luigi.server.run(api_port=api_port, address='127.0.0.1')
+
+
 class ServerTestBase(unittest.TestCase):
 
-    def run_server(self):
-        # Pass IPv4 localhost to ensure that only a single address, and therefore single port, is bound
-        luigi.server.run(api_port=self._api_port, address='127.0.0.1')
-
     def setUp(self):
-        self._api_port = random.randint(1000, 9999)
-
-        @mock.patch('signal.signal')
-        def scheduler_thread(signal):
-            # this is wrapped in a function so we get the instance
-            # from the scheduler thread and not from the main thread
-
-            self.run_server()
-
-        self._thread = threading.Thread(target=scheduler_thread)
-        self._thread.start()
+        self._api_port = random.randint(1024, 9999)
+        self._process = multiprocessing.Process(target=run_server, args=(self._api_port,))
+        self._process.start()
         time.sleep(0.1)  # wait for server to start
 
     def tearDown(self):
-        luigi.server.stop()
-        self._thread.join()
+        self._process.terminate()
+        self._process.join()
 
 
 class ServerTest(ServerTestBase):
 
     def test_visualizer(self):
         uri = 'http://localhost:%d' % self._api_port
-        req = urllib2.Request(uri)
-        response = urllib2.urlopen(req, timeout=10)
-        page = response.read()
+        req = Request(uri)
+        response = urlopen(req, timeout=10)
+        page = response.read().decode('utf8')
         self.assertTrue(page.find('<title>') != -1)
 
     def _test_404(self, path):
         uri = 'http://localhost:%d%s' % (self._api_port, path)
-        req = urllib2.Request(uri)
+        req = Request(uri)
         try:
-            response = urllib2.urlopen(req, timeout=10)
-        except urllib2.HTTPError as http_exc:
-            pass
+            _ = urlopen(req, timeout=10)
+        except HTTPError as e:
+            http_exc = e
 
         self.assertEqual(http_exc.code, 404)
 

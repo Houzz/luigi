@@ -16,7 +16,7 @@
 #
 
 import os
-from unittest import TestCase
+from helpers import unittest
 
 from luigi.format import InputPipeProcessWrapper
 
@@ -39,7 +39,7 @@ exit 1
 """
 
 
-class TestSigpipe(TestCase):
+class TestSigpipe(unittest.TestCase):
 
     def setUp(self):
         with open("/tmp/luigi_test_sigpipe.sh", "w") as fp:
@@ -52,7 +52,7 @@ class TestSigpipe(TestCase):
 
     def test_partial_read(self):
         p1 = InputPipeProcessWrapper(["bash", "/tmp/luigi_test_sigpipe.sh"])
-        self.assertEqual(p1.readline(), "Welcome 1 times\n")
+        self.assertEqual(p1.readline().decode('utf8'), "Welcome 1 times\n")
         p1.close()
         self.assertTrue(os.path.exists("/tmp/luigi_sigpipe.marker"))
 
@@ -60,13 +60,13 @@ class TestSigpipe(TestCase):
         p1 = InputPipeProcessWrapper(["bash", "/tmp/luigi_test_sigpipe.sh"])
         counter = 1
         for line in p1:
-            self.assertEqual(line, "Welcome %i times\n" % counter)
+            self.assertEqual(line.decode('utf8'), "Welcome %i times\n" % counter)
             counter += 1
         p1.close()
         self.assertFalse(os.path.exists("/tmp/luigi_sigpipe.marker"))
 
 
-class TestSubprocessException(TestCase):
+class TestSubprocessException(unittest.TestCase):
 
     def setUp(self):
         with open("/tmp/luigi_test_sigpipe.sh", "w") as fp:
@@ -79,7 +79,7 @@ class TestSubprocessException(TestCase):
 
     def test_partial_read(self):
         p1 = InputPipeProcessWrapper(["bash", "/tmp/luigi_test_sigpipe.sh"])
-        self.assertEqual(p1.readline(), "Welcome 1 times\n")
+        self.assertEqual(p1.readline().decode('utf8'), "Welcome 1 times\n")
         p1.close()
         self.assertTrue(os.path.exists("/tmp/luigi_sigpipe.marker"))
 
@@ -88,7 +88,7 @@ class TestSubprocessException(TestCase):
             p1 = InputPipeProcessWrapper(["bash", "/tmp/luigi_test_sigpipe.sh"])
             counter = 1
             for line in p1:
-                self.assertEqual(line, "Welcome %i times\n" % counter)
+                self.assertEqual(line.decode('utf8'), "Welcome %i times\n" % counter)
                 counter += 1
             p1.close()
 

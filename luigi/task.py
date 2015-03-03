@@ -14,6 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""
+The abstract :py:class:`Task` class.
+It is a central concept of Luigi and represents the state of the workflow.
+See :doc:`/api_overview` for an overview.
+"""
 
 import abc
 import configuration
@@ -47,6 +52,15 @@ def namespace(namespace=None):
     is reset, which is recommended to do at the end of any file where the
     namespace is set to avoid unintentionally setting namespace on tasks outside
     of the scope of the current file.
+
+    The namespace of a Task can also be changed by specifying the property
+    ``task_namespace``. This solution has the advantage that the namespace
+    doesn't have to be restored.
+
+    .. code-block:: python
+
+        class Task2(luigi.Task):
+            task_namespace = 'namespace2'
     """
     Register._default_namespace = namespace
 
@@ -229,6 +243,7 @@ class Task(object):
         class MyTask(luigi.Task):
             count = luigi.IntParameter()
 
+
     Each Task exposes a constructor accepting all :py:class:`Parameter` (and
     values) as kwargs. e.g. ``MyTask(count=10)`` would instantiate `MyTask`.
 
@@ -247,24 +262,26 @@ class Task(object):
 
     _event_callbacks = {}
 
-    # Priority of the task: the scheduler should favor available
-    # tasks with higher priority values first.
+    #: Priority of the task: the scheduler should favor available
+    #: tasks with higher priority values first.
+    #: See :ref:`Task.priority`
     priority = 0
     disabled = False
 
-    # If multiple items from the same bucket are ready to run, the scheduler
-    # will pick the one with highest bucket priority. When it is marked done,
-    # so is everything else in the bucket with lower priority. bucket_priority
-    # should have a consistent type within a bucket.
+    #: If multiple items from the same bucket are ready to run, the scheduler
+    #: will pick the one with highest bucket priority. When it is marked done,
+    #: so is everything else in the bucket with lower priority. bucket_priority
+    #: should have a consistent type within a bucket.
     supersedes_bucket = None
     supersedes_priority = None
 
-    # Resources used by the task. Should be formatted like {"scp": 1} to indicate that the
-    # task requires 1 unit of the scp resource.
+    #: Resources used by the task. Should be formatted like {"scp": 1} to indicate that the
+    #: task requires 1 unit of the scp resource.
     resources = {}
 
-    # Number of seconds after which to time out the run function. No timeout if set to 0. Defaults
-    # to 0 or value in client.cfg
+    #: Number of seconds after which to time out the run function.
+    #: No timeout if set to 0.
+    #: Defaults to 0 or value in client.cfg
     worker_timeout = None
 
     _dirty_job_created = None
@@ -297,7 +314,7 @@ class Task(object):
 
     @property
     def task_module(self):
-        # Returns what Python module to import to get access to this class
+        ''' Returns what Python module to import to get access to this class. '''
         # TODO(erikbern): we should think about a language-agnostic mechanism
         return self.__class__.__module__
 
@@ -347,7 +364,7 @@ class Task(object):
         exc_desc = '%s[args=%s, kwargs=%s]' % (task_name, args, kwargs)
 
         # Fill in the positional arguments
-        positional_params = [(n, p) for n, p in params if p.significant]
+        positional_params = [(n, p) for n, p in params if not p.is_global]
         for i, arg in enumerate(args):
             if i >= len(positional_params):
                 raise parameter.UnknownParameterException('%s: takes at most %d parameters (%d given)' % (exc_desc, len(positional_params), len(args)))
@@ -435,7 +452,7 @@ class Task(object):
         return cls(**kwargs)
 
     def to_str_params(self):
-        # Convert all parameters to a str->str hash
+        ''' Convert all parameters to a str->str hash.'''
         params_str = {}
         params = dict(self.get_params())
         for param_name, param_value in six.iteritems(self.param_kwargs):
@@ -536,6 +553,8 @@ class Task(object):
           If running multiple workers, the output must be a resource that is accessible
           by all workers, such as a DFS or database. Otherwise, workers might compute
           the same output since they don't see the work done by other workers.
+
+        See :ref:`Task.output`
         """
         return []  # default impl
 
@@ -548,6 +567,8 @@ class Task(object):
         override this method. Otherwise, a Subclasses can override this method
         to return a single Task, a list of Task instances, or a dict whose
         values are Task instances.
+
+        See :ref:`Task.requires`
         """
         return []  # default impl
 
@@ -575,6 +596,8 @@ class Task(object):
         """
         Returns the outputs of the Tasks returned by :py:meth:`requires`
 
+        See :ref:`Task.input`
+
         :return: a list of :py:class:`Target` objects which are specified as
                  outputs of all required Tasks.
         """
@@ -592,6 +615,8 @@ class Task(object):
     def run(self):
         """
         The task run method, to be overridden in a subclass.
+
+        See :ref:`Task.run`
         """
         pass  # default impl
 

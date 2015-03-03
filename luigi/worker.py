@@ -14,6 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""
+The worker communicates with the scheduler and does two things:
+
+1. Sends all tasks that has to be run
+2. Gets tasks from the scheduler that should be run
+
+When running in local mode, the worker talks directly to a :py:class:`~luigi.scheduler.CentralPlannerScheduler` instance.
+When you run a central server, the worker will talk to the scheduler using a :py:class:`~luigi.rpc.RemoteScheduler` instance.
+"""
 
 import abc
 import collections
@@ -37,6 +46,7 @@ from luigi import six
 from luigi import configuration
 from luigi import notifications
 from luigi.event import Event
+from luigi.interface import load_task
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDED, CentralPlannerScheduler
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths
@@ -274,7 +284,7 @@ class Worker(object):
     def __init__(self, scheduler=None, worker_id=None,
                  worker_processes=1, ping_interval=None, keep_alive=None,
                  wait_interval=None, max_reschedules=None, count_uniques=None,
-                 worker_timeout=None):
+                 worker_timeout=None, task_limit=None, assistant=False):
 
         if scheduler is None:
             scheduler = CentralPlannerScheduler()
@@ -309,8 +319,12 @@ class Worker(object):
         self.__max_reschedules = max_reschedules
 
         if worker_timeout is None:
-            worker_timeout = configuration.get_config().getint('core', 'worker-timeout', 0)
+            worker_timeout = config.getint('core', 'worker-timeout', 0)
         self.__worker_timeout = worker_timeout
+
+        if task_limit is None:
+            task_limit = config.getint('core', 'worker-task-limit', None)
+        self.__task_limit = task_limit
 
         self._id = worker_id
         self._scheduler = scheduler
@@ -324,6 +338,8 @@ class Worker(object):
         self.add_succeeded = True
         self.run_succeeded = True
         self.unfulfilled_counts = collections.defaultdict(int)
+
+        self.assistant = assistant
 
         class KeepAliveThread(threading.Thread):
             """
@@ -472,6 +488,10 @@ class Worker(object):
         return self.add_succeeded
 
     def _add(self, task, is_complete):
+        if self.__task_limit is not None and len(self._scheduled_tasks) >= self.__task_limit:
+            logger.warning('Will not schedule %s or any dependencies due to exceeded task-limit of %d', task, self.__task_limit)
+            return
+
         formatted_traceback = None
         try:
             self._check_complete_value(is_complete)
@@ -569,7 +589,7 @@ class Worker(object):
 
     def _get_work(self):
         logger.debug("Asking scheduler for work...")
-        r = self._scheduler.get_work(worker=self._id, host=self.host)
+        r = self._scheduler.get_work(worker=self._id, host=self.host, assistant=self.assistant)
         # Support old version of scheduler
         if isinstance(r, tuple) or isinstance(r, list):
             n_pending_tasks, task_id = r
@@ -581,6 +601,15 @@ class Worker(object):
             running_tasks = r['running_tasks']
             # support old version of scheduler
             n_unique_pending = r.get('n_unique_pending', 0)
+
+        if task_id is not None and task_id not in self._scheduled_tasks:
+            logger.info('Did not schedule %s, will load it dynamically', task_id)
+            # TODO: we should obtain the module name from the server!
+            self._scheduled_tasks[task_id] = \
+                load_task(module=None,
+                          task_name=r['task_family'],
+                          params_str=r['task_params'])
+
         return task_id, running_tasks, n_pending_tasks, n_unique_pending
 
     def _run_task(self, task_id):
@@ -616,7 +645,7 @@ class Worker(object):
         for task_id, p in six.iteritems(self._running_tasks):
             if not p.is_alive() and p.exitcode:
                 error_msg = 'Worker task %s died unexpectedly with exit code %s' % (task_id, p.exitcode)
-            elif p.timeout_time is not None and time.time() > p.timeout_time and p.is_alive():
+            elif p.timeout_time is not None and time.time() > float(p.timeout_time) and p.is_alive():
                 p.terminate()
                 error_msg = 'Worker task %s timed out and was terminated.' % task_id
             else:

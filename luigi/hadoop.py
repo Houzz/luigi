@@ -14,6 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
+"""
+Run Hadoop Mapreduce jobs using Hadoop Streaming.
+To run a job, you need to subclass :py:class:`luigi.hadoop.JobTask` and implement a ``mapper`` and ``reducer`` methods.
+See :doc:`/example_top_artists` for an example of how to run a Hadoop job.
+"""
+
 from __future__ import print_function
 
 import abc
@@ -46,6 +53,9 @@ import luigi
 import luigi.hdfs
 import luigi.s3
 from luigi import mrrunner
+
+if six.PY2:
+    from itertools import imap as map
 
 logger = logging.getLogger('luigi-interface')
 
@@ -177,7 +187,7 @@ def flatten(sequence):
 
     """
     for item in sequence:
-        if hasattr(item, "__iter__"):
+        if hasattr(item, "__iter__") and not isinstance(item, str) and not isinstance(item, bytes):
             for i in item:
                 yield i
         else:
@@ -247,8 +257,8 @@ def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
 
     def track_process(arglist, tracking_url_callback, env=None):
         # Dump stdout to a temp file, poll stderr and log it
-        temp_stdout = tempfile.TemporaryFile()
-        proc = subprocess.Popen(arglist, stdout=temp_stdout, stderr=subprocess.PIPE, env=env, close_fds=True)
+        temp_stdout = tempfile.TemporaryFile('w+t')
+        proc = subprocess.Popen(arglist, stdout=temp_stdout, stderr=subprocess.PIPE, env=env, close_fds=True, universal_newlines=True)
 
         # We parse the output to try to find the tracking URL.
         # This URL is useful for fetching the logs of the job.
@@ -538,7 +548,7 @@ class LocalJobRunner(JobRunner):
         lines = []
         for i, line in enumerate(input_stream):
             parts = line.rstrip('\n').split('\t')
-            blob = md5(str(i)).hexdigest()  # pseudo-random blob to make sure the input isn't sorted
+            blob = md5(str(i).encode('ascii')).hexdigest()  # pseudo-random blob to make sure the input isn't sorted
             lines.append((parts[:-1], blob, line))
         for _, _, line in sorted(lines):
             output.write(line)
@@ -836,11 +846,11 @@ class JobTask(BaseHadoopJobTask):
         if self.__module__ == '__main__':
             d = pickle.dumps(self)
             module_name = os.path.basename(sys.argv[0]).rsplit('.', 1)[0]
-            d = d.replace('(c__main__', "(c" + module_name)
-            open(file_name, "w").write(d)
+            d = d.replace(b'(c__main__', "(c" + module_name)
+            open(file_name, "wb").write(d)
 
         else:
-            pickle.dump(self, open(file_name, "w"))
+            pickle.dump(self, open(file_name, "wb"))
 
     def _map_input(self, input_stream):
         """
@@ -904,7 +914,7 @@ class JobTask(BaseHadoopJobTask):
         Yields a tuple of python objects.
         """
         for input_line in input_stream:
-            yield map(eval, input_line.split("\t"))
+            yield list(map(eval, input_line.split("\t")))
 
     def internal_writer(self, outputs, stdout):
         """
@@ -919,7 +929,7 @@ def pickle_reader(job, input_stream):
         return pickle.loads(binascii.a2b_base64(item))
     for line in input_stream:
         items = line.split('\t')
-        yield map(decode, items)
+        yield list(map(decode, items))
 
 
 def pickle_writer(job, outputs, stdout):

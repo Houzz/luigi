@@ -14,8 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import print_function
 
-import unittest
+from helpers import unittest
 
 from luigi.mock import MockFile, MockFileSystem
 
@@ -25,7 +26,7 @@ class MockFileTest(unittest.TestCase):
     def test_1(self):
         t = MockFile('test')
         p = t.open('w')
-        print >> p, 'test'
+        print('test', file=p)
         p.close()
 
         q = t.open('r')
@@ -39,6 +40,16 @@ class MockFileTest(unittest.TestCase):
 
         with t.open('r') as b:
             self.assertEqual(list(b), ['bar'])
+
+    # That should work in python2 because of the autocast
+    # That should work in python3 because the default format is Text
+    def test_unicode(self):
+        t = MockFile("foo")
+        with t.open('w') as b:
+            b.write(u"bar")
+
+        with t.open('r') as b:
+            self.assertEqual(b.read(), u'bar')
 
 
 class MockFileSystemTest(unittest.TestCase):

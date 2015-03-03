@@ -20,6 +20,9 @@ About Luigi
 .. image:: https://img.shields.io/pypi/l/luigi.svg?style=flat
    :target: https://pypi.python.org/pypi/luigi
 
+.. image:: https://pypip.in/py_versions/luigi/badge.svg?style=flat
+   :target: https://pypi.python.org/pypi/luigi
+
 Luigi is a Python package that helps you build complex pipelines of
 batch jobs. It handles dependency resolution, workflow management,
 visualization, handling failures, command line integration, and much
@@ -113,13 +116,14 @@ Who uses Luigi?
 
 Several companies have written blog posts or presentation about Luigi:
 
-* `Spotify : NYC Data Science <http://www.slideshare.net/erikbern/luigi-presentation-nyc-data-science>`_
+* `Spotify (NYC Data Science) <http://www.slideshare.net/erikbern/luigi-presentation-nyc-data-science>`_
 * `Foursquare <http://www.slideshare.net/OpenAnayticsMeetup/luigi-presentation-17-23199897>`_
 * `Mortar Data <https://help.mortardata.com/technologies/luigi>`_
 * `Stripe <http://www.slideshare.net/PyData/python-as-part-of-a-production-machine-learning-stack-by-michael-manapat-pydata-sv-2014>`_
 * `Asana <https://eng.asana.com/2014/11/stable-accessible-data-infrastructure-startup/>`_
 * `Buffer <https://overflow.bufferapp.com/2014/10/31/buffers-new-data-architecture/>`_
 * `SeatGeek <http://chairnerd.seatgeek.com/building-out-the-seatgeek-data-pipeline/>`_
+* `Treasure Data <http://blog.treasuredata.com/2015/02/25/managing-the-data-pipeline-with-git-luigi/>`_
 
 Please let us know if your company wants to be featured on this list!
 

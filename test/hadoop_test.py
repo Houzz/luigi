@@ -16,12 +16,11 @@
 #
 
 import os
-import StringIO
-import subprocess
 import sys
 import unittest
 
 import luigi
+import luigi.format
 import luigi.hadoop
 import luigi.hdfs
 import luigi.mrrunner
@@ -32,7 +31,7 @@ from luigi.mock import MockFile
 from nose.plugins.attrib import attr
 
 luigi.notifications.DEBUG = True
-File = MockFile
+LocalTarget = MockFile
 
 luigi.hadoop.attach(minicluster)
 
@@ -42,9 +41,9 @@ class OutputMixin(luigi.Task):
 
     def get_output(self, fn):
         if self.use_hdfs:
-            return luigi.hdfs.HdfsTarget('/tmp/' + fn, format=luigi.hdfs.PlainDir)
+            return luigi.hdfs.HdfsTarget('/tmp/' + fn, format=luigi.format.get_default_format() >> luigi.hdfs.PlainDir)
         else:
-            return File(fn)
+            return LocalTarget(fn)
 
 
 class HadoopJobTask(luigi.hadoop.JobTask, OutputMixin):
@@ -130,7 +129,7 @@ class UnicodeJob(HadoopJobTask):
 
     def mapper(self, line):
         yield u'test', 1
-        yield 'test', 1
+        yield b'test', 1
 
     def reducer(self, word, occurences):
         yield word, sum(occurences)

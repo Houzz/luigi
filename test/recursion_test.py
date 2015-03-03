@@ -14,23 +14,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import print_function
 
 import datetime
 import sys
-import unittest
+from helpers import unittest
 
 import luigi
 import luigi.interface
 from luigi.mock import MockFile
 
-File = MockFile
+LocalTarget = MockFile
 
 
 class Popularity(luigi.Task):
     date = luigi.DateParameter(default=datetime.date.today() - datetime.timedelta(1))
 
     def output(self):
-        return File('/tmp/popularity/%s.txt' % self.date.strftime('%Y-%m-%d'))
+        return LocalTarget('/tmp/popularity/%s.txt' % self.date.strftime('%Y-%m-%d'))
 
     def requires(self):
         return Popularity(self.date - datetime.timedelta(1))
@@ -38,7 +39,7 @@ class Popularity(luigi.Task):
     def run(self):
         f = self.output().open('w')
         for line in self.input().open('r'):
-            print >> f, int(line.strip()) + 1
+            print(int(line.strip()) + 1, file=f)
 
         f.close()
 
@@ -46,7 +47,7 @@ class Popularity(luigi.Task):
 class RecursionTest(unittest.TestCase):
 
     def setUp(self):
-        MockFile.fs.get_all_data()['/tmp/popularity/2009-01-01.txt'] = '0\n'
+        MockFile.fs.get_all_data()['/tmp/popularity/2009-01-01.txt'] = b'0\n'
 
     def test_invoke(self):
         w = luigi.worker.Worker()
@@ -54,4 +55,4 @@ class RecursionTest(unittest.TestCase):
         w.run()
         w.stop()
 
-        self.assertEqual(MockFile.fs.get_data('/tmp/popularity/2010-01-01.txt'), '365\n')
+        self.assertEqual(MockFile.fs.get_data('/tmp/popularity/2010-01-01.txt'), b'365\n')
