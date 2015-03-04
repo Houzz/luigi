@@ -673,7 +673,6 @@ class CentralPlannerScheduler(Scheduler):
         # Return remaining tasks that have no FAILED descendents
         self.update(worker, {'host': host})
         best_task = None
-        best_task_id = None
         locally_pending_tasks = 0
         running_tasks = []
 
@@ -688,7 +687,8 @@ class CentralPlannerScheduler(Scheduler):
         tasks.sort(key=self._rank(), reverse=True)
 
         for task in tasks:
-            if task.status == 'RUNNING' and worker in task.workers:
+            in_workers = assistant or worker in task.workers
+            if task.status == 'RUNNING' and in_workers:
                 # Return a list of currently running tasks to the client,
                 # makes it easier to troubleshoot
                 other_worker = self._state.get_worker(task.worker_running)
@@ -697,14 +697,14 @@ class CentralPlannerScheduler(Scheduler):
                     more_info.update(other_worker.info)
                     running_tasks.append(more_info)
 
-            if task.status == PENDING and (worker in task.workers or assistant):
+            if task.status == PENDING and in_workers:
                 locally_pending_tasks += 1
-                if len(task.workers) == 1:
+                if len(task.workers) == 1 and not assistant:
                     n_unique_pending += 1
 
             greedy_schedulable = lambda: (self._has_resources(task.resources, greedy_resources)
                                           and task.supersedes_bucket not in supersedes_buckets)
-            if task.status == RUNNING and ((task.worker_running in greedy_workers and greedy_schedulable()) or assistant):
+            if task.status == RUNNING and task.worker_running in greedy_workers and greedy_schedulable():
                 greedy_workers[task.worker_running] -= 1
                 for resource, amount in six.iteritems((task.resources or {})):
                     greedy_resources[resource] += amount
@@ -712,11 +712,11 @@ class CentralPlannerScheduler(Scheduler):
                     supersedes_buckets.add(task.supersedes_bucket)
 
             if not best_task and self._schedulable(task) and greedy_schedulable():
-                if (worker in task.workers or assistant) and self._has_resources(task.resources, used_resources):
+                if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
-                    best_task_id = task.id
                 else:
-                    for task_worker in task.workers:
+                    workers = itertools.chain(task.workers, [worker]) if assistant else task.workers
+                    for task_worker in workers:
                         if greedy_workers.get(task_worker, 0) > 0:
                             # use up a worker
                             greedy_workers[task_worker] -= 1
