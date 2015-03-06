@@ -161,8 +161,8 @@ def _get_default(x, default):
 
 class Task(object):
 
-    def __init__(self, task_id, status, deps, resources=None, priority=0, family='', params=None,
-                 disable_failures=None, disable_window=None, supersedes_bucket=None,
+    def __init__(self, task_id, status, deps, resources=None, priority=0, family='', module=None,
+                 params=None, disable_failures=None, disable_window=None, supersedes_bucket=None,
                  supersedes_priority=None):
         self.id = task_id
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
@@ -183,6 +183,7 @@ class Task(object):
         self.supersedes_priority = supersedes_priority
         self.resources = _get_default(resources, {})
         self.family = family
+        self.module = module
         self.params = _get_default(params, {})
         self.disable_failures = disable_failures
         self.failures = Failures(disable_window)
@@ -532,8 +533,8 @@ class CentralPlannerScheduler(Scheduler):
 
     def add_task(self, worker, task_id, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
-                 priority=0, family='', params=None, supersedes_bucket=None,
-                 supersedes_priority=None, **kwargs):
+                 priority=0, family='', module=None, params=None,
+                 supersedes_bucket=None, supersedes_priority=None, **kwargs):
         """
         * add task identified by task_id if it doesn't exist
         * if deps is not None, update dependency list
@@ -545,12 +546,14 @@ class CentralPlannerScheduler(Scheduler):
 
         task = self._state.get_task(task_id, setdefault=self._make_task(
             task_id=task_id, status=PENDING, deps=deps, resources=resources,
-            priority=priority, family=family, params=params, supersedes_bucket=supersedes_bucket,
-            supersedes_priority=supersedes_priority))
+            priority=priority, family=family, module=module, params=params,
+            supersedes_bucket=supersedes_bucket, supersedes_priority=supersedes_priority))
 
         # for setting priority, we'll sometimes create tasks with unset family and params
         if not task.family:
             task.family = family
+        if not getattr(task, 'module', None):
+            task.module = module
         if not task.params:
             task.params = _get_default(params, {})
 
@@ -759,6 +762,7 @@ class CentralPlannerScheduler(Scheduler):
 
             reply['task_id'] = best_task.id
             reply['task_family'] = best_task.family
+            reply['task_module'] = getattr(best_task, 'module', None)
             reply['task_params'] = best_task.params
 
         return reply

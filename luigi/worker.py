@@ -550,6 +550,7 @@ class Worker(object):
                                  resources=task.process_resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family,
+                                 module=task.task_module,
                                  supersedes_bucket=task.supersedes_bucket,
                                  supersedes_priority=task.supersedes_priority,
                                  )
@@ -607,7 +608,7 @@ class Worker(object):
             try:
                 # TODO: we should obtain the module name from the server!
                 self._scheduled_tasks[task_id] = \
-                    load_task(module=None,
+                    load_task(module=r.get('task_module'),
                               task_name=r['task_family'],
                               params_str=r['task_params'])
             except TaskClassException as ex:
@@ -705,6 +706,7 @@ class Worker(object):
                                      runnable=None,
                                      params=task.to_str_params(),
                                      family=task.task_family,
+                                     module=task.task_module,
                                      new_deps=new_deps,
                                      supersedes_bucket=task.supersedes_bucket,
                                      supersedes_priority=task.supersedes_priority,

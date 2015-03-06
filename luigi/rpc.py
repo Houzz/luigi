@@ -111,8 +111,9 @@ class RemoteScheduler(Scheduler):
         self._request('/api/ping', {'worker': worker}, attempts=1)
 
     def add_task(self, worker, task_id, status=PENDING, runnable=False,
-                 deps=None, new_deps=None, expl=None, resources={}, priority=0,
-                 family='', params={}, supersedes_bucket=None, supersedes_priority=None):
+                 deps=None, new_deps=None, expl=None, resources=None, priority=0,
+                 family='', module=None, params=None, supersedes_bucket=None,
+                 supersedes_priority=None):
         self._request('/api/add_task', {
             'task_id': task_id,
             'worker': worker,
@@ -121,10 +122,11 @@ class RemoteScheduler(Scheduler):
             'deps': deps,
             'new_deps': new_deps,
             'expl': expl,
-            'resources': resources,
+            'resources': resources or {},
             'priority': priority,
             'family': family,
-            'params': params,
+            'module': module,
+            'params': params or {},
             'supersedes_bucket': supersedes_bucket,
             'supersedes_priority': supersedes_priority,
         })
