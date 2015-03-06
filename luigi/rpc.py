@@ -121,11 +121,11 @@ class RemoteScheduler(Scheduler):
             'deps': deps,
             'new_deps': new_deps,
             'expl': expl,
-            'resources': resources or {},
+            'resources': resources,
             'priority': priority,
             'family': family,
             'module': module,
-            'params': params or {},
+            'params': params,
             'supersedes_bucket': supersedes_bucket,
             'supersedes_priority': supersedes_priority,
         })
