@@ -99,7 +99,8 @@ class scheduler(Config):
     max_shown_tasks = parameter.IntParameter(default=100000,
                                              config_path=dict(section='scheduler', name='max-shown-task'))
 
-    record_task_history = parameter.BoolParameter(default=False)
+    record_task_history = parameter.BoolParameter(default=False,
+                                                  config_path=dict(section='scheduler', name='record_task_history'))
 
 
 def fix_time(x):
@@ -253,7 +254,7 @@ class SimpleTaskState(object):
     def dump(self):
         state = (self._tasks, self._active_workers)
         try:
-            with open(self._state_path, 'w') as fobj:
+            with open(self._state_path, 'wb') as fobj:
                 pickle.dump(state, fobj)
         except IOError:
             logger.warning("Failed saving scheduler state", exc_info=1)
@@ -583,10 +584,6 @@ class CentralPlannerScheduler(Scheduler):
 
         if resources is not None:
             task.resources = resources
-        if supersedes_bucket is not None:
-            self._state.set_supersedes_bucket(task, supersedes_bucket)
-        if supersedes_priority is not None:
-            task.supersedes_priority = supersedes_priority
 
         # only assistants should normally schedule tasks as FAILED and not runnable
         if runnable or status != FAILED:
