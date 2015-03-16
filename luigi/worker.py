@@ -617,7 +617,8 @@ class Worker(object):
                 subject = 'Luigi: %s' % msg
                 error_message = notifications.wrap_traceback(ex)
                 notifications.send_error_email(subject, error_message)
-                self._scheduler.add_task(self._id, task_id, status=FAILED, runnable=False)
+                self._scheduler.add_task(self._id, task_id, status=FAILED, runnable=False,
+                                         assistant=self._assistant)
                 task_id = None
                 self.run_succeeded = False
 
@@ -710,6 +711,7 @@ class Worker(object):
                                      new_deps=new_deps,
                                      supersedes_bucket=task.supersedes_bucket,
                                      supersedes_priority=task.supersedes_priority,
+                                     assistant=self._assistant,
                                      )
 
             if status == RUNNING:

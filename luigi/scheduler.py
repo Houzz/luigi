@@ -536,7 +536,8 @@ class CentralPlannerScheduler(Scheduler):
     def add_task(self, worker, task_id, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
                  priority=0, family='', module=None, params=None,
-                 supersedes_bucket=None, supersedes_priority=None, **kwargs):
+                 supersedes_bucket=None, supersedes_priority=None,
+                 assistant=False, **kwargs):
         """
         * add task identified by task_id if it doesn't exist
         * if deps is not None, update dependency list
@@ -590,8 +591,7 @@ class CentralPlannerScheduler(Scheduler):
             self._state.set_supersedes_bucket(task, supersedes_bucket)
             task.supersedes_priority = supersedes_priority
 
-        # only assistants should normally schedule tasks as FAILED and not runnable
-        if runnable or status != FAILED:
+        if not assistant:
             task.stakeholders.add(worker)
 
             # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
