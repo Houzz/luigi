@@ -158,9 +158,6 @@ class RemoteScheduler(Scheduler):
     def resources(self):
         return self._request('/api/resources', {})
 
-    def update_resources(self, resources=None):
-        return self._request('/api/update_resources', {'resources': resources})
-
     def fetch_error(self, task_id):
         return self._request('/api/fetch_error', {'task_id': task_id})
 
