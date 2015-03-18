@@ -228,6 +228,7 @@ class Worker(object):
         if self.last_active + config.worker_disconnect_delay < time.time():
             return True
 
+    @property
     def assistant(self):
         return self.info.get('assistant', False)
 
@@ -431,7 +432,7 @@ class SimpleTaskState(object):
             yield worker
 
     def get_assistants(self, last_active_lt=None):
-        return filter(lambda w: w.assistant(), self.get_active_workers(last_active_lt))
+        return filter(lambda w: w.assistant, self.get_active_workers(last_active_lt))
 
     def get_worker_ids(self):
         return self._active_workers.keys()  # only used for unit tests

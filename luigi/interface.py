@@ -223,12 +223,17 @@ def add_task_parameters(parser, task_cls, optparse=False):
         param.add_to_cmdline_parser(parser, param_name, task_cls.task_family, optparse=optparse, glob=False)
 
 
-def add_global_parameters(parser, optparse=False):
+def get_global_parameters():
     seen_params = set()
     for task_name, is_without_section, param_name, param in Register.get_all_params():
         if param in seen_params:
             continue
         seen_params.add(param)
+        yield task_name, is_without_section, param_name, param
+
+
+def add_global_parameters(parser, optparse=False):
+    for task_name, is_without_section, param_name, param in get_global_parameters():
         param.add_to_cmdline_parser(parser, param_name, task_name, optparse=optparse, glob=True, is_without_section=is_without_section)
 
 
@@ -242,7 +247,7 @@ def get_task_parameters(task_cls, args):
 
 def set_global_parameters(args):
     # Note that this is not side effect free
-    for task_name, is_without_section, param_name, param in Register.get_all_params():
+    for task_name, is_without_section, param_name, param in get_global_parameters():
         param.set_global_from_args(param_name, task_name, args, is_without_section=is_without_section)
 
 
@@ -252,6 +257,9 @@ class ArgParseInterface(Interface):
     """
 
     def parse_task(self, cmdline_args=None, main_task_cls=None):
+        if cmdline_args is None:
+            cmdline_args = sys.argv[1:]
+
         parser = argparse.ArgumentParser()
 
         add_global_parameters(parser)
@@ -262,14 +270,17 @@ class ArgParseInterface(Interface):
             args = parser.parse_args(args=cmdline_args)
             task_cls = main_task_cls
         else:
-            task_names = sorted(Register.get_reg().keys())
+            task_names = Register.task_names()
 
             # Parse global arguments and pull out the task name.
             # We used to do this using subparsers+command, but some issues with
             # argparse across different versions of Python (2.7.9) made it hard.
-            args, unknown = parser.parse_known_args(args=cmdline_args)
+            args, unknown = parser.parse_known_args(args=[a for a in cmdline_args if a != '--help'])
             if len(unknown) == 0:
+                # In case it included a --help argument, run again
+                parser.parse_known_args(args=cmdline_args)
                 raise SystemExit('No task specified')
+
             task_name = unknown[0]
             if task_name not in task_names:
                 error_task_names(task_name, task_names)
@@ -317,11 +328,14 @@ class DynamicArgParseInterface(ArgParseInterface):
     """
 
     def parse(self, cmdline_args=None, main_task_cls=None):
+        if cmdline_args is None:
+            cmdline_args = sys.argv[1:]
+
         parser = argparse.ArgumentParser()
 
         add_global_parameters(parser)
 
-        args, unknown = parser.parse_known_args(args=cmdline_args)
+        args, unknown = parser.parse_known_args(args=[a for a in cmdline_args if a != '--help'])
         module = args.module
 
         __import__(module)
