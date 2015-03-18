@@ -585,6 +585,10 @@ class CentralPlannerScheduler(Scheduler):
         if resources is not None:
             task.resources = resources
 
+        if supersedes_bucket is not None:
+            self._state.set_supersedes_bucket(task, supersedes_bucket)
+            task.supersedes_priority = supersedes_priority
+
         # only assistants should normally schedule tasks as FAILED and not runnable
         if runnable or status != FAILED:
             task.stakeholders.add(worker)

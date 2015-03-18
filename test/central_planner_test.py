@@ -614,13 +614,13 @@ class CentralPlannerTest(unittest.TestCase):
         self.check_task_order('B')
 
     def test_only_one_bucket_item_at_once(self):
-        self.sch.add_task('X', 'A', supersedes_bucket='b', supersedes_priority=0)
+        self.sch.add_task('X', 'A', supersedes_bucket='b', supersedes_priority=0, priority=10)
         self.assertEqual('A', self.sch.get_work('X')['task_id'])
         self.sch.add_task('Y', 'B', supersedes_bucket='b', supersedes_priority=1)
         self.assertFalse(self.sch.get_work('Y')['task_id'])
 
     def test_hold_bucket_for_higher_priority_worker(self):
-        self.sch.add_task('X', 'A', supersedes_bucket='b', supersedes_priority=0)
+        self.sch.add_task('X', 'A', supersedes_bucket='b', supersedes_priority=0, priority=10)
         self.sch.add_task('Y', 'B', supersedes_bucket='b', supersedes_priority=1)
         self.assertFalse(self.sch.get_work('X')['task_id'])
         self.assertEqual('B', self.sch.get_work('Y')['task_id'])
@@ -630,6 +630,17 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority=10)
         self.sch.add_task(WORKER, 'B', supersedes_bucket='a', priority=10)
         self.check_task_order('BA')
+
+    def test_set_bucket(self):
+        self.sch.add_task(WORKER, 'A')
+        self.sch.add_task(WORKER, 'A', supersedes_bucket='a', supersedes_priority=0)
+        self.sch.add_task(WORKER, 'B', supersedes_bucket='a', supersedes_priority=1)
+
+        self.assertEqual(len(self.sch.task_list('PENDING', '')), 2)
+        self.sch.add_task(WORKER, 'B', status=DONE)
+
+        self.assertEqual(len(self.sch.task_list('DONE', '')), 2)
+        self.assertEqual(len(self.sch.task_list('PENDING', '')), 0)
 
     def test_unique_tasks(self):
         self.sch.add_task(WORKER, 'A')
