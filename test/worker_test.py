@@ -861,9 +861,13 @@ class AssistantTest(unittest.TestCase):
         self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         self.w = Worker(scheduler=self.sch, worker_id='X')
         self.assistant = Worker(scheduler=self.sch, worker_id='Y', assistant=True)
+        luigi.task.Register.clear_instance_cache()
+
+    def tearDown(self):
+        luigi.task.Register.clear_instance_cache()
 
     def test_get_work(self):
-        d = Dummy2Task('123')
+        d = DummyTask()
         self.w.add(d)
 
         self.assertFalse(d.complete())
@@ -871,10 +875,10 @@ class AssistantTest(unittest.TestCase):
         self.assertTrue(d.complete())
 
     def test_bad_job_type(self):
-        class Dummy3Task(Dummy2Task):
+        class DummyUnknownTask(DummyTask):
             task_family = 'UnknownTaskFamily'
 
-        d = Dummy3Task('123')
+        d = DummyUnknownTask()
         self.w.add(d)
 
         self.assertFalse(d.complete())
