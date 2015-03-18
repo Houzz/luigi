@@ -218,6 +218,10 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.prune()
         self.assertFalse(list(self.sch.task_list('', '')))
 
+    def test_assistant_request_external_task(self):
+        self.sch.add_task('X', task_id='A', runnable=False)
+        self.assertTrue(self.sch.get_work('Y', assistant=True)['task_id'] is None)
+
     def test_scheduler_resources_none_allow_one(self):
         self.sch.add_task(worker='X', task_id='A', resources={'R1': 1})
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
