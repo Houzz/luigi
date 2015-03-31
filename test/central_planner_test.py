@@ -189,6 +189,10 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(list(running_tasks.keys()), ['A'])
         self.assertEqual(running_tasks['A']['worker_running'], 'Y')
 
+    def test_assistant_get_work_external_task(self):
+        self.sch.add_task('X', task_id='A', runnable=False)
+        self.assertTrue(self.sch.get_work('Y', assistant=True)['task_id'] is None)
+
     def test_task_fails_when_assistant_dies(self):
         self.setTime(0)
         self.sch.add_task(worker='X', task_id='A')
@@ -683,6 +687,26 @@ class CentralPlannerTest(unittest.TestCase):
 
         response = self.sch.get_work(WORKER)
         self.assertEqual(3, response['n_pending_tasks'])
+        self.assertEqual(2, response['n_unique_pending'])
+
+    def test_pending_downstream_disable(self):
+        self.sch.add_task(WORKER, 'A', status=DISABLED)
+        self.sch.add_task(WORKER, 'B', deps=('A',))
+        self.sch.add_task(WORKER, 'C', deps=('B',))
+
+        response = self.sch.get_work(WORKER)
+        self.assertTrue(response['task_id'] is None)
+        self.assertEqual(0, response['n_pending_tasks'])
+        self.assertEqual(0, response['n_unique_pending'])
+
+    def test_pending_downstream_failure(self):
+        self.sch.add_task(WORKER, 'A', status=FAILED)
+        self.sch.add_task(WORKER, 'B', deps=('A',))
+        self.sch.add_task(WORKER, 'C', deps=('B',))
+
+        response = self.sch.get_work(WORKER)
+        self.assertTrue(response['task_id'] is None)
+        self.assertEqual(2, response['n_pending_tasks'])
         self.assertEqual(2, response['n_unique_pending'])
 
     def test_prefer_more_dependents(self):

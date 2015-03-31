@@ -136,6 +136,5 @@ class TaskTest(unittest.TestCase):
         self.assertEquals(name, "InputText")
         self.assertEquals(params, dict(date="2014-12-29", foo=["bar", "baz-foo"]))
 
-
 if __name__ == '__main__':
     unittest.main()

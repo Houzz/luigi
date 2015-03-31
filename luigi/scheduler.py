@@ -79,14 +79,10 @@ STATUS_TO_UPSTREAM_MAP = {
 class scheduler(Config):
     # TODO(erikbern): the config_path is needed for backwards compatilibity. We should drop the compatibility
     # at some point (in particular this would force users to replace all dashes with underscores in the config)
-    retry_delay = parameter.FloatParameter(default=900.0,
-                                           config_path=dict(section='scheduler', name='retry-delay'))
-    remove_delay = parameter.FloatParameter(default=600.0,
-                                            config_path=dict(section='scheduler', name='remove-delay'))
-    worker_disconnect_delay = parameter.FloatParameter(default=60.0,
-                                                       config_path=dict(section='scheduler', name='worker-disconnect-delay'))
-    state_path = parameter.Parameter(default='/var/lib/luigi-server/state.pickle',
-                                     config_path=dict(section='scheduler', name='state-path'))
+    retry_delay = parameter.FloatParameter(default=900.0)
+    remove_delay = parameter.FloatParameter(default=600.0)
+    worker_disconnect_delay = parameter.FloatParameter(default=60.0)
+    state_path = parameter.Parameter(default='/var/lib/luigi-server/state.pickle')
 
     # Jobs are disabled if we see more than disable_failures failures in disable_window seconds.
     # These disables last for disable_persist seconds.
@@ -96,11 +92,9 @@ class scheduler(Config):
                                               config_path=dict(section='scheduler', name='disable-num-failures'))
     disable_persist = parameter.IntParameter(default=86400,
                                              config_path=dict(section='scheduler', name='disable-persist-seconds'))
-    max_shown_tasks = parameter.IntParameter(default=100000,
-                                             config_path=dict(section='scheduler', name='max-shown-task'))
+    max_shown_tasks = parameter.IntParameter(default=100000)
 
-    record_task_history = parameter.BoolParameter(default=False,
-                                                  config_path=dict(section='scheduler', name='record_task_history'))
+    record_task_history = parameter.BoolParameter(default=False)
 
 
 def fix_time(x):
@@ -695,6 +689,7 @@ class CentralPlannerScheduler(Scheduler):
         best_task = None
         locally_pending_tasks = 0
         running_tasks = []
+        upstream_table = {}
 
         used_resources = self._used_resources()
         greedy_resources = collections.defaultdict(int)
@@ -707,6 +702,7 @@ class CentralPlannerScheduler(Scheduler):
         tasks.sort(key=self._rank(), reverse=True)
 
         for task in tasks:
+            upstream_status = self._upstream_status(task.id, upstream_table)
             in_workers = (assistant and task.workers) or worker in task.workers
             if task.status == 'RUNNING' and in_workers:
                 # Return a list of currently running tasks to the client,
@@ -717,7 +713,7 @@ class CentralPlannerScheduler(Scheduler):
                     more_info.update(other_worker.info)
                     running_tasks.append(more_info)
 
-            if task.status == PENDING and in_workers:
+            if task.status == PENDING and in_workers and upstream_status != UPSTREAM_DISABLED:
                 locally_pending_tasks += 1
                 if len(task.workers) == 1 and not assistant:
                     n_unique_pending += 1

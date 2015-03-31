@@ -33,17 +33,8 @@ from luigi import parameter
 from luigi import rpc
 from luigi import scheduler
 from luigi import task
-from luigi.task import Register
-
-
-def load_task(module, task_name, params_str):
-    """
-    Imports task dynamically given a module and a task name.
-    """
-    if module is not None:
-        __import__(module)
-    task_cls = Register.get_task_cls(task_name)
-    return task_cls.from_str_params(params_str)
+from luigi import worker
+from luigi.task_register import Register
 
 
 def setup_interface_logging(conf_file=None):
@@ -68,7 +59,7 @@ def setup_interface_logging(conf_file=None):
     setup_interface_logging.has_run = True
 
 
-class core(task.ConfigWithoutSection):
+class core(task.Config):
 
     ''' Keeps track of a bunch of environment params.
 
@@ -77,6 +68,7 @@ class core(task.ConfigWithoutSection):
     and get an object with all the environment variables set.
     This is arguably a bit of a hack.
     '''
+    use_cmdline_section = False
 
     local_scheduler = parameter.BoolParameter(
         default=False,
@@ -109,8 +101,7 @@ class core(task.ConfigWithoutSection):
         description='Used for dynamic loading of modules')  # see DynamicArgParseInterface
     parallel_scheduling = parameter.BoolParameter(
         default=False,
-        description='Use multiprocessing to do scheduling in parallel.',
-        config_path={'section': 'core', 'name': 'parallel-scheduling'})
+        description='Use multiprocessing to do scheduling in parallel.')
     assistant = parameter.BoolParameter(
         default=False,
         description='Run any task from the scheduler.')
@@ -125,7 +116,6 @@ class WorkerSchedulerFactory(object):
         return rpc.RemoteScheduler(host=host, port=port)
 
     def create_worker(self, scheduler, worker_processes, assistant=False):
-        from luigi import worker
         return worker.Worker(
             scheduler=scheduler, worker_processes=worker_processes, assistant=assistant)
 

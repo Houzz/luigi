@@ -141,7 +141,6 @@ class CmdlineTest(unittest.TestCase):
     def test_cmdline_logger(self, setup_mock, warn):
         with mock.patch("luigi.interface.core") as env_params:
             env_params.return_value.logging_conf_file = None
-            env_params.return_value.assistant = False
             luigi.run(['SomeTask', '--n', '7', '--local-scheduler', '--no-lock'])
             self.assertEqual([mock.call(None)], setup_mock.call_args_list)
 
