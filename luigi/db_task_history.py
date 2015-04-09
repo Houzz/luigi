@@ -19,6 +19,21 @@
 Provides a database backend to the central scheduler. This lets you see historical runs.
 See :ref:`TaskHistory` for information about how to turn out the task history feature.
 """
+#
+# Description: Added codes for visualization of how long each task takes
+# running-time until it reaches the next status (failed or done)
+# At "{base_url}/tasklist", all completed(failed or done) tasks are shown.
+# At "{base_url}/tasklist", a user can select one specific task to see
+# how its running-time has changed over time.
+# At "{base_url}/tasklist/{task_name}", it visualizes a multi-bar graph
+# that represents the changes of the running-time for a selected task
+# up to the next status (failed or done).
+# This visualization let us know how the running-time of the specific task
+# has changed over time.
+#
+# Copyright 2015 Naver Corp.
+# Author Yeseul Park (yeseul.park@navercorp.com)
+#
 
 import datetime
 import logging
@@ -139,6 +154,20 @@ class DbTaskHistory(task_history.TaskHistory):
                 group_by(TaskRecord.id, TaskEvent.event_name).\
                 order_by(TaskEvent.ts.desc()).\
                 all()
+
+    def find_all_runs(self, session=None):
+        """
+        Return all tasks that have been updated.
+        """
+        with self._session(session) as session:
+            return session.query(TaskRecord).all()
+
+    def find_all_events(self, session=None):
+        """
+        Return all running/failed/done events.
+        """
+        with self._session(session) as session:
+            return session.query(TaskEvent).all()
 
     def find_task_by_id(self, id, session=None):
         """

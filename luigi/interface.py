@@ -173,7 +173,8 @@ class Interface(object):
         logger = logging.getLogger('luigi-interface')
         logger.info('Done scheduling tasks')
         luigi_state.set_state(luigi_state.RUNNING)
-        success &= w.run()
+        if env_params.workers != 0:
+            success &= w.run()
         w.stop()
         return success
 
