@@ -53,6 +53,7 @@ class RemoteContext(object):
         self.username = kwargs.get('username', None)
         self.key_file = kwargs.get('key_file', None)
         self.connect_timeout = kwargs.get('connect_timeout', None)
+        self.port = kwargs.get('port', None)
         self.no_host_key_check = kwargs.get('no_host_key_check', False)
 
     def __repr__(self):
