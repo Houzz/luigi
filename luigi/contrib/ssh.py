@@ -48,12 +48,12 @@ import luigi.target
 
 class RemoteContext(object):
 
-    def __init__(self, host, username=None, key_file=None, connect_timeout=None, no_host_key_check=False):
+    def __init__(self, host, **kwargs):
         self.host = host
-        self.username = username
-        self.key_file = key_file
-        self.connect_timeout = connect_timeout
-        self.no_host_key_check = no_host_key_check
+        self.username = kwargs.get('username', None)
+        self.key_file = kwargs.get('key_file', None)
+        self.connect_timeout = kwargs.get('connect_timeout', None)
+        self.no_host_key_check = kwargs.get('no_host_key_check', False)
 
     def __repr__(self):
         return '%s(%r, %r, %r, %r)' % (
@@ -132,9 +132,8 @@ class RemoteContext(object):
 
 class RemoteFileSystem(luigi.target.FileSystem):
 
-    def __init__(self, host, username=None, key_file=None, no_host_key_check=False):
-        self.remote_context = RemoteContext(host, username, key_file,
-                                            no_host_key_check=no_host_key_check)
+    def __init__(self, host, **kwargs):
+        self.remote_context = RemoteContext(host, **kwargs)
 
     def exists(self, path):
         """
@@ -237,13 +236,12 @@ class RemoteTarget(luigi.target.FileSystemTarget):
     The target is implemented using ssh commands streaming data over the network.
     """
 
-    def __init__(self, path, host, format=None, username=None, key_file=None,
-                 no_host_key_check=False):
+    def __init__(self, path, host, format=None, **kwargs):
         super(RemoteTarget, self).__init__(path)
         if format is None:
             format = luigi.format.get_default_format()
         self.format = format
-        self._fs = RemoteFileSystem(host, username, key_file, no_host_key_check)
+        self._fs = RemoteFileSystem(host, **kwargs)
 
     @property
     def fs(self):
