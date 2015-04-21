@@ -259,7 +259,7 @@ function visualiserApp(luigi) {
 
             // unhide columns that matches filter
             attrSelector = arr.map(function(a) {
-                return a ? '[data-task-id*=' + a + ']' : '';
+                return a ? '[data-task-id*=' + a.replace(/[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~]/g, "\\$&") + ']' : '';
             }).join("");
             selector = '.taskRow' + attrSelector;
             $(selector).removeClass('hidden');
