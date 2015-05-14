@@ -87,6 +87,15 @@ function visualiserApp(luigi) {
         return renderTemplate("workerTemplate", {"workers": workers.map(processWorker)});
     }
 
+    function processResource(resource) {
+        resource.tasks = resource.running.map($.proxy(taskToDisplayTask, null, false));
+        return resource;
+    }
+
+    function renderResources(resources) {
+        return renderTemplate("resourceTemplate", {"resources": resources.map(processResource)});
+    }
+
     function switchTab(tabId) {
         $(".tabButton").parent().removeClass("active");
         $(".tab-pane").removeClass("active");
@@ -103,6 +112,8 @@ function visualiserApp(luigi) {
         var hash = location.hash;
         if (hash == "#w") {
             switchTab("workerList");
+        } else if (hash == "#r") {
+            switchTab("resourceList");
         } else if (hash) {
             var taskId = hash.substr(1);
             $("#graphContainer").hide();
@@ -268,6 +279,10 @@ function visualiserApp(luigi) {
 
         luigi.getWorkerList(function(workers) {
             $("#workerList").append(renderWorkers(workers));
+        });
+
+        luigi.getResourceList(function(resources) {
+            $("#resourceList").append(renderResources(resources));
         });
 
         luigi.getRunningTaskList(function(runningTasks) {

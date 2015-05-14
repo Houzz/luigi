@@ -107,5 +107,11 @@ var LuigiAPI = (function() {
         });
     };
 
+    LuigiAPI.prototype.getResourceList = function(callback) {
+        jsonRPC(this.urlRoot + "/resource_list", {}, function(response) {
+            callback(flatten_running(response.response));
+        });
+    };
+
     return LuigiAPI;
 })();
