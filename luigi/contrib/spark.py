@@ -37,7 +37,7 @@ import warnings
 from luigi import six
 import luigi
 import luigi.format
-import luigi.hdfs
+import luigi.contrib.hdfs
 from luigi import configuration
 
 logger = logging.getLogger('luigi-interface')
@@ -235,9 +235,7 @@ class SparkSubmitTask(luigi.Task):
                                 universal_newlines=True)
         try:
             with SparkRunContext(proc):
-                while proc.poll() is None:
-                    pass
-            logger.info(proc.communicate()[0])
+                proc.wait()
             tmp_stdout.seek(0)
             stdout = "".join(map(lambda s: s.decode('utf-8'), tmp_stdout.readlines()))
             logger.info("Spark job stdout:\n{0}".format(stdout))
@@ -417,7 +415,7 @@ class SparkJob(luigi.Task):
         original_output_path = self.output().path
         path_no_slash = original_output_path[:-2] if original_output_path.endswith('/*') else original_output_path
         path_no_slash = original_output_path[:-1] if original_output_path[-1] == '/' else path_no_slash
-        tmp_output = luigi.hdfs.HdfsTarget(path_no_slash + '-luigi-tmp-%09d' % random.randrange(0, 1e10))
+        tmp_output = luigi.contrib.hdfs.HdfsTarget(path_no_slash + '-luigi-tmp-%09d' % random.randrange(0, 1e10))
 
         args = ['org.apache.spark.deploy.yarn.Client']
         args += ['--jar', self.jar()]

@@ -14,14 +14,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 """
-luigi.hadoop_jar has moved to :py:mod:`luigi.contrib.hadoop_jar`
+The implementations of the hdfs clients. The hadoop cli client and the
+snakebite client.
 """
-# Delete this file any time after 28 July 2015
 
-import warnings
 
-from luigi.contrib.hadoop_jar import *
+class HDFSCliError(Exception):
 
-warnings.warn("luigi.hadoop_jar module has been moved to luigi.contrib.hadoop_jar",
-              DeprecationWarning)
+    def __init__(self, command, returncode, stdout, stderr):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        msg = ("Command %r failed [exit code %d]\n"
+               "---stdout---\n"
+               "%s\n"
+               "---stderr---\n"
+               "%s"
+               "------------") % (command, returncode, stdout, stderr)
+        super(HDFSCliError, self).__init__(msg)

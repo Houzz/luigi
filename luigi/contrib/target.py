@@ -38,6 +38,7 @@ class CascadingClient(object):
                         'count', 'copy', 'get', 'put', 'mkdir', 'listdir',
                         'isdir',
                         'rename_dont_move',
+                        'touchz',
                         ]
 
     def __init__(self, clients, method_names=None):
@@ -70,5 +71,5 @@ class CascadingClient(object):
                 if is_last_iteration:
                     raise
                 else:
-                    logger.exception('The %s failed to %s, using fallback class %s',
-                                     client.__class__.__name__, method_name, self.clients[i + 1].__class__.__name__)
+                    logger.warning('The %s failed to %s, using fallback class %s',
+                                   client.__class__.__name__, method_name, self.clients[i + 1].__class__.__name__)

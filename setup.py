@@ -40,6 +40,7 @@ with open('README.rst') as fobj:
     long_description = readme_note + fobj.read()
 
 install_requires = [
+    'cached_property',
     'pyparsing',
     'tornado',
     'python-daemon',
@@ -64,6 +65,7 @@ setup(
     packages=[
         'luigi',
         'luigi.contrib',
+        'luigi.contrib.hdfs',
         'luigi.tools'
     ],
     package_data={

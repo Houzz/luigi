@@ -2,7 +2,6 @@ function visualiserApp(luigi) {
     var templates = {};
     var invertDependencies = false;
     var typingTimer = 0;
-    var expandTasks = ['runningTasks'];
 
     function loadTemplates() {
         $("script[type='text/template']").each(function(i, element) {
@@ -88,15 +87,6 @@ function visualiserApp(luigi) {
         return renderTemplate("workerTemplate", {"workers": workers.map(processWorker)});
     }
 
-    function processResource(resource) {
-        resource.tasks = resource.running.map($.proxy(taskToDisplayTask, null, false));
-        return resource;
-    }
-
-    function renderResources(resources) {
-        return renderTemplate("resourceTemplate", {"resources": resources.map(processResource)});
-    }
-
     function switchTab(tabId) {
         $(".tabButton").parent().removeClass("active");
         $(".tab-pane").removeClass("active");
@@ -109,37 +99,56 @@ function visualiserApp(luigi) {
         $("#errorModal").modal({});
     }
 
-    function processHashChange() {
+    function processHashChange(paint) {
         var hash = location.hash;
         if (hash == "#w") {
             switchTab("workerList");
-        } else if (hash == "#r") {
-            switchTab("resourceList");
         } else if (hash) {
             var taskId = hash.substr(1);
-            $("#graphContainer").hide();
-            $("#graphPlaceholder svg").empty();
+            //$("#graphContainer").hide();
+            //$(".live.map svg").empty();
             $("#searchError").empty();
             $("#searchError").removeClass();
             if (taskId != "g") {
                 depGraphCallback = function(dependencyGraph) {
-                    $("#graphPlaceholder svg").empty();
+                    //$(".live.map svg").empty();
                     $("#searchError").empty();
                     $("#searchError").removeClass();
                     if(dependencyGraph.length > 0) {
-                      $("#dependencyTitle").text(taskId);
-                      $("#graphPlaceholder").get(0).graph.updateData(dependencyGraph);
-                      $("#graphContainer").show();
+                        $("#dependencyTitle").text(taskId);
+                        if(dependencyGraph != '{}'){
+                            //var json = JSON.parse(JSON.stringify(dependencyGraph));
+                            //workers = json.response
+                            
+                            for (var id in dependencyGraph) {
+                                if (dependencyGraph[id].deps.length > 0) {
+                                    //console.log(asingInput(dependencyGraph, id));
+                                    dependencyGraph[id]['inputQueue']=asingInput(dependencyGraph, id);
+                                    dependencyGraph[id]['inputThroughput']=50;
+                                    dependencyGraph[id]['count']=5;
+                                    dependencyGraph[id]['consumers']=1;
+                                }else{
+                                    dependencyGraph[id]['inputThroughput']=50;
+                                    dependencyGraph[id]['count']=5;
+                                    dependencyGraph[id]['consumers']=1;
+                                }
+                            }
+                        }
+                      //$("#graphPlaceholder").get(0).graph.updateData(dependencyGraph);
+                      //$("#graphContainer").show();
                       bindGraphEvents();
                     } else {
                       $("#searchError").addClass("alert alert-error");
                       $("#searchError").append("Couldn't find task " + taskId);
                     }
+                    //console.log(dependencyGraph);
+                    drawGraphETL(dependencyGraph, paint)
                 }
                 if (invertDependencies) {
                     luigi.getInverseDependencyGraph(taskId, depGraphCallback);
                 } else {
                     luigi.getDependencyGraph(taskId, depGraphCallback);
+                    
                 }
             }
             switchTab("dependencyGraph");
@@ -165,7 +174,7 @@ function visualiserApp(luigi) {
         $(window).on('hashchange', processHashChange);
         $("#invertCheckbox").click(function() {
             invertDependencies = this.checked;
-            processHashChange();
+            processHashChange(true);
         });
         $("a[href=#list]").click(function() { location.hash=""; });
         $("#loadTaskForm").submit(function(event) {
@@ -219,37 +228,13 @@ function visualiserApp(luigi) {
             var length = tasks.length;
             var rendered = renderTasks(tasks);
         }
-        $(id).empty();
         $(id).append(rendered);
-        var header = $(id).prev("h3");
-        var countIndex = header.text().indexOf(" (");
-        if (countIndex != -1) {
-            header.text(header.text().slice(0, countIndex))
-        }
-        header.append(" (" + length + ")");
+        $(id).prev("h3").append(" (" + length + ")");
         bindTaskEvents(id, expand);
-        filterTasks(false);
+        filterTasks();
     }
 
-    var lastSearchLoads = {};
-
-    function reloadTasksForFilter() {
-        $('.emptyTaskGroup').children('.taskList').each (function (i, task) {
-            var lastLoad = lastSearchLoads[task.id] || '';
-            var currentLoad = $('#filter-input').val();
-            var hasTooMany = $('#' + task.id + ' .tooManyTasks').length > 0;
-            if (hasTooMany || !currentLoad.startsWith(lastLoad)) {
-                loadTasks(task.id);
-                lastSearchLoads[task.id] = currentLoad;
-            }
-        });
-        updateCount();
-    }
-
-    function filterTasks(reload) {
-        if (reload === undefined || reload) {
-            reloadTasksForFilter();
-        }
+    function filterTasks() {
         inputVal = $('#filter-input').val();
         if (inputVal) {
             arr = inputVal.split(" ");
@@ -259,7 +244,7 @@ function visualiserApp(luigi) {
 
             // unhide columns that matches filter
             attrSelector = arr.map(function(a) {
-                return a ? '[data-task-id*=' + a.replace(/\W/g, "\\$&") + ']' : '';
+                return a ? '[data-task-id*=' + a + ']' : '';
             }).join("");
             selector = '.taskRow' + attrSelector;
             $(selector).removeClass('hidden');
@@ -273,11 +258,8 @@ function visualiserApp(luigi) {
     }
 
     function updateCount() {
-        taskGroups = $('#taskList .taskGroup');
+        taskGroups = $('#taskList .taskGroup:not(.emptyTaskGroup)');
         for (i=0; i<taskGroups.length; i++) {
-            if ($(taskGroups[i]).find('.tooManyTasks').length > 0) {
-                continue;
-            }
             groupCount = 0;
 
             // update each task family
@@ -295,11 +277,135 @@ function visualiserApp(luigi) {
         }
     }
 
-    function loadTasks(groupName) {
-        expand = $.inArray(groupName, expandTasks) != -1;
-        getFunc = "get" + groupName[0].toUpperCase() + groupName.slice(1, -1) + "List";
-        luigi[getFunc](function(tasks) { getTaskList("#" + groupName, tasks, expand); });
+    function asingInput(worker, id){
+        if (worker[id].deps.length > 0) {
+            //console.log(worker[id].deps);
+            return worker[id].deps;
+        }
     }
+
+    function getFinishTime(tasks, listId){
+        var times = {};
+        for (var i = 0; i < listId.length; i++) {
+            for (var j = 0; j < tasks.length; j++) {
+                if (listId[i]===tasks[j].taskId) {
+                    var finishTime = new Date(tasks[i].time_running*1000);
+                    var startTime = new Date(tasks[i].start_time*1000);
+                    var durationTime = new Date((finishTime - startTime)*1000).getSeconds();
+                    times[listId[i]] = durationTime;
+                };
+            };
+        };
+        return times;
+    }
+    function getParam(tasks, id){
+        for (var i = 0; i < tasks.length; i++) {
+            if (tasks[i].taskId === id) {
+                return tasks[i].worker_running;
+            };
+        };
+    }
+    function getStatusTasks(tasks){
+        var status;
+        for (var i = 0; i < tasks.length; i++) {
+            if (tasks[i].status === "DONE") {
+                status = true;
+            }else{
+                return false;
+            }
+        };
+        return status;
+    }
+    function drawGraphETL(tasks, paint){
+    // Set up zoom support
+        var svg = d3.select("#mysvg");
+        var inner = svg.select("g"),
+            zoom = d3.behavior.zoom().on("zoom", function() {
+            inner.attr("transform", "translate(" + d3.event.translate + ")" +
+                "scale(" + d3.event.scale + ")");
+            });
+        svg.call(zoom);
+
+        var render = new dagreD3.render();
+        // Left-to-right layout
+        var g = new dagreD3.graphlib.Graph();
+        g.setGraph({
+            nodesep: 70,
+            ranksep: 50,
+            rankdir: "LR",
+            marginx: 20,
+            marginy: 20,
+            height: 400
+        });
+
+        function draw(isUpdate) {
+            for (var id in tasks) {
+                var task = tasks[id];
+                var className = task.status;
+                    
+                var html = "<div onclick='window.location.href = \"" + "/static/visualiser/index.d3.html#" + task.taskId + "\"'>";
+                html += "<span class=status></span>";
+                html += "<span class=name>"+task.name+"</span>";
+                html += "<span class=queue><span class=counter>"+ task.status +"</span></span>";
+                html += "</div>";
+                    
+                g.setNode(task.taskId, {
+                    labelType: "html",
+                    label: html,
+                    rx: 5,
+                    ry: 5,
+                    padding: 0,
+                    class: className
+                });
+                if (task.inputQueue) {
+                    for (var i =  0; i < task.inputQueue.length; i++) {
+                        if (task.status === "DONE") {
+                            var durationTime = getFinishTime(tasks, task.inputQueue);
+                            g.setEdge(task.inputQueue[i], task.taskId, {
+                                label: durationTime[task.inputQueue[i]] + " secs",
+                                width: 40
+                            });
+                        }else{
+                            g.setEdge(task.inputQueue[i], task.taskId, {
+                                width: 40
+                            });
+                        }
+                    };
+                }
+            }
+            var styleTooltip = function(name, description) {
+                return "<p class='name'>" + name + "</p><p class='description'>" + description + "</p>";
+            };
+            inner.call(render, g);
+            if(paint){
+                // Zoom and scale to fit
+                var zoomScale = zoom.scale();
+                var graphWidth = g.graph().width + 80;
+                var graphHeight = g.graph().height + 40;
+                var width = parseInt(svg.style("width").replace(/px/, ""));
+                var height = parseInt(svg.style("height").replace(/px/, ""));
+                zoomScale = Math.min(width / graphWidth, height / graphHeight);
+                var translate = [(width/2) - ((graphWidth*zoomScale)/2), (height/2) - ((graphHeight*zoomScale)/2)];
+                zoom.translate(translate);
+                zoom.scale(zoomScale);
+                zoom.event(isUpdate ? svg.transition().duration(3000) : d3.select("#mysvg"));
+            }
+
+            inner.selectAll("g.node")
+                .attr("title", function(v) { return styleTooltip(v, getParam(tasks, v)) })
+                .each(function(v) { $(this).tipsy({ gravity: "w", opacity: 1, html: true }); });
+            }
+            // Do some mock queue status updates
+            
+            if (getStatusTasks(tasks)) {
+                console.log("clearInterval");
+                clearInterval(interval);
+            };
+            draw();
+    }
+    var interval = setInterval(function() {
+        processHashChange(false);
+    }, 5000);
 
     $(document).ready(function() {
         loadTemplates();
@@ -315,24 +421,39 @@ function visualiserApp(luigi) {
             $("#workerList").append(renderWorkers(workers));
         });
 
-        luigi.getResourceList(function(resources) {
-            $("#resourceList").append(renderResources(resources));
+        luigi.getRunningTaskList(function(runningTasks) {
+            getTaskList("#runningTasks", runningTasks, true);
         });
 
-        [
-            "runningTasks",
-            "failedTasks",
-            "upstreamFailedTasks",
-            "disabledTasks",
-            "upstreamDisabledTasks",
-            "pendingTasks",
-            "doneTasks",
-        ].forEach(loadTasks);
+        luigi.getFailedTaskList(function(failedTasks) {
+            getTaskList("#failedTasks", failedTasks);
+        });
+
+        luigi.getUpstreamFailedTaskList(function(upstreamFailedTasks) {
+            getTaskList("#upstreamFailedTasks", upstreamFailedTasks);
+        });
+
+        luigi.getDisabledTaskList(function(disabledTasks) {
+            getTaskList("#disabledTasks", disabledTasks);
+        });
+
+        luigi.getUpstreamDisabledTaskList(function(upstreamDisabledTasks) {
+            getTaskList("#upstreamDisabledTasks", upstreamDisabledTasks);
+        });
+
+        luigi.getPendingTaskList(function(pendingTasks) {
+            getTaskList("#pendingTasks", pendingTasks);
+        });
+
+        luigi.getDoneTaskList(function(doneTasks) {
+            getTaskList("#doneTasks", doneTasks);
+        });
 
         bindListEvents();
 
-        var graph = new Graph.DependencyGraph($("#graphPlaceholder")[0]);
-        $("#graphPlaceholder")[0].graph = graph;
-        processHashChange();
+        //var graph = new Graph.DependencyGraph($("#graphPlaceholder")[0]);
+        //$("#graphPlaceholder")[0].graph = graph;
+            
+        processHashChange(true);
     });
 }

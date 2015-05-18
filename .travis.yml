@@ -4,6 +4,7 @@ jdk: oraclejdk7
 
 services:
   - elasticsearch
+  - mysql
 
 env:
   global:
@@ -12,11 +13,9 @@ env:
   matrix:
     - TOXENV=pep8
     - TOXENV=docs
-    - TOXENV=py26-nonhdfs
     - TOXENV=py27-nonhdfs
     - TOXENV=py33-nonhdfs
     - TOXENV=py34-nonhdfs
-    - TOXENV=py26-cdh
     - TOXENV=py27-cdh
     - TOXENV=py33-cdh
     - TOXENV=py34-cdh
@@ -37,11 +36,12 @@ before_script:
   - cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
   - ssh -o StrictHostKeyChecking=no localhost true
 
-script:
-  - tox
+  # Create mysql database if possible but fail silently if not available.
+  - mysql -e 'create database IF NOT EXISTS luigi_test;' -uroot || true
 
-after_failure:
-  - cat /home/travis/build/spotify/luigi/.tox/cdh/log/cdh-1.log
+script:
+  - tox --version
+  - tox
 
 branches:
   only:

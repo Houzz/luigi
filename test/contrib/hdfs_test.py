@@ -25,10 +25,11 @@ import helpers
 import luigi
 import mock
 import luigi.format
-from luigi import hdfs
+from luigi.contrib import hdfs
 from luigi import six
 from minicluster import MiniClusterTestCase
 from nose.plugins.attrib import attr
+import luigi.contrib.hdfs.clients
 
 from target_test import FileSystemTargetTestMixin
 
@@ -38,7 +39,7 @@ class ComplexOldFormat(luigi.format.Format):
     """
 
     def hdfs_writer(self, output_pipe):
-        return self.pipe_writer(luigi.hdfs.Plain.hdfs_writer(output_pipe))
+        return self.pipe_writer(luigi.contrib.hdfs.Plain.hdfs_writer(output_pipe))
 
     def pipe_writer(self, output_pipe):
         return luigi.format.UTF8.pipe_writer(output_pipe)
@@ -67,6 +68,10 @@ class ConfigurationTest(MiniClusterTestCase):
         self.assertEqual(2, len(list(client.listdir('d'))))
         self.assertTrue(target.move_dir('d/c'))
         self.assertEqual(2, len(list(client.listdir('d'))))
+
+    @helpers.with_config({"hdfs": {}}, replace_sections=True)
+    def test_when_not_specified(self):
+        self.assertEqual('hadoopcli', hdfs.config.get_configured_hdfs_client())
 
     @helpers.with_config({"hdfs": {"client": "hadoopcli"}})
     def test_hadoopcli(self):
@@ -692,9 +697,9 @@ class HdfsClientTest(MiniClusterTestCase):
         self.assertEqual(4, len(entries[5]), msg="%r" % entries)
         self.assertEqual(path + '/sub2/file4.dat', entries[5][0], msg="%r" % entries)
 
-    @mock.patch('luigi.hdfs.call_check')
+    @mock.patch('luigi.contrib.hdfs.hadoopcli_clients.HdfsClient.call_check')
     def test_cdh3_client(self, call_check):
-        cdh3_client = luigi.hdfs.HdfsClientCdh3()
+        cdh3_client = luigi.contrib.hdfs.HdfsClientCdh3()
         cdh3_client.remove("/some/path/here")
         self.assertEqual(['fs', '-rmr', '/some/path/here'], call_check.call_args[0][0][-3:])
 
@@ -711,7 +716,7 @@ class HdfsClientTest(MiniClusterTestCase):
         preturn.communicate = comm
         popen.return_value = preturn
 
-        apache_client = luigi.hdfs.HdfsClientApache1()
+        apache_client = luigi.contrib.hdfs.HdfsClientApache1()
         returned = apache_client.exists("/some/path/somewhere")
         self.assertTrue(returned)
 
@@ -720,21 +725,21 @@ class HdfsClientTest(MiniClusterTestCase):
         self.assertFalse(returned)
 
         preturn.returncode = 13
-        self.assertRaises(luigi.hdfs.HDFSCliError, apache_client.exists, "/some/path/somewhere")
+        self.assertRaises(luigi.contrib.hdfs.HDFSCliError, apache_client.exists, "/some/path/somewhere")
 
 
 class SnakebiteConfigTest(unittest.TestCase):
     @helpers.with_config({"hdfs": {"snakebite_autoconfig": "true"}})
     def testBoolOverride(self):
         # See #743
-        self.assertEqual(hdfs.hdfs().snakebite_autoconfig, True)
+        self.assertEqual(hdfs.config.hdfs().snakebite_autoconfig, True)
 
         class DummyTestTask(luigi.Task):
             pass
 
         luigi.run(['--local-scheduler', '--no-lock', 'DummyTestTask'])
 
-        self.assertEqual(hdfs.hdfs().snakebite_autoconfig, True)
+        self.assertEqual(hdfs.config.hdfs().snakebite_autoconfig, True)
 
 
 class _MiscOperationsMixin(object):
@@ -743,7 +748,7 @@ class _MiscOperationsMixin(object):
 
     def get_target(self):
         fn = '/tmp/foo-%09d' % random.randint(0, 999999999)
-        t = luigi.hdfs.HdfsTarget(fn)
+        t = luigi.contrib.hdfs.HdfsTarget(fn)
         with t.open('w') as f:
             f.write('test')
         return t
@@ -766,7 +771,7 @@ class _MiscOperationsMixin(object):
 @attr('minicluster')
 class TestCliMisc(MiniClusterTestCase, _MiscOperationsMixin):
     def get_client(self):
-        return luigi.hdfs.create_hadoopcli_client()
+        return luigi.contrib.hdfs.create_hadoopcli_client()
 
 
 @attr('minicluster')
@@ -775,4 +780,4 @@ class TestSnakebiteMisc(MiniClusterTestCase, _MiscOperationsMixin):
         if six.PY3:
             raise unittest.SkipTest("snakebite doesn't work on Python yet.")
 
-        return luigi.hdfs.SnakebiteHdfsClient()
+        return luigi.contrib.hdfs.SnakebiteHdfsClient()

@@ -17,6 +17,7 @@
 
 import mock
 import time
+import datetime
 from helpers import unittest
 
 import luigi.notifications
@@ -42,6 +43,7 @@ class CentralPlannerTest(unittest.TestCase):
             'disable_persist': 10,
             'disable_window': 10,
             'disable_failures': 3,
+            'disable_hard_timeout': 60 * 60,
         }
 
     def tearDown(self):
@@ -638,7 +640,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'test_match_task')
         self.sch.add_task(WORKER, 'test_filter_task')
         matches = self.sch.task_list('PENDING', '', search='match')
-        self.assertEqual(['test_match_task'], matches.keys())
+        self.assertEqual(['test_match_task'], list(matches.keys()))
 
     def test_task_list_filter_by_multiple_search_terms(self):
         self.sch.add_task(WORKER, 'abcd')
@@ -656,7 +658,7 @@ class CentralPlannerTest(unittest.TestCase):
         sch.add_task(WORKER, 'task_c')
         sch.add_task(WORKER, 'task_d')
         self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', '', search='a'))
-        self.assertEqual(['task_a'], sch.task_list('PENDING', '', search='_a').keys())
+        self.assertEqual(['task_a'], list(sch.task_list('PENDING', '', search='_a').keys()))
 
     def test_priority_update_dependency_chain(self):
         self.sch.add_task(WORKER, 'A', priority=10, deps=['B'])
@@ -801,6 +803,47 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(WORKER, 'A')
         task_list = self.sch.task_list('PENDING', '')
         self.assertFalse('deps' in task_list['A'])
+
+    def test_task_first_failure_time(self):
+        self.sch.add_task(WORKER, 'A')
+        test_task = self.sch._state.get_task('A')
+        self.assertIsNone(test_task.failures.first_failure_time)
+
+        time_before_failure = time.time()
+        test_task.add_failure()
+        time_after_failure = time.time()
+
+        self.assertLessEqual(time_before_failure,
+                             test_task.failures.first_failure_time)
+        self.assertGreaterEqual(time_after_failure,
+                                test_task.failures.first_failure_time)
+
+    def test_task_first_failure_time_remains_constant(self):
+        self.sch.add_task(WORKER, 'A')
+        test_task = self.sch._state.get_task('A')
+        self.assertIsNone(test_task.failures.first_failure_time)
+
+        test_task.add_failure()
+        first_failure_time = test_task.failures.first_failure_time
+
+        test_task.add_failure()
+        self.assertEqual(first_failure_time, test_task.failures.first_failure_time)
+
+    def test_task_has_excessive_failures(self):
+        self.sch.add_task(WORKER, 'A')
+        test_task = self.sch._state.get_task('A')
+        self.assertIsNone(test_task.failures.first_failure_time)
+
+        self.assertFalse(test_task.has_excessive_failures())
+
+        test_task.add_failure()
+        self.assertFalse(test_task.has_excessive_failures())
+
+        fake_failure_time = (test_task.failures.first_failure_time -
+                             2 * 60 * 60)
+
+        test_task.failures.first_failure_time = fake_failure_time
+        self.assertTrue(test_task.has_excessive_failures())
 
 
 if __name__ == '__main__':

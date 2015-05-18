@@ -1,3 +1,6 @@
+.coverage.*
+doc/api/*.rst
+
 .nicesetup
 
 client.cfg
@@ -59,9 +62,11 @@ pip-delete-this-directory.txt
 htmlcov/
 .tox/
 .coverage
+.coverage.*
 .cache
 nosetests.xml
 coverage.xml
+my_dir
 
 # Translations
 *.mo

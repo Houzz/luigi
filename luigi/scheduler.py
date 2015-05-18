@@ -90,12 +90,16 @@ class scheduler(Config):
                                             config_path=dict(section='scheduler', name='disable-window-seconds'))
     disable_failures = parameter.IntParameter(default=None,
                                               config_path=dict(section='scheduler', name='disable-num-failures'))
+    disable_hard_timeout = parameter.IntParameter(default=None,
+                                                  config_path=dict(section='scheduler', name='disable-hard-timeout'))
     disable_persist = parameter.IntParameter(default=86400,
                                              config_path=dict(section='scheduler', name='disable-persist-seconds'))
     max_shown_tasks = parameter.IntParameter(default=100000)
     prune_done_tasks = parameter.BoolParameter(default=False)
 
     record_task_history = parameter.BoolParameter(default=False)
+
+    visualization_graph = parameter.Parameter(default="svg", config_path=dict(section='scheduler', name='visualization-graph'))
 
 
 def fix_time(x):
@@ -123,12 +127,18 @@ class Failures(object):
         """
         self.window = window
         self.failures = collections.deque()
+        self.first_failure_time = None
 
     def add_failure(self):
         """
         Add a failure event with the current timestamp.
         """
-        self.failures.append(time.time())
+        failure_time = time.time()
+
+        if not self.first_failure_time:
+            self.first_failure_time = failure_time
+
+        self.failures.append(failure_time)
 
     def num_failures(self):
         """
@@ -158,8 +168,8 @@ def _get_default(x, default):
 class Task(object):
 
     def __init__(self, task_id, status, deps, resources=None, priority=0, family='', module=None,
-                 params=None, disable_failures=None, disable_window=None, supersedes_bucket=None,
-                 supersedes_priority=None):
+                 params=None, disable_failures=None, disable_window=None, disable_hard_timeout=None,
+                 supersedes_bucket=None, supersedes_priority=None):
         self.id = task_id
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
@@ -182,6 +192,7 @@ class Task(object):
         self.module = module
         self.params = _get_default(params, {})
         self.disable_failures = disable_failures
+        self.disable_hard_timeout = disable_hard_timeout
         self.failures = Failures(disable_window)
         self.scheduler_disable_time = None
 
@@ -192,10 +203,23 @@ class Task(object):
         self.failures.add_failure()
 
     def has_excessive_failures(self):
-        return self.failures.num_failures() >= self.disable_failures
+
+        excessive_failures = False
+
+        if (self.failures.first_failure_time is not None and
+                self.disable_hard_timeout):
+            if (time.time() >= self.failures.first_failure_time +
+                    self.disable_hard_timeout):
+                excessive_failures = True
+
+        if self.failures.num_failures() >= self.disable_failures:
+            excessive_failures = True
+
+        return excessive_failures
 
     def can_disable(self):
-        return self.disable_failures is not None
+        return (self.disable_failures is not None or
+                self.disable_hard_timeout is not None)
 
 
 class Worker(object):
@@ -482,13 +506,14 @@ class CentralPlannerScheduler(Scheduler):
         if task_history_impl:
             self._task_history = task_history_impl
         elif self._config.record_task_history:
-            import db_task_history  # Needs sqlalchemy, thus imported here
+            from luigi import db_task_history  # Needs sqlalchemy, thus imported here
             self._task_history = db_task_history.DbTaskHistory()
         else:
             self._task_history = history.NopHistory()
         self._resources = resources or configuration.get_config().getintdict('resources')  # TODO: Can we make this a Parameter?
         self._make_task = functools.partial(
             Task, disable_failures=self._config.disable_failures,
+            disable_hard_timeout=self._config.disable_hard_timeout,
             disable_window=self._config.disable_window)
 
     def load(self):
