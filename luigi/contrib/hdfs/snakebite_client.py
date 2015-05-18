@@ -200,7 +200,7 @@ class SnakebiteHdfsClient(hdfs_abstract_client.HdfsFileSystem):
         return {'content_size': content_size, 'dir_count': dir_count,
                 'file_count': file_count}
 
-    def copy(self, path):
+    def copy(self, path, destination):
         """
         Raise a NotImplementedError exception.
         """
