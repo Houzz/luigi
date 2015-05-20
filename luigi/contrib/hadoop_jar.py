@@ -64,23 +64,40 @@ class HadoopJarJobRunner(luigi.contrib.hadoop.JobRunner):
         pass
 
     def run_job(self, job):
+        ssh_config = job.ssh()
+        if ssh_config:
+            host = ssh_config.get("host", None)
+            key_file = ssh_config.get("key_file", None)
+            username = ssh_config.get("username", None)
+            if not host or not key_file or not username or not job.jar():
+                raise Exception("missing some config for HadoopRemoteJarJobRunner")
+            arglist = ['ssh', '-i', key_file,
+                       '-o', 'BatchMode=yes']  # no password prompts etc
+            if ssh_config.get("no_host_key_check", False):
+                arglist += ['-o', 'UserKnownHostsFile=/dev/null',
+                            '-o', 'StrictHostKeyChecking=no']
+            arglist.append('%s@%s' % (username, host))
+        else:
+            arglist = []
+            if not job.jar() or not os.path.exists(job.jar()):
+                logger.error("Can't find jar: %s, full path %s", job.jar(), os.path.abspath(job.jar()))
+                raise Exception("job jar does not exist")
+
         # TODO(jcrobak): libjars, files, etc. Can refactor out of
         # hadoop.HadoopJobRunner
-        if not job.jar() or not os.path.exists(job.jar()):
-            logger.error("Can't find jar: %s, full path %s", job.jar(), os.path.abspath(job.jar()))
-            raise Exception("job jar does not exist")
-        arglist = luigi.contrib.hdfs.load_hadoop_cmd() + ['jar', job.jar()]
+        hadoop_arglist = luigi.contrib.hdfs.load_hadoop_cmd() + ['jar', job.jar()]
         if job.main():
-            arglist.append(job.main())
+            hadoop_arglist.append(job.main())
 
         jobconfs = job.jobconfs()
 
         for jc in jobconfs:
-            arglist += ['-D' + jc]
+            hadoop_arglist += ['-D' + jc]
 
         (tmp_files, job_args) = fix_paths(job)
 
-        arglist += job_args
+        hadoop_arglist += job_args
+        arglist.extend(hadoop_arglist)
 
         luigi.contrib.hadoop.run_and_track_hadoop_job(arglist)
 
@@ -116,68 +133,15 @@ class HadoopJarJobTask(luigi.contrib.hadoop.BaseHadoopJobTask):
         """
         return True
 
+    def ssh(self):
+        """
+        Set this to run hadoop command remotely via ssh. It needs to be a dict that looks like
+        {"host": "myhost", "key_file": None, "username": None, ["no_host_key_check": False]}
+        """
+        return None
+
     def args(self):
         """
         Returns an array of args to pass to the job (after hadoop jar <jar> <main>).
         """
         return []
-
-
-class HadoopRemoteJarJobRunner(HadoopJarJobRunner):
-    """
-    Job Runner for `ssh xxx hadoop jar` commands. Like HadoopJarJobRunner, but running the job
-    on a remote server.  #TODO - proper kill_job() not implemented/hooked up yet.
-    """
-
-    def run_job(self, job):
-        if not job.host() or not job.key_file() or not job.username() or not job.jar():
-            raise Exception("missing some config for HadoopRemoteJarJobRunner")
-        arglist = ['ssh', '-i', job.key_file(),
-                   '-o', 'BatchMode=yes']  # no password prompts etc
-        if job.no_host_key_check():
-            arglist += ['-o', 'UserKnownHostsFile=/dev/null',
-                        '-o', 'StrictHostKeyChecking=no']
-        arglist.append('%s@%s' % (job.username(), job.host()))
-        hadoop_arglist = luigi.hdfs.load_hadoop_cmd() + ['jar', job.jar()]
-        if job.main():
-            hadoop_arglist.append(job.main())
-
-        jobconfs = job.jobconfs()
-
-        for jc in jobconfs:
-            hadoop_arglist += ['-D' + jc]
-
-        hadoop_arglist += job.args()
-        arglist.extend(hadoop_arglist)
-
-        luigi.hadoop.run_and_track_hadoop_job(arglist)
-
-
-class HadoopRemoteJarJobTask(HadoopJarJobTask):
-    """
-    A job task for `ssh xxx hadoop jar` commands that define a jar and (optional) main method.
-    """
-
-    def host(self):
-        """
-        Hostname that it needs to connect to
-        """
-        return None
-
-    def key_file(self):
-        """
-        SSH private key file to connect to host
-        """
-        return None
-
-    def username(self):
-        """
-        Username to connect to the server
-        """
-        return None
-
-    def no_host_key_check(self):
-        return False
-
-    def job_runner(self):
-        return HadoopRemoteJarJobRunner()
