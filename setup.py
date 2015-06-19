@@ -41,6 +41,7 @@ with open('README.rst') as fobj:
 
 install_requires = [
     'cached_property',
+    'pymysql',
     'pyparsing',
     'tornado',
     'python-daemon',
