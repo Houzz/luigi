@@ -232,6 +232,7 @@ class Worker(object):
         self.reference = None  # reference to the worker in the real world. (Currently a dict containing just the host)
         self.last_active = last_active  # seconds since epoch
         self.started = time.time()  # seconds since epoch
+        self.tasks = set()  # task objects
         self.info = {}
 
     def add_info(self, info):
@@ -246,6 +247,19 @@ class Worker(object):
         # Delete workers that haven't said anything for a while (probably killed)
         if self.last_active + config.worker_disconnect_delay < time.time():
             return True
+
+    def get_pending_tasks(self):
+        return six.moves.filter(lambda task: task.status in [PENDING, RUNNING],
+                                self.tasks)
+
+    def is_trivial_worker(self):
+        """
+        If it's not an assistant having only tasks that are without
+        requirements
+        """
+        if self.assistant:
+            return False
+        return all(not task.resources and not task.supersedes_bucket for task in self.get_pending_tasks())
 
     @property
     def assistant(self):
@@ -306,6 +320,14 @@ class SimpleTaskState(object):
             for k, v in six.iteritems(self._active_workers):
                 if isinstance(v, float):
                     self._active_workers[k] = Worker(worker_id=k, last_active=v)
+
+            if any(not hasattr(w, 'tasks') for k, w in six.iteritems(self._active_workers)):
+                # If you load from an old format where Workers don't contain tasks.
+                for k, worker in six.iteritems(self._active_workers):
+                    worker.tasks = set()
+                for task in six.itervalues(self._tasks):
+                    for worker_id in task.workers:
+                        self._active_workers[worker_id].tasks.add(task)
         else:
             logger.info("No prior state file exists at %s. Starting with clean slate", self._state_path)
 
@@ -568,7 +590,7 @@ class CentralPlannerScheduler(Scheduler):
             if t is not None and prio > t.priority:
                 self._update_priority(t, prio, worker)
 
-    def add_task(self, worker, task_id, status=PENDING, runnable=True,
+    def add_task(self, task_id=None, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
                  priority=0, family='', module=None, params=None,
                  supersedes_bucket=None, supersedes_priority=None,
@@ -580,7 +602,8 @@ class CentralPlannerScheduler(Scheduler):
         * add additional workers/stakeholders
         * update priority when needed
         """
-        self.update(worker)
+        worker_id = kwargs['worker']
+        self.update(worker_id)
 
         task = self._state.get_task(task_id, setdefault=self._make_task(
             task_id=task_id, status=PENDING, deps=deps, resources=resources,
@@ -627,18 +650,19 @@ class CentralPlannerScheduler(Scheduler):
             task.supersedes_priority = supersedes_priority
 
         if not assistant:
-            task.stakeholders.add(worker)
+            task.stakeholders.add(worker_id)
 
             # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
             # Otherwise the task dependencies might end up being pruned if scheduling takes a long time
             for dep in task.deps or []:
                 t = self._state.get_task(dep, setdefault=self._make_task(task_id=dep, status=UNKNOWN, deps=None, priority=priority))
-                t.stakeholders.add(worker)
+                t.stakeholders.add(worker_id)
 
-        self._update_priority(task, priority, worker)
+        self._update_priority(task, priority, worker_id)
 
         if runnable:
-            task.workers.add(worker)
+            task.workers.add(worker_id)
+            self._state.get_worker(worker_id).tasks.add(task)
 
         if expl is not None:
             task.expl = expl
@@ -673,9 +697,9 @@ class CentralPlannerScheduler(Scheduler):
         return used_resources
 
     def _supersedes_buckets(self):
-        return set(t.supersedes_bucket for t in self._state.get_running_tasks()) - set([None])
+        return set(t.supersedes_bucket for t in self._state.get_running_tasks()) - {None}
 
-    def _rank(self):
+    def _rank(self, among_tasks):
         """
         Return worker's rank function for task scheduling.
 
@@ -686,7 +710,7 @@ class CentralPlannerScheduler(Scheduler):
         def not_done(t):
             task = self._state.get_task(t, default=None)
             return task is None or task.status != DONE
-        for task in self._state.get_pending_tasks():
+        for task in among_tasks:
             if task.status != DONE:
                 deps = list(filter(not_done, task.deps))
                 inverse_num_deps = 1.0 / max(len(deps), 1)
@@ -709,7 +733,7 @@ class CentralPlannerScheduler(Scheduler):
                 return False
         return True
 
-    def get_work(self, worker, host=None, assistant=False, **kwargs):
+    def get_work(self, host=None, assistant=False, **kwargs):
         # TODO: remove any expired nodes
 
         # Algo: iterate over all nodes, find the highest priority node no dependencies and available
@@ -723,29 +747,37 @@ class CentralPlannerScheduler(Scheduler):
         # TODO: remove tasks that can't be done, figure out if the worker has absolutely
         # nothing it can wait for
 
+        worker_id = kwargs['worker']
         # Return remaining tasks that have no FAILED descendents
-        self.update(worker, {'host': host})
+        self.update(worker_id, {'host': host})
         if assistant:
-            self.add_worker(worker, [('assistant', assistant)])
+            self.add_worker(worker_id, [('assistant', assistant)])
         best_task = None
         locally_pending_tasks = 0
         running_tasks = []
         upstream_table = {}
 
-        used_resources = self._used_resources()
         greedy_resources = collections.defaultdict(int)
         supersedes_buckets = self._supersedes_buckets()
         n_unique_pending = 0
-        greedy_workers = dict((worker.id, worker.info.get('workers', 1))
-                              for worker in self._state.get_active_workers())
 
-        tasks = list(self._state.get_pending_tasks())
-        tasks.sort(key=self._rank(), reverse=True)
+        worker = self._state.get_worker(worker_id)
+        if worker.is_trivial_worker():
+            relevant_tasks = worker.get_pending_tasks()
+            used_resources = collections.defaultdict(int)
+            greedy_workers = dict()  # If there's no resources, then they can grab any task
+        else:
+            relevant_tasks = self._state.get_pending_tasks()
+            used_resources = self._used_resources()
+            greedy_workers = dict((worker.id, worker.info.get('workers', 1))
+                                  for worker in self._state.get_active_workers())
+        tasks = list(relevant_tasks)
+        tasks.sort(key=self._rank(among_tasks=tasks), reverse=True)
 
         for task in tasks:
             upstream_status = self._upstream_status(task.id, upstream_table)
-            in_workers = (assistant and task.workers) or worker in task.workers
-            if task.status == 'RUNNING' and in_workers:
+            in_workers = (assistant and task.workers) or worker_id in task.workers
+            if task.status == RUNNING and in_workers:
                 # Return a list of currently running tasks to the client,
                 # makes it easier to troubleshoot
                 other_worker = self._state.get_worker(task.worker_running)
@@ -772,7 +804,7 @@ class CentralPlannerScheduler(Scheduler):
                 if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                 else:
-                    workers = itertools.chain(task.workers, [worker]) if assistant else task.workers
+                    workers = itertools.chain(task.workers, [worker_id]) if assistant else task.workers
                     for task_worker in workers:
                         if greedy_workers.get(task_worker, 0) > 0:
                             # use up a worker
@@ -795,7 +827,7 @@ class CentralPlannerScheduler(Scheduler):
 
         if best_task:
             self._state.set_status(best_task, RUNNING, self._config)
-            best_task.worker_running = worker
+            best_task.worker_running = worker_id
             best_task.time_running = time.time()
             self._update_task_history(best_task.id, RUNNING, host=host)
 
@@ -806,8 +838,9 @@ class CentralPlannerScheduler(Scheduler):
 
         return reply
 
-    def ping(self, worker, **kwargs):
-        self.update(worker)
+    def ping(self, **kwargs):
+        worker_id = kwargs['worker']
+        self.update(worker_id)
 
     def _upstream_status(self, task_id, upstream_status_table):
         if task_id in upstream_status_table:

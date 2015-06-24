@@ -71,6 +71,16 @@ def id_to_name_and_params(task_id):
     return luigi.tools.parse_task.id_to_name_and_params(task_id)
 
 
+class BulkCompleteNotImplementedError(NotImplementedError):
+    """This is here to trick pylint.
+
+    pylint thinks anything raising NotImplementedError needs to be implemented
+    in any subclass. bulk_complete isn't like that. This tricks pylint into
+    thinking that the default implementation is a valid implementation and no
+    an abstract method."""
+    pass
+
+
 @six.add_metaclass(Register)
 class Task(object):
     """
@@ -218,7 +228,7 @@ class Task(object):
         exc_desc = '%s[args=%s, kwargs=%s]' % (task_name, args, kwargs)
 
         # Fill in the positional arguments
-        positional_params = [(n, p) for n, p in params if not p.is_global]
+        positional_params = [(n, p) for n, p in params if p.positional]
         for i, arg in enumerate(args):
             if i >= len(positional_params):
                 raise parameter.UnknownParameterException('%s: takes at most %d parameters (%d given)' % (exc_desc, len(positional_params), len(args)))
@@ -392,7 +402,7 @@ class Task(object):
         Override (with an efficient implementation) for efficient scheduling
         with range tools. Keep the logic consistent with that of complete().
         """
-        raise NotImplementedError
+        raise BulkCompleteNotImplementedError()
 
     def output(self):
         """
@@ -649,10 +659,10 @@ def flatten(struct):
 
     .. code-block:: python
 
-        >>> flatten({'a': 'foo', 'b': 'bar'})
-        ['foo', 'bar']
-        >>> flatten(['foo', ['bar', 'troll']])
-        ['foo', 'bar', 'troll']
+        >>> sorted(flatten({'a': 'foo', 'b': 'bar'}))
+        ['bar', 'foo']
+        >>> sorted(flatten(['foo', ['bar', 'troll']]))
+        ['bar', 'foo', 'troll']
         >>> flatten('foo')
         ['foo']
         >>> flatten(42)
