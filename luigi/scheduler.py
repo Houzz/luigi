@@ -248,18 +248,28 @@ class Worker(object):
         if self.last_active + config.worker_disconnect_delay < time.time():
             return True
 
-    def get_pending_tasks(self):
-        return six.moves.filter(lambda task: task.status in [PENDING, RUNNING],
-                                self.tasks)
+    def get_pending_tasks(self, state):
+        """
+        Get PENDING (and RUNNING) tasks for this worker.
 
-    def is_trivial_worker(self):
+        You have to pass in the state for optimization reasons.
+        """
+        if len(self.tasks) < state.num_pending_tasks():
+            return six.moves.filter(lambda task: task.status in [PENDING, RUNNING],
+                                    self.tasks)
+        else:
+            return state.get_pending_tasks()
+
+    def is_trivial_worker(self, state):
         """
         If it's not an assistant having only tasks that are without
-        requirements
+        requirements.
+
+        We have to pass the state parameter for optimization reasons.
         """
         if self.assistant:
             return False
-        return all(not task.resources and not task.supersedes_bucket for task in self.get_pending_tasks())
+        return all(not task.resources and not task.supersedes_bucket for task in self.get_pending_tasks(state))
 
     @property
     def assistant(self):
@@ -358,6 +368,12 @@ class SimpleTaskState(object):
     def mark_supersedes_bucket_tasks_done(self, supersedes_task):
         for task in self.get_supersedes_bucket_tasks(supersedes_task):
             self.set_status(task, DONE)
+
+    def num_pending_tasks(self):
+        """
+        Return how many tasks are PENDING + RUNNING. O(1).
+        """
+        return len(self._status_tasks[PENDING]) + len(self._status_tasks[RUNNING])
 
     def get_task(self, task_id, default=None, setdefault=None):
         if setdefault:
@@ -762,8 +778,8 @@ class CentralPlannerScheduler(Scheduler):
         n_unique_pending = 0
 
         worker = self._state.get_worker(worker_id)
-        if worker.is_trivial_worker():
-            relevant_tasks = worker.get_pending_tasks()
+        if worker.is_trivial_worker(self._state):
+            relevant_tasks = worker.get_pending_tasks(self._state)
             used_resources = collections.defaultdict(int)
             greedy_workers = dict()  # If there's no resources, then they can grab any task
         else:

@@ -228,8 +228,8 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertFalse(list(self.sch.task_list('', '')))
 
     def test_assistant_request_external_task(self):
-        self.sch.add_task('X', task_id='A', runnable=False)
-        self.assertTrue(self.sch.get_work('Y', assistant=True)['task_id'] is None)
+        self.sch.add_task(worker='X', task_id='A', runnable=False)
+        self.assertTrue(self.sch.get_work(worker='Y', assistant=True)['task_id'] is None)
 
     def test_prune_done_tasks(self, expected=None):
         self.setTime(0)
@@ -479,13 +479,13 @@ class CentralPlannerTest(unittest.TestCase):
         self.check_task_order('C')
 
     def test_run_resources_while_waiting(self):
-        self.sch.add_task(WORKER, task_id='A', resources={'r1': 1, 'r2': 1}, priority=10)
-        self.assertEqual('A', self.sch.get_work(WORKER)['task_id'])
+        self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1, 'r2': 1}, priority=10)
+        self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
 
-        self.sch.add_task(WORKER, task_id='B', resources={'r1': 1, 'r2': 1}, priority=20)
-        self.sch.add_task(WORKER, task_id='C', resources={'r1': 1}, priority=0)
+        self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1, 'r2': 1}, priority=20)
+        self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1}, priority=0)
         self.sch.update_resources({'r1': 2, 'r2': 1})
-        self.assertEqual('C', self.sch.get_work(WORKER)['task_id'])
+        self.assertEqual('C', self.sch.get_work(worker=WORKER)['task_id'])
 
     def check_task_order(self, order):
         for expected_id in order:
@@ -678,68 +678,68 @@ class CentralPlannerTest(unittest.TestCase):
         self.check_task_order(['A', 'B', 'D', 'C'])
 
     def test_run_one_from_bucket(self):
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority=0)
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='b', supersedes_priority=1)
-        self.sch.add_task(WORKER, 'C', supersedes_bucket='b', supersedes_priority=2)
-        self.sch.add_task(WORKER, 'D', supersedes_bucket='b', supersedes_priority=3)
-        self.sch.add_task(WORKER, 'E', supersedes_bucket='b', supersedes_priority=4)
-        self.sch.add_task(WORKER, 'F')
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='b', supersedes_priority=0)
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='b', supersedes_priority=1)
+        self.sch.add_task(worker=WORKER, task_id='C', supersedes_bucket='b', supersedes_priority=2)
+        self.sch.add_task(worker=WORKER, task_id='D', supersedes_bucket='b', supersedes_priority=3)
+        self.sch.add_task(worker=WORKER, task_id='E', supersedes_bucket='b', supersedes_priority=4)
+        self.sch.add_task(worker=WORKER, task_id='F')
         self.check_task_order('EF')
 
     def test_run_one_from_bucket_with_priority(self):
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority=0, priority=10)
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='b', supersedes_priority=1, priority=1)
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='b', supersedes_priority=0, priority=10)
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='b', supersedes_priority=1, priority=1)
         self.check_task_order('B')
 
     def test_run_two_buckets(self):
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='b1', supersedes_priority=0)
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='b1', supersedes_priority=1)
-        self.sch.add_task(WORKER, 'C', supersedes_bucket='b1', supersedes_priority=2)
-        self.sch.add_task(WORKER, 'D', supersedes_bucket='b2', supersedes_priority=3)
-        self.sch.add_task(WORKER, 'E', supersedes_bucket='b2', supersedes_priority=4)
-        self.sch.add_task(WORKER, 'F', supersedes_bucket='b2', supersedes_priority=5)
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='b1', supersedes_priority=0)
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='b1', supersedes_priority=1)
+        self.sch.add_task(worker=WORKER, task_id='C', supersedes_bucket='b1', supersedes_priority=2)
+        self.sch.add_task(worker=WORKER, task_id='D', supersedes_bucket='b2', supersedes_priority=3)
+        self.sch.add_task(worker=WORKER, task_id='E', supersedes_bucket='b2', supersedes_priority=4)
+        self.sch.add_task(worker=WORKER, task_id='F', supersedes_bucket='b2', supersedes_priority=5)
         self.check_task_order('FC')
 
     def test_run_partial_bucket(self):
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority=0)
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='b', supersedes_priority=1)
-        self.sch.add_task(WORKER, 'C', supersedes_bucket='b', supersedes_priority=2)
-        self.sch.add_task(WORKER, 'D', supersedes_bucket='b', supersedes_priority=3)
-        self.sch.add_task(WORKER, 'E', supersedes_bucket='b', supersedes_priority=4, deps=['G'])
-        self.sch.add_task(WORKER, 'F', supersedes_bucket='b', supersedes_priority=5, deps=['G'])
-        self.sch.add_task(WORKER, 'G')
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='b', supersedes_priority=0)
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='b', supersedes_priority=1)
+        self.sch.add_task(worker=WORKER, task_id='C', supersedes_bucket='b', supersedes_priority=2)
+        self.sch.add_task(worker=WORKER, task_id='D', supersedes_bucket='b', supersedes_priority=3)
+        self.sch.add_task(worker=WORKER, task_id='E', supersedes_bucket='b', supersedes_priority=4, deps=['G'])
+        self.sch.add_task(worker=WORKER, task_id='F', supersedes_bucket='b', supersedes_priority=5, deps=['G'])
+        self.sch.add_task(worker=WORKER, task_id='G')
         self.check_task_order('DGF')
 
     def test_string_bucket_priority(self):
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority='2014-10-23')
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='b', supersedes_priority='2014-10-24')
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='b', supersedes_priority='2014-10-23')
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='b', supersedes_priority='2014-10-24')
         self.check_task_order('B')
 
     def test_only_one_bucket_item_at_once(self):
-        self.sch.add_task('X', 'A', supersedes_bucket='b', supersedes_priority=0, priority=10)
-        self.assertEqual('A', self.sch.get_work('X')['task_id'])
-        self.sch.add_task('Y', 'B', supersedes_bucket='b', supersedes_priority=1)
-        self.assertFalse(self.sch.get_work('Y')['task_id'])
+        self.sch.add_task(worker='X', task_id='A', supersedes_bucket='b', supersedes_priority=0, priority=10)
+        self.assertEqual('A', self.sch.get_work(worker='X')['task_id'])
+        self.sch.add_task(worker='Y', task_id='B', supersedes_bucket='b', supersedes_priority=1)
+        self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
     def test_hold_bucket_for_higher_priority_worker(self):
-        self.sch.add_task('X', 'A', supersedes_bucket='b', supersedes_priority=0, priority=10)
-        self.sch.add_task('Y', 'B', supersedes_bucket='b', supersedes_priority=1)
-        self.assertFalse(self.sch.get_work('X')['task_id'])
-        self.assertEqual('B', self.sch.get_work('Y')['task_id'])
+        self.sch.add_task(worker='X', task_id='A', supersedes_bucket='b', supersedes_priority=0, priority=10)
+        self.sch.add_task(worker='Y', task_id='B', supersedes_bucket='b', supersedes_priority=1)
+        self.assertFalse(self.sch.get_work(worker='X')['task_id'])
+        self.assertEqual('B', self.sch.get_work(worker='Y')['task_id'])
 
     def test_change_bucket(self):
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='a', supersedes_priority=10)
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='b', supersedes_priority=10)
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='a', priority=10)
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='a', supersedes_priority=10)
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='b', supersedes_priority=10)
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='a', priority=10)
         self.check_task_order('BA')
 
     def test_set_bucket(self):
-        self.sch.add_task(WORKER, 'A')
-        self.sch.add_task(WORKER, 'A', supersedes_bucket='a', supersedes_priority=0)
-        self.sch.add_task(WORKER, 'B', supersedes_bucket='a', supersedes_priority=1)
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='a', supersedes_priority=0)
+        self.sch.add_task(worker=WORKER, task_id='B', supersedes_bucket='a', supersedes_priority=1)
 
         self.assertEqual(len(self.sch.task_list('PENDING', '')), 2)
-        self.sch.add_task(WORKER, 'B', status=DONE)
+        self.sch.add_task(worker=WORKER, task_id='B', status=DONE)
 
         self.assertEqual(len(self.sch.task_list('DONE', '')), 2)
         self.assertEqual(len(self.sch.task_list('PENDING', '')), 0)
@@ -864,6 +864,27 @@ class CentralPlannerTest(unittest.TestCase):
         for i in range(NUM_TASKS):
             self.assertEqual(self.sch.get_work(worker=str(i))['task_id'], str(i))
             self.sch.add_task(worker=str(i), task_id=str(i), status=DONE)
+
+    def test_get_work_speed(self):
+        """ Test that get_work is fast for few workers and many DONEs.
+
+        In #986, @daveFNbuck reported that he got a slowdown.
+        """
+        # This took almost 4 minutes without optimization.
+        # Now it takes 10 seconds on my machine.
+        NUM_PENDING = 1000
+        NUM_DONE = 200000
+        assert NUM_DONE >= NUM_PENDING
+        for i in range(NUM_PENDING):
+            self.sch.add_task(worker=WORKER, task_id=str(i), resources={})
+
+        for i in range(NUM_PENDING, NUM_DONE):
+            self.sch.add_task(worker=WORKER, task_id=str(i), status=DONE)
+
+        for i in range(NUM_PENDING):
+            res = int(self.sch.get_work(worker=WORKER)['task_id'])
+            self.assertTrue(0 <= res < NUM_PENDING)
+            self.sch.add_task(worker=WORKER, task_id=str(res), status=DONE)
 
 if __name__ == '__main__':
     unittest.main()
