@@ -142,6 +142,10 @@ class Task(object):
     #: Defaults to 0 or value in client.cfg
     worker_timeout = None
 
+    #: Owner of the task: it is used for sending out error email in addition to
+    #: the one defined in luigi config
+    owner = None
+
     @property
     def use_cmdline_section(self):
         ''' Property used by core config such as `--workers` etc.

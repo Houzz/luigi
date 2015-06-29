@@ -29,3 +29,17 @@ class TestEmail(unittest.TestCase):
     @with_config({"core": {"email-prefix": "[prefix]"}})
     def testEmailPrefix(self):
         self.assertEqual("[prefix] subject", notifications._prefix('subject'))
+
+    @with_config({"core": {"error-email": "a@a.a"}})
+    def testEmailRecipients(self):
+        self.assertItemsEqual(notifications._email_recipients(), ["a@a.a"])
+        self.assertItemsEqual(notifications._email_recipients("b@b.b"), ["a@a.a", "b@b.b"])
+        self.assertItemsEqual(notifications._email_recipients(["b@b.b", "c@c.c"]),
+                              ["a@a.a", "b@b.b", "c@c.c"])
+
+    @with_config({"core": {}}, replace_sections=True)
+    def testEmailRecipientsNoConfig(self):
+        self.assertItemsEqual(notifications._email_recipients(), [])
+        self.assertItemsEqual(notifications._email_recipients("a@a.a"), ["a@a.a"])
+        self.assertItemsEqual(notifications._email_recipients(["a@a.a", "b@b.b"]),
+                              ["a@a.a", "b@b.b"])
