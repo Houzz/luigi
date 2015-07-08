@@ -139,7 +139,7 @@ class Task(object):
 
     #: Number of seconds after which to time out the run function.
     #: No timeout if set to 0.
-    #: Defaults to 0 or value in client.cfg
+    #: Defaults to 0 or value in luigi.cfg
     worker_timeout = None
 
     #: Owner of the task: it is used for sending out error email in addition to
@@ -684,13 +684,13 @@ def flatten(struct):
 
     try:
         # if iterable
-        for result in struct:
-            flat += flatten(result)
-        return flat
+        iterator = iter(struct)
     except TypeError:
-        pass
+        return [struct]
 
-    return [struct]
+    for result in iterator:
+        flat += flatten(result)
+    return flat
 
 
 def flatten_output(task):

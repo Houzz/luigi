@@ -101,6 +101,8 @@ class scheduler(Config):
 
     visualization_graph = parameter.Parameter(default="svg", config_path=dict(section='scheduler', name='visualization-graph'))
 
+    prune_on_get_work = parameter.BoolParameter(default=False)
+
 
 def fix_time(x):
     # Backwards compatibility for a fix in Dec 2014. Prior to the fix, pickled state might store datetime objects
@@ -230,7 +232,7 @@ class Worker(object):
     def __init__(self, worker_id, last_active=None):
         self.id = worker_id
         self.reference = None  # reference to the worker in the real world. (Currently a dict containing just the host)
-        self.last_active = last_active  # seconds since epoch
+        self.last_active = last_active or time.time()  # seconds since epoch
         self.started = time.time()  # seconds since epoch
         self.tasks = set()  # task objects
         self.info = {}
@@ -715,30 +717,14 @@ class CentralPlannerScheduler(Scheduler):
     def _supersedes_buckets(self):
         return set(t.supersedes_bucket for t in self._state.get_running_tasks()) - {None}
 
-    def _rank(self, among_tasks):
+    def _rank(self, task):
         """
         Return worker's rank function for task scheduling.
 
         :return:
         """
-        dependents = collections.defaultdict(int)
 
-        def not_done(t):
-            task = self._state.get_task(t, default=None)
-            return task is None or task.status != DONE
-        for task in among_tasks:
-            if task.status != DONE:
-                deps = list(filter(not_done, task.deps))
-                inverse_num_deps = 1.0 / max(len(deps), 1)
-                for dep in deps:
-                    dependents[dep] += inverse_num_deps
-
-        return lambda t: (
-            self._state.task_priority(t),
-            t.supersedes_priority,
-            dependents[t.id],
-            -t.time,
-        )
+        return self._state.task_priority(task), task.supersedes_priority, -task.time
 
     def _schedulable(self, task):
         if task.status != PENDING:
@@ -762,6 +748,9 @@ class CentralPlannerScheduler(Scheduler):
 
         # TODO: remove tasks that can't be done, figure out if the worker has absolutely
         # nothing it can wait for
+
+        if self._config.prune_on_get_work:
+            self.prune()
 
         worker_id = kwargs['worker']
         # Return remaining tasks that have no FAILED descendents
@@ -788,7 +777,7 @@ class CentralPlannerScheduler(Scheduler):
             greedy_workers = dict((worker.id, worker.info.get('workers', 1))
                                   for worker in self._state.get_active_workers())
         tasks = list(relevant_tasks)
-        tasks.sort(key=self._rank(among_tasks=tasks), reverse=True)
+        tasks.sort(key=self._rank, reverse=True)
 
         for task in tasks:
             upstream_status = self._upstream_status(task.id, upstream_table)
@@ -807,6 +796,9 @@ class CentralPlannerScheduler(Scheduler):
                 if len(task.workers) == 1 and not assistant:
                     n_unique_pending += 1
 
+            if best_task:
+                continue
+
             greedy_schedulable = lambda: (self._has_resources(task.resources, greedy_resources)
                                           and task.supersedes_bucket not in supersedes_buckets)
             if task.status == RUNNING and task.worker_running in greedy_workers and greedy_schedulable():
@@ -816,7 +808,7 @@ class CentralPlannerScheduler(Scheduler):
                 if task.supersedes_bucket is not None:
                     supersedes_buckets.add(task.supersedes_bucket)
 
-            if not best_task and self._schedulable(task) and greedy_schedulable():
+            if self._schedulable(task) and greedy_schedulable():
                 if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                 else:
@@ -868,6 +860,8 @@ class CentralPlannerScheduler(Scheduler):
                 dep_id = task_stack.pop()
                 if self._state.has_task(dep_id):
                     dep = self._state.get_task(dep_id)
+                    if dep.status == DONE:
+                        continue
                     if dep_id not in upstream_status_table:
                         if dep.status == PENDING and dep.deps:
                             task_stack = task_stack + [dep_id] + list(dep.deps)
