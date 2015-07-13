@@ -130,7 +130,7 @@ class Task(object):
 
     #: Owner of the task: it is used for sending out error email in addition to
     #: the one defined in luigi config
-    owner = None
+    owner_email = None
 
     @property
     def use_cmdline_section(self):
