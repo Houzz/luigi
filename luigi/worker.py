@@ -160,7 +160,7 @@ class TaskProcess(multiprocessing.Process):
             error_message = notifications.wrap_traceback(self.task.on_failure(ex))
             self.task.trigger_event(Event.FAILURE, self.task, ex)
             subject = "Luigi: %s FAILED" % self.task
-            notifications.send_error_email(subject, error_message, self.task.owner)
+            notifications.send_error_email(subject, error_message, self.task.owner_email)
         finally:
             self.result_queue.put(
                 (self.task.task_id, status, error_message, missing, new_deps))
@@ -381,13 +381,13 @@ class Worker(object):
         formatted_traceback = notifications.wrap_traceback(formatted_traceback)
         subject = "Luigi: {task} failed scheduling. Host: {host}".format(task=task, host=self.host)
         message = "Will not schedule {task} or any dependencies due to error in complete() method:\n{traceback}".format(task=task, traceback=formatted_traceback)
-        notifications.send_error_email(subject, message, task.owner)
+        notifications.send_error_email(subject, message, task.owner_email)
 
     def _email_unexpected_error(self, task, formatted_traceback):
         formatted_traceback = notifications.wrap_traceback(formatted_traceback)
         subject = "Luigi: Framework error while scheduling {task}. Host: {host}".format(task=task, host=self.host)
         message = "Luigi framework error:\n{traceback}".format(traceback=formatted_traceback)
-        notifications.send_error_email(subject, message, task.owner)
+        notifications.send_error_email(subject, message, task.owner_email)
 
     def add(self, task, multiprocess=False):
         """
