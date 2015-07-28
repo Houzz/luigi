@@ -188,8 +188,8 @@ def send_error_email(subject, message, additional_recipients=None):
         )
     else:
         logger.info("Skipping error email. Set `error-email` in the `core` "
-                    "section of the luigi config file to receive error "
-                    "emails.")
+                    "section of the luigi config file or override `owner_email`"
+                    "in the task to receive error emails.")
 
 
 def _prefix(subject):

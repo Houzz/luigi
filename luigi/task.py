@@ -128,9 +128,14 @@ class Task(object):
     #: Defaults to 0 or value in luigi.cfg
     worker_timeout = None
 
-    #: Owner of the task: it is used for sending out error email in addition to
-    #: the one defined in luigi config
-    owner_email = None
+    @property
+    def owner_email(self):
+        '''
+        Override this to send out additional error emails to task owner, in addition to the one
+        defined in `core`.`error-email`. This should return a string or a list of strings. e.g.
+        'test@exmaple.com' or ['test1@example.com', 'test2@example.com']
+        '''
+        return None
 
     @property
     def use_cmdline_section(self):

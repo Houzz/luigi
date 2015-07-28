@@ -19,8 +19,7 @@ from helpers import unittest
 
 from helpers import with_config
 from luigi import notifications
-
-import six
+from luigi import six
 
 
 class TestEmail(unittest.TestCase):
