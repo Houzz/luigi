@@ -861,6 +861,10 @@ class Dummy2Task(Task):
         f.close()
 
 
+class InsignificantParameterTask(Dummy2Task):
+    p = luigi.Parameter(default='default', significant=False)
+
+
 class AssistantTest(unittest.TestCase):
     def setUp(self):
         self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
@@ -908,6 +912,13 @@ class AssistantTest(unittest.TestCase):
         self.w.add(task)
         self.assertTrue(self.assistant.run())
         self.assertEqual(list(self.sch.task_list('DONE', '').keys()), ['UnimportedTask()'])
+
+    def test_optional_parameter(self):
+        task = InsignificantParameterTask()
+
+        self.w.add(task)
+        self.assertTrue(self.assistant.run())
+        self.assertTrue(task.complete())
 
 
 class ForkBombTask(luigi.Task):
