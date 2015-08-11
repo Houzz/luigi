@@ -227,6 +227,23 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.prune()
         self.assertFalse(list(self.sch.task_list('', '')))
 
+    def test_prune_worker_with_live_assistant(self):
+        self.setTime(0)
+        self.sch.add_task(worker='X', task_id='A')
+        self.sch.get_work(worker='X')
+        self.sch.get_work(worker='Y', assistant=True)
+
+        # worker X stops communicating, A should be marked for removal
+        self.setTime(600)
+        self.sch.ping(worker='Y')
+        self.sch.prune()
+
+        # A will now be pruned
+        self.setTime(2000)
+        self.sch.ping(worker='Y')
+        self.sch.prune()
+        self.assertItemsEqual('Y', (worker['name'] for worker in self.sch.worker_list()))
+
     def test_assistant_request_external_task(self):
         self.sch.add_task(worker='X', task_id='A', runnable=False)
         self.assertTrue(self.sch.get_work(worker='Y', assistant=True)['task_id'] is None)
