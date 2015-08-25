@@ -23,7 +23,7 @@ from helpers import unittest
 from nose.plugins.attrib import attr
 
 import luigi.notifications
-from luigi.scheduler import DISABLED, DONE, FAILED, CentralPlannerScheduler
+from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, CentralPlannerScheduler
 
 luigi.notifications.DEBUG = True
 WORKER = 'myworker'
@@ -743,6 +743,27 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='Y', task_id='B', supersedes_bucket='b', supersedes_priority=1)
         self.assertFalse(self.sch.get_work(worker='X')['task_id'])
         self.assertEqual('B', self.sch.get_work(worker='Y')['task_id'])
+
+    def test_bucket_priority_does_not_increase_for_done_task(self):
+        self.sch.add_task(
+            worker=WORKER, task_id='A', supersedes_bucket='a', supersedes_priority=0, priority=100,
+            status=DONE)
+        self.sch.add_task(
+            worker=WORKER, task_id='B', supersedes_bucket='a', supersedes_priority=10, priority=0)
+        self.sch.add_task(worker=WORKER, task_id='C', priority=10)
+        self.assertEqual('C', self.sch.get_work(worker=WORKER)['task_id'])
+
+    def test_bucket_priority_does_increase_for_potentially_runnable_tasks(self):
+        for status in (PENDING, FAILED, DISABLED):
+            sch = CentralPlannerScheduler()
+            sch.add_task(
+                worker=WORKER, task_id='A', status=status, priority=100, supersedes_bucket='a',
+                supersedes_priority=0)
+            sch.add_task(
+                worker=WORKER, task_id='B', priority=0, supersedes_bucket='a',
+                supersedes_priority=10)
+            sch.add_task(worker=WORKER, task_id='C', priority=10)
+            self.assertEqual('B', sch.get_work(worker=WORKER)['task_id'])
 
     def test_change_bucket(self):
         self.sch.add_task(worker=WORKER, task_id='A', supersedes_bucket='a', supersedes_priority=10)

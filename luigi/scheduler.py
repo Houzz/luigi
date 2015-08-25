@@ -74,6 +74,12 @@ STATUS_TO_UPSTREAM_MAP = {
     PENDING: UPSTREAM_MISSING_INPUT,
     DISABLED: UPSTREAM_DISABLED,
 }
+POTENTIAL_RUNNABLE_STATUSES = frozenset((
+    RUNNING,
+    FAILED,
+    PENDING,
+    DISABLED,
+))
 
 
 class scheduler(Config):
@@ -525,7 +531,9 @@ class SimpleTaskState(object):
             return task.priority
 
         # a task has at least as high priority as things below it in the same supersedes bucket
-        return max(t.priority for t in self.get_supersedes_bucket_tasks(task))
+        return max(
+            t.priority for t in self.get_supersedes_bucket_tasks(task)
+            if t.status in POTENTIAL_RUNNABLE_STATUSES)
 
 
 class CentralPlannerScheduler(Scheduler):
