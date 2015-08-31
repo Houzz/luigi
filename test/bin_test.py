@@ -15,10 +15,16 @@
 # limitations under the License.
 #
 
+import functools
+import os
+import tempfile
+import shutil
+
 import mock
+
 import server_test
 import luigi.cmdline
-from helpers import with_config
+from helpers import skipOnTravis
 
 
 class LuigidTest(server_test.ServerTestRun):
@@ -27,8 +33,16 @@ class LuigidTest(server_test.ServerTestRun):
         luigi.cmdline.luigid(['--port', str(self._api_port)])
 
 
+@skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/74297092')
 class LuigidDaemonTest(server_test.ServerTestRun):
 
     @mock.patch('daemon.DaemonContext')
     def run_server(self, daemon_context):
-        luigi.cmdline.luigid(['--port', str(self._api_port), '--background', '--logdir', '.', '--pidfile', self.id() + '.pid'])
+        tempdir = tempfile.mkdtemp(prefix=self.id())
+        self.addCleanup(functools.partial(shutil.rmtree, tempdir))
+        luigi.cmdline.luigid([
+            '--port', str(self._api_port),
+            '--background',
+            '--logdir', tempdir,
+            '--pidfile', os.path.join(tempdir, 'luigid.pid')
+        ])

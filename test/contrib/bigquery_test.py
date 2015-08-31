@@ -26,7 +26,6 @@ import os
 
 import luigi
 from luigi.contrib import bigquery
-from luigi.contrib import gcs
 
 from contrib import gcs_test
 from nose.plugins.attrib import attr
@@ -90,6 +89,11 @@ class BigqueryTest(gcs_test._GCSBaseTestCase):
         task._BIGQUERY_CLIENT = self.bq_client
 
         task.run()
+
+    def test_table_uri(self):
+        intended_uri = "bq://" + PROJECT_ID + "/" + \
+                       DATASET_ID + "/" + self.table.table_id
+        self.assertTrue(self.table.uri == intended_uri)
 
     def test_load_and_copy(self):
         self.create_dataset([

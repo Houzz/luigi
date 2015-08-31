@@ -20,12 +20,10 @@ try:
     import ConfigParser
 except ImportError:
     import configparser as ConfigParser
-import logging
 import mock
 import os
 import subprocess
 from helpers import unittest
-import warnings
 
 from luigi import six
 
@@ -49,7 +47,7 @@ class AmbiguousClass(luigi.Task):
     pass
 
 
-class AmbiguousClass(luigi.Task):
+class AmbiguousClass(luigi.Task):  # NOQA
     pass
 
 
@@ -59,7 +57,7 @@ class TaskWithSameName(luigi.Task):
         self.x = 42
 
 
-class TaskWithSameName(luigi.Task):
+class TaskWithSameName(luigi.Task):  # NOQA
     # there should be no ambiguity
 
     def run(self):
@@ -205,7 +203,7 @@ class NewStyleParameters822Test(unittest.TestCase):
     # See https://github.com/spotify/luigi/issues/822
 
     def test_subclasses(self):
-        ap = luigi.interface.ArgParseInterface()
+        ap = luigi.interface._ArgParseInterface()
 
         task, = ap.parse(['--local-scheduler', '--no-lock', 'FooSubClass', '--x', 'xyz', '--FooBaseClass-x', 'xyz'])
         self.assertEquals(task.x, 'xyz')
@@ -214,7 +212,7 @@ class NewStyleParameters822Test(unittest.TestCase):
         self.assertRaises(BaseException, ap.parse, (['--local-scheduler', '--no-lock', 'FooBaseClass', '--x', 'xyz', '--FooSubClass-x', 'xyz']))
 
     def test_subclasses_2(self):
-        ap = luigi.interface.ArgParseInterface()
+        ap = luigi.interface._ArgParseInterface()
 
         # https://github.com/spotify/luigi/issues/822#issuecomment-77782714
         task, = ap.parse(['--local-scheduler', '--no-lock', 'FooBaseClass', '--FooBaseClass-x', 'xyz'])

@@ -14,19 +14,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import functools
 import os
 import multiprocessing
 import random
+import shutil
 import signal
 import time
 import tempfile
 
-from helpers import unittest, with_config
+from helpers import unittest, skipOnTravis
 import luigi.rpc
 import luigi.server
 from luigi.scheduler import CentralPlannerScheduler
+from luigi.six.moves.urllib.parse import (
+    urlencode, ParseResult, quote as urlquote
+)
 
 from tornado.testing import AsyncHTTPTestCase
+from nose.plugins.attrib import attr
+
+try:
+    from unittest import mock
+except ImportError:
+    import mock
 
 
 class ServerTestBase(AsyncHTTPTestCase):
@@ -40,6 +51,7 @@ class ServerTestBase(AsyncHTTPTestCase):
         self._old_fetch = luigi.rpc.RemoteScheduler._fetch
 
         def _fetch(obj, url, body, *args, **kwargs):
+            body = urlencode(body).encode('utf-8')
             response = self.fetch(url, body=body, method='POST')
             if response.code >= 400:
                 raise luigi.rpc.RPCError(
@@ -72,19 +84,50 @@ class ServerTest(ServerTestBase):
         self._test_404('/api/foo')
 
 
+class INETServerClient(object):
+    def __init__(self):
+        self.port = random.randint(1024, 9999)
+
+    def run_server(self):
+        luigi.server.run(api_port=self.port, address='127.0.0.1')
+
+    def scheduler(self):
+        return luigi.rpc.RemoteScheduler('http://localhost:' + str(self.port))
+
+
+class UNIXServerClient(object):
+    def __init__(self):
+        self.tempdir = tempfile.mkdtemp()
+        self.unix_socket = os.path.join(self.tempdir, 'luigid.sock')
+
+    def run_server(self):
+        luigi.server.run(unix_socket=self.unix_socket)
+
+    def scheduler(self):
+        url = ParseResult(
+            scheme='http+unix',
+            netloc=urlquote(self.unix_socket, safe=''),
+            path='',
+            params='',
+            query='',
+            fragment='',
+        ).geturl()
+        return luigi.rpc.RemoteScheduler(url)
+
+
 class ServerTestRun(unittest.TestCase):
     """Test to start and stop the server in a more "standard" way
     """
 
-    def run_server(self):
-        luigi.server.run(api_port=self._api_port, address='127.0.0.1')
+    server_client_class = INETServerClient
 
     def start_server(self):
-        self._api_port = random.randint(1024, 9999)
-        self._process = multiprocessing.Process(target=self.run_server)
+        self._process = multiprocessing.Process(
+            target=self.server_client.run_server
+        )
         self._process.start()
         time.sleep(0.1)  # wait for server to start
-        self.sch = luigi.rpc.RemoteScheduler(host='localhost', port=self._api_port)
+        self.sch = self.server_client.scheduler()
         self.sch._wait = lambda: None
 
     def stop_server(self):
@@ -94,7 +137,9 @@ class ServerTestRun(unittest.TestCase):
             os.kill(self._process.pid, signal.SIGKILL)
 
     def setUp(self):
+        self.server_client = self.server_client_class()
         state_path = tempfile.mktemp(suffix=self.id())
+        self.addCleanup(functools.partial(os.unlink, state_path))
         luigi.configuration.get_config().set('scheduler', 'state_path', state_path)
         self.start_server()
 
@@ -114,6 +159,7 @@ class ServerTestRun(unittest.TestCase):
         with self.assertRaises(luigi.rpc.RPCError):
             self.sch._request('/api/fdsfds', {'dummy': 1})
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/72953884')
     def test_save_state(self):
         self.sch.add_task('X', 'B', deps=('A',))
         self.sch.add_task('X', 'A')
@@ -122,6 +168,22 @@ class ServerTestRun(unittest.TestCase):
         self.start_server()
         work = self.sch.get_work('X')['running_tasks'][0]
         self.assertEqual(work['task_id'], 'A')
+
+
+class URLLibServerTestRun(ServerTestRun):
+
+    @mock.patch.object(luigi.rpc, 'HAS_REQUESTS', False)
+    def start_server(self, *args, **kwargs):
+        super(URLLibServerTestRun, self).start_server(*args, **kwargs)
+
+
+@attr('unixsocket')
+class UNIXServerTestRun(ServerTestRun):
+    server_client_class = UNIXServerClient
+
+    def tearDown(self):
+        super(UNIXServerTestRun, self).tearDown()
+        shutil.rmtree(self.server_client.tempdir)
 
 
 if __name__ == '__main__':

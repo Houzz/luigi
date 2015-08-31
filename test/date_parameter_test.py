@@ -42,7 +42,7 @@ class YearTask(luigi.Task):
     year = luigi.YearParameter()
 
 
-class DateTest(unittest.TestCase):
+class DateParameterTest(unittest.TestCase):
     def test_parse(self):
         d = luigi.DateParameter().parse('2015-04-03')
         self.assertEqual(d, datetime.date(2015, 4, 3))
@@ -52,7 +52,7 @@ class DateTest(unittest.TestCase):
         self.assertEqual(d, '2015-04-03')
 
     def test_parse_interface(self):
-        task = luigi.interface.ArgParseInterface().parse(["DateTask", "--day", "2015-04-03"])[0]
+        task = luigi.interface._ArgParseInterface().parse(["DateTask", "--day", "2015-04-03"])[0]
         self.assertEqual(task.day, datetime.date(2015, 4, 3))
 
     def test_serialize_task(self):
@@ -60,7 +60,7 @@ class DateTest(unittest.TestCase):
         self.assertEqual(str(t), 'DateTask(day=2015-04-03)')
 
 
-class DateHourTest(unittest.TestCase):
+class DateHourParameterTest(unittest.TestCase):
     def test_parse(self):
         dh = luigi.DateHourParameter().parse('2013-02-01T18')
         self.assertEqual(dh, datetime.datetime(2013, 2, 1, 18, 0, 0))
@@ -70,7 +70,7 @@ class DateHourTest(unittest.TestCase):
         self.assertEqual(dh, '2013-02-01T18')
 
     def test_parse_interface(self):
-        task = luigi.interface.ArgParseInterface().parse(["DateHourTask", "--dh", "2013-02-01T18"])[0]
+        task = luigi.interface._ArgParseInterface().parse(["DateHourTask", "--dh", "2013-02-01T18"])[0]
         self.assertEqual(task.dh, datetime.datetime(2013, 2, 1, 18, 0, 0))
 
     def test_serialize_task(self):
@@ -78,33 +78,37 @@ class DateHourTest(unittest.TestCase):
         self.assertEqual(str(t), 'DateHourTask(dh=2013-02-01T18)')
 
 
-class DateMinuteTest(unittest.TestCase):
+class DateMinuteParameterTest(unittest.TestCase):
     def test_parse(self):
-        dm = luigi.DateMinuteParameter().parse('2013-02-01T18H42')
+        dm = luigi.DateMinuteParameter().parse('2013-02-01T1842')
         self.assertEqual(dm, datetime.datetime(2013, 2, 1, 18, 42, 0))
 
     def test_parse_padding_zero(self):
-        dm = luigi.DateMinuteParameter().parse('2013-02-01T18H07')
+        dm = luigi.DateMinuteParameter().parse('2013-02-01T1807')
         self.assertEqual(dm, datetime.datetime(2013, 2, 1, 18, 7, 0))
+
+    def test_parse_deprecated(self):
+        dm = luigi.DateMinuteParameter().parse('2013-02-01T18H42')
+        self.assertEqual(dm, datetime.datetime(2013, 2, 1, 18, 42, 0))
 
     def test_serialize(self):
         dm = luigi.DateMinuteParameter().serialize(datetime.datetime(2013, 2, 1, 18, 42, 0))
-        self.assertEqual(dm, '2013-02-01T18H42')
+        self.assertEqual(dm, '2013-02-01T1842')
 
     def test_serialize_padding_zero(self):
         dm = luigi.DateMinuteParameter().serialize(datetime.datetime(2013, 2, 1, 18, 7, 0))
-        self.assertEqual(dm, '2013-02-01T18H07')
+        self.assertEqual(dm, '2013-02-01T1807')
 
     def test_parse_interface(self):
-        task = luigi.interface.ArgParseInterface().parse(["DateMinuteTask", "--dm", "2013-02-01T18H42"])[0]
+        task = luigi.interface._ArgParseInterface().parse(["DateMinuteTask", "--dm", "2013-02-01T1842"])[0]
         self.assertEqual(task.dm, datetime.datetime(2013, 2, 1, 18, 42, 0))
 
     def test_serialize_task(self):
         t = DateMinuteTask(datetime.datetime(2013, 2, 1, 18, 42, 0))
-        self.assertEqual(str(t), 'DateMinuteTask(dm=2013-02-01T18H42)')
+        self.assertEqual(str(t), 'DateMinuteTask(dm=2013-02-01T1842)')
 
 
-class MonthTest(unittest.TestCase):
+class MonthParameterTest(unittest.TestCase):
     def test_parse(self):
         m = luigi.MonthParameter().parse('2015-04')
         self.assertEqual(m, datetime.date(2015, 4, 1))
@@ -114,7 +118,7 @@ class MonthTest(unittest.TestCase):
         self.assertEqual(m, '2015-04')
 
     def test_parse_interface(self):
-        task = luigi.interface.ArgParseInterface().parse(["MonthTask", "--month", "2015-04"])[0]
+        task = luigi.interface._ArgParseInterface().parse(["MonthTask", "--month", "2015-04"])[0]
         self.assertEqual(task.month, datetime.date(2015, 4, 1))
 
     def test_serialize_task(self):
@@ -122,7 +126,7 @@ class MonthTest(unittest.TestCase):
         self.assertEqual(str(task), 'MonthTask(month=2015-04)')
 
 
-class YearTest(unittest.TestCase):
+class YearParameterTest(unittest.TestCase):
     def test_parse(self):
         year = luigi.YearParameter().parse('2015')
         self.assertEqual(year, datetime.date(2015, 1, 1))
@@ -132,7 +136,8 @@ class YearTest(unittest.TestCase):
         self.assertEqual(year, '2015')
 
     def test_parse_interface(self):
-        task = luigi.interface.ArgParseInterface().parse(["YearTask", "--year", "2015"])[0]
+
+        task = luigi.interface._ArgParseInterface().parse(["YearTask", "--year", "2015"])[0]
         self.assertEqual(task.year, datetime.date(2015, 1, 1))
 
     def test_serialize_task(self):

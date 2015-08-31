@@ -7,7 +7,7 @@ All configuration can be done by adding a configuration files. They are looked f
  * ``luigi.cfg`` (or its legacy name ``client.cfg``) in your current working directory
  * ``LUIGI_CONFIG_PATH`` environment variable
 
-in increasing order of preference. The order only matters in case of key conflicts (see docs for ConfigParser_)
+in increasing order of preference. The order only matters in case of key conflicts (see docs for ConfigParser_). These files are meant for both the client and ``luigid``. If you decide to specify your own configuration you should make sure that both the client and ``luigid`` load it properly.
 
 .. _ConfigParser: https://docs.python.org/2/library/configparser.html
 
@@ -62,6 +62,15 @@ default-scheduler-host
 
 default-scheduler-port
   Port of the remote scheduler api process. Defaults to 8082.
+
+default-scheduler-url
+  Full path to remote scheduler. Defaults to ``http://localhost:8082/``.
+  For TLS support use the URL scheme: ``https``,
+  example: ``https://luigi.example.com:443/``
+  (Note: you will have to terminate TLS using an HTTP proxy)
+  You can also use this to connect to a local Unix socket using the
+  non-standard URI scheme: ``http+unix``
+  example: ``http+unix://%2Fvar%2Frun%2Fluigid%2Fluigid.sock/``
 
 email-prefix
   Optional prefix to add to the subject line of all e-mails. For

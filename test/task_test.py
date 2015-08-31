@@ -33,7 +33,12 @@ class DummyTask(luigi.Task):
     date_param = luigi.DateParameter()
     datehour_param = luigi.DateHourParameter()
     timedelta_param = luigi.TimeDeltaParameter()
-    list_param = luigi.Parameter(is_list=True)
+    insignificant_param = luigi.Parameter(significant=False)
+
+
+class DefaultInsignificantParamTask(luigi.Task):
+    insignificant_param = luigi.Parameter(significant=False, default='value')
+    necessary_param = luigi.Parameter(significant=False)
 
 
 class TaskTest(unittest.TestCase):
@@ -50,11 +55,21 @@ class TaskTest(unittest.TestCase):
             date_param=datetime(2014, 9, 13).date(),
             datehour_param=datetime(2014, 9, 13, 9),
             timedelta_param=timedelta(44),  # doesn't support seconds
-            list_param=['in', 'flames'])
+            insignificant_param='test')
 
         original = DummyTask(**params)
         other = DummyTask.from_str_params(original.to_str_params())
         self.assertEqual(original, other)
+
+    def test_task_from_str_insignificant(self):
+        params = {'necessary_param': 'needed'}
+        original = DefaultInsignificantParamTask(**params)
+        other = DefaultInsignificantParamTask.from_str_params(params)
+        self.assertEqual(original, other)
+
+    def test_task_missing_necessary_param(self):
+        with self.assertRaises(luigi.parameter.MissingParameterException):
+            DefaultInsignificantParamTask.from_str_params({})
 
     def test_external_tasks_loadable(self):
         task = load_task("luigi", "ExternalTask", {})

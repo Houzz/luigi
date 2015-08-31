@@ -34,7 +34,7 @@ from luigi import configuration
 from luigi import six
 from luigi import luigi_state
 from luigi import parameter
-from luigi.task_register import Register, TaskClassException
+from luigi.task_register import Register
 
 Parameter = parameter.Parameter
 logger = logging.getLogger('luigi-interface')
@@ -248,7 +248,7 @@ class Task(object):
             param_name, param_obj = positional_params[i]
             result[param_name] = arg
 
-        # Then the optional arguments
+        # Then the keyword arguments
         for param_name, arg in six.iteritems(kwargs):
             if param_name in result:
                 raise parameter.DuplicateParameterException('%s: parameter %s was already set as a positional parameter' % (exc_desc, param_name))
@@ -323,7 +323,7 @@ class Task(object):
             params_str = {}
         kwargs = {}
         for param_name, param in cls.get_params():
-            if param.significant:
+            if param.significant or param_name in params_str:
                 value = param.parse_from_input(param_name, params_str[param_name])
                 kwargs[param_name] = value
 
@@ -336,8 +336,7 @@ class Task(object):
         params_str = {}
         params = dict(self.get_params())
         for param_name, param_value in six.iteritems(self.param_kwargs):
-            if params[param_name].significant:
-                params_str[param_name] = params[param_name].serialize(param_value)
+            params_str[param_name] = params[param_name].serialize(param_value)
 
         return params_str
 
@@ -378,7 +377,7 @@ class Task(object):
 
     def complete(self):
         """
-        If the task has any outputs, return ``True`` if all outputs exists.
+        If the task has any outputs, return ``True`` if all outputs exist.
         Otherwise, return ``False``.
 
         However, you may freely override this method with custom logic.
@@ -576,7 +575,9 @@ class Task(object):
         Override for custom error handling.
 
         This method gets called if an exception is raised in :py:meth:`run`.
-        Return value of this method is json encoded and sent to the scheduler as the `expl` argument. Its string representation will be used as the body of the error email sent out if any.
+        Return value of this method is json encoded and sent to the scheduler
+        as the `expl` argument. Its string representation will be used as the
+        body of the error email sent out if any.
 
         Default behavior is to return a string representation of the stack trace.
         """

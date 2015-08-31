@@ -36,6 +36,7 @@ from luigi.parameter import (
     DateParameter, MonthParameter, YearParameter, DateHourParameter, DateMinuteParameter,
     DateIntervalParameter, TimeDeltaParameter,
     IntParameter, FloatParameter, BooleanParameter, BoolParameter,
+    TaskParameter,
 )
 
 from luigi import configuration
@@ -47,3 +48,14 @@ from luigi import event
 from luigi.event import Event
 
 from .tools import range  # just makes the tool classes available from command line
+
+
+__all__ = [
+    'task', 'Task', 'Config', 'ExternalTask', 'WrapperTask', 'namespace',
+    'target', 'Target', 'File', 'LocalTarget', 'rpc', 'RemoteScheduler',
+    'RPCError', 'parameter', 'Parameter', 'DateParameter', 'MonthParameter',
+    'YearParameter', 'DateHourParameter', 'DateMinuteParameter', 'range',
+    'DateIntervalParameter', 'TimeDeltaParameter', 'IntParameter',
+    'FloatParameter', 'BooleanParameter', 'BoolParameter', 'TaskParameter',
+    'configuration', 'interface', 'file', 'run', 'build', 'event', 'Event'
+]

@@ -203,7 +203,7 @@ class Task(object):
         self.disable_hard_timeout = disable_hard_timeout
         self.failures = Failures(disable_window)
         self.scheduler_disable_time = None
-        self.runnable = runnable
+        self.runnable = False
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
@@ -212,19 +212,16 @@ class Task(object):
         self.failures.add_failure()
 
     def has_excessive_failures(self):
-
-        excessive_failures = False
-
         if (self.failures.first_failure_time is not None and
                 self.disable_hard_timeout):
             if (time.time() >= self.failures.first_failure_time +
                     self.disable_hard_timeout):
-                excessive_failures = True
+                return True
 
         if self.failures.num_failures() >= self.disable_failures:
-            excessive_failures = True
+            return True
 
-        return excessive_failures
+        return False
 
     def can_disable(self):
         return (self.disable_failures is not None or
@@ -335,11 +332,15 @@ class SimpleTaskState(object):
 
             # Convert from old format
             # TODO: this is really ugly, we need something more future-proof
-            # Every time we add an attribute to the Worker class, this code needs to be updated
+            # Every time we add an attribute to the Worker or Task class, this
+            # code needs to be updated
+
+            # Compatibility since 2014-06-02
             for k, v in six.iteritems(self._active_workers):
                 if isinstance(v, float):
                     self._active_workers[k] = Worker(worker_id=k, last_active=v)
 
+            # Compatibility since 2015-05-28
             if any(not hasattr(w, 'tasks') for k, w in six.iteritems(self._active_workers)):
                 # If you load from an old format where Workers don't contain tasks.
                 for k, worker in six.iteritems(self._active_workers):
@@ -347,6 +348,11 @@ class SimpleTaskState(object):
                 for task in six.itervalues(self._tasks):
                     for worker_id in task.workers:
                         self._active_workers[worker_id].tasks.add(task)
+
+            # Compatibility since 2015-04-28
+            if any(not hasattr(t, 'disable_hard_timeout') for t in six.itervalues(self._tasks)):
+                for t in six.itervalues(self._tasks):
+                    t.disable_hard_timeout = None
         else:
             logger.info("No prior state file exists at %s. Starting with clean slate", self._state_path)
 
@@ -884,7 +890,7 @@ class CentralPlannerScheduler(Scheduler):
                     elif upstream_status_table[dep_id] == '' and dep.deps:
                         # This is the postorder update step when we set the
                         # status based on the previously calculated child elements
-                        upstream_status = [upstream_status_table.get(task_id, '') for task_id in dep.deps]
+                        upstream_status = [upstream_status_table.get(a_task_id, '') for a_task_id in dep.deps]
                         upstream_status.append('')  # to handle empty list
                         status = max(upstream_status, key=UPSTREAM_SEVERITY_KEY)
                         upstream_status_table[dep_id] = status

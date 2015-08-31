@@ -15,13 +15,27 @@
 # limitations under the License.
 #
 
-from helpers import unittest
+from helpers import unittest, skipOnTravis
+try:
+    from unittest import mock
+except ImportError:
+    import mock
 
 import luigi.rpc
 from luigi.scheduler import CentralPlannerScheduler
 import central_planner_test
 import luigi.server
 from server_test import ServerTestBase
+
+
+class RemoteSchedulerTest(unittest.TestCase):
+    def testUrlArgumentVariations(self):
+        for url in ['http://zorg.com', 'http://zorg.com/']:
+            for suffix in ['api/123', '/api/123']:
+                s = luigi.rpc.RemoteScheduler(url, 42)
+                with mock.patch.object(s, '_fetcher') as fetcher:
+                    s._fetch(suffix, '{}')
+                    fetcher.fetch.assert_called_once_with('http://zorg.com/api/123', '{}', 42)
 
 
 class RPCTest(central_planner_test.CentralPlannerTest, ServerTestBase):
@@ -33,15 +47,18 @@ class RPCTest(central_planner_test.CentralPlannerTest, ServerTestBase):
 
     def setUp(self):
         super(RPCTest, self).setUp()
-        self.sch = luigi.rpc.RemoteScheduler(port=self.get_http_port())
+        self.sch = luigi.rpc.RemoteScheduler(self.get_url(''))
         self.sch._wait = lambda: None
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/72276513')
     def test_ping(self):
         self.sch.ping(worker='xyz')
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/72276513')
     def test_raw_ping(self):
         self.sch._request('/api/ping', {'worker': 'xyz'})
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/72276513')
     def test_raw_ping_extended(self):
         self.sch._request('/api/ping', {'worker': 'xyz', 'foo': 'bar'})
 

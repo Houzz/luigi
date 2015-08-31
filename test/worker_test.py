@@ -24,12 +24,11 @@ import signal
 import tempfile
 import threading
 import time
-from helpers import unittest
+from helpers import unittest, with_config, skipOnTravis
 
 import luigi.notifications
 import luigi.worker
 import mock
-from helpers import with_config
 from luigi import ExternalTask, RemoteScheduler, Task
 from luigi.mock import MockTarget, MockFileSystem
 from luigi.scheduler import CentralPlannerScheduler
@@ -99,8 +98,8 @@ class DynamicRequiresOtherModule(Task):
 
     def run(self):
         import other_module
-        other_target_foo = yield other_module.OtherModuleTask(os.path.join(self.p, 'foo'))
-        other_target_bar = yield other_module.OtherModuleTask(os.path.join(self.p, 'bar'))
+        other_target_foo = yield other_module.OtherModuleTask(os.path.join(self.p, 'foo'))  # NOQA
+        other_target_bar = yield other_module.OtherModuleTask(os.path.join(self.p, 'bar'))  # NOQA
 
         with self.output().open('w') as f:
             f.write('Done!')
@@ -667,7 +666,7 @@ class WorkerEmailTest(unittest.TestCase):
 
     @email_patch
     def test_connection_error(self, emails):
-        sch = RemoteScheduler(host="this_host_doesnt_exist", port=1337, connect_timeout=1)
+        sch = RemoteScheduler('http://tld.invalid:1337', connect_timeout=1)
         worker = Worker(scheduler=sch)
 
         self.waits = 0
@@ -827,6 +826,7 @@ class MultipleWorkersTest(unittest.TestCase):
     def test_time_out_hung_worker(self):
         luigi.build([HungWorker(0.1)], workers=2, local_scheduler=True)
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/72953986')
     @mock.patch('luigi.worker.time')
     def test_purge_hung_worker_default_timeout_time(self, mock_time):
         w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
@@ -842,6 +842,7 @@ class MultipleWorkersTest(unittest.TestCase):
         w._handle_next_task()
         self.assertEqual(0, len(w._running_tasks))
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/76645264')
     @mock.patch('luigi.worker.time')
     def test_purge_hung_worker_override_timeout_time(self, mock_time):
         w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
@@ -960,7 +961,8 @@ class TaskLimitTest(unittest.TestCase):
         w.run()
         self.assertFalse(t.complete())
         leaf_tasks = [ForkBombTask(3, 2, branch) for branch in [(0, 0, 0), (0, 0, 1), (0, 1, 0), (0, 1, 1)]]
-        self.assertEquals(3, sum(t.complete() for t in leaf_tasks), "should have gracefully completed as much as possible even though the single last leaf didn't get scheduled")
+        self.assertEquals(3, sum(t.complete() for t in leaf_tasks),
+                          "should have gracefully completed as much as possible even though the single last leaf didn't get scheduled")
 
     @with_config({'core': {'worker-task-limit': '7'}})
     def test_task_limit_not_exceeded(self):

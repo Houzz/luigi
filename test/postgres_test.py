@@ -18,6 +18,7 @@ import luigi.postgres
 from luigi.tools.range import RangeDaily
 from helpers import unittest
 import mock
+from nose.plugins.attrib import attr
 
 
 def datetime_to_epoch(dt):
@@ -57,6 +58,7 @@ class DummyPostgresImporter(luigi.postgres.CopyToTable):
     )
 
 
+@attr('postgres')
 class DailyCopyToTableTest(unittest.TestCase):
     maxDiff = None
 
@@ -67,7 +69,7 @@ class DailyCopyToTableTest(unittest.TestCase):
         ])
         mock_connect.return_value.cursor.return_value = mock_cursor
 
-        task = RangeDaily(of='DummyPostgresImporter',
+        task = RangeDaily(of=DummyPostgresImporter,
                           start=datetime.date(2015, 1, 2),
                           now=datetime_to_epoch(datetime.datetime(2015, 1, 7)))
         actual = [t.task_id for t in task.requires()]

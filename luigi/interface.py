@@ -25,6 +25,7 @@ import os
 import sys
 import tempfile
 import signal
+import warnings
 
 from luigi import configuration
 from luigi import lock
@@ -34,6 +35,7 @@ from luigi import rpc
 from luigi import scheduler
 from luigi import task
 from luigi import worker
+from luigi import execution_summary
 from luigi.task_register import Register
 
 
@@ -81,6 +83,11 @@ class core(task.Config):
         default=8082,
         description='Port of remote scheduler api process',
         config_path=dict(section='core', name='default-scheduler-port'))
+    scheduler_url = parameter.Parameter(
+        default=None,
+        description='Full path to remote scheduler',
+        config_path=dict(section='core', name='default-scheduler-url'),
+    )
     lock_size = parameter.IntParameter(
         default=1,
         description="Maximum number of workers running the same command")
@@ -101,7 +108,7 @@ class core(task.Config):
         description='Configuration file for logging')
     module = parameter.Parameter(
         default=None,
-        description='Used for dynamic loading of modules')  # see DynamicArgParseInterface
+        description='Used for dynamic loading of modules')  # see _DynamicArgParseInterface
     parallel_scheduling = parameter.BoolParameter(
         default=False,
         description='Use multiprocessing to do scheduling in parallel.')
@@ -110,20 +117,20 @@ class core(task.Config):
         description='Run any task from the scheduler.')
 
 
-class WorkerSchedulerFactory(object):
+class _WorkerSchedulerFactory(object):
 
     def create_local_scheduler(self):
         return scheduler.CentralPlannerScheduler(prune_on_get_work=True)
 
-    def create_remote_scheduler(self, host, port):
-        return rpc.RemoteScheduler(host=host, port=port)
+    def create_remote_scheduler(self, url):
+        return rpc.RemoteScheduler(url)
 
     def create_worker(self, scheduler, worker_processes, assistant=False):
         return worker.Worker(
             scheduler=scheduler, worker_processes=worker_processes, assistant=assistant)
 
 
-class Interface(object):
+class _Interface(object):
 
     def parse(self):
         raise NotImplementedError
@@ -139,7 +146,7 @@ class Interface(object):
         """
 
         if worker_scheduler_factory is None:
-            worker_scheduler_factory = WorkerSchedulerFactory()
+            worker_scheduler_factory = _WorkerSchedulerFactory()
         if override_defaults is None:
             override_defaults = {}
         env_params = core(**override_defaults)
@@ -163,9 +170,14 @@ class Interface(object):
         if env_params.local_scheduler:
             sch = worker_scheduler_factory.create_local_scheduler()
         else:
-            sch = worker_scheduler_factory.create_remote_scheduler(
-                host=env_params.scheduler_host,
-                port=env_params.scheduler_port)
+            if env_params.scheduler_url is not None:
+                url = env_params.scheduler_url
+            else:
+                url = 'http://{host}:{port:d}/'.format(
+                    host=env_params.scheduler_host,
+                    port=env_params.scheduler_port,
+                )
+            sch = worker_scheduler_factory.create_remote_scheduler(url=url)
 
         w = worker_scheduler_factory.create_worker(
             scheduler=sch, worker_processes=env_params.workers, assistant=env_params.assistant)
@@ -180,15 +192,16 @@ class Interface(object):
         if env_params.workers != 0:
             success &= w.run()
         w.stop()
+        logger.info(execution_summary.summary(w))
         return success
 
 
-def add_task_parameters(parser, task_cls):
+def _add_task_parameters(parser, task_cls):
     for param_name, param in task_cls.get_params():
         param.add_to_cmdline_parser(parser, param_name, task_cls.task_family, glob=False)
 
 
-def get_global_parameters():
+def _get_global_parameters():
     seen_params = set()
     for task_name, is_without_section, param_name, param in Register.get_all_params():
         if param in seen_params:
@@ -197,12 +210,12 @@ def get_global_parameters():
         yield task_name, is_without_section, param_name, param
 
 
-def add_global_parameters(parser):
-    for task_name, is_without_section, param_name, param in get_global_parameters():
+def _add_global_parameters(parser):
+    for task_name, is_without_section, param_name, param in _get_global_parameters():
         param.add_to_cmdline_parser(parser, param_name, task_name, glob=True, is_without_section=is_without_section)
 
 
-def get_task_parameters(task_cls, args):
+def _get_task_parameters(task_cls, args):
     # Parse a str->str dict to the correct types
     params = {}
     for param_name, param in task_cls.get_params():
@@ -210,13 +223,13 @@ def get_task_parameters(task_cls, args):
     return params
 
 
-def set_global_parameters(args):
+def _set_global_parameters(args):
     # Note that this is not side effect free
-    for task_name, is_without_section, param_name, param in get_global_parameters():
+    for task_name, is_without_section, param_name, param in _get_global_parameters():
         param.set_global_from_args(param_name, task_name, args, is_without_section=is_without_section)
 
 
-class ArgParseInterface(Interface):
+class _ArgParseInterface(_Interface):
     """
     Takes the task as the command, with parameters specific to it.
     """
@@ -227,9 +240,7 @@ class ArgParseInterface(Interface):
 
         parser = argparse.ArgumentParser()
 
-        add_global_parameters(parser)
-
-        task_names = Register.task_names()
+        _add_global_parameters(parser)
 
         # Parse global arguments and pull out the task name.
         # We used to do this using subparsers+command, but some issues with
@@ -250,8 +261,8 @@ class ArgParseInterface(Interface):
         # Add both task and global params here so that we can support both:
         # test.py --global-param xyz Test --n 42
         # test.py Test --n 42 --global-param xyz
-        add_global_parameters(subparser)
-        add_task_parameters(subparser, task_cls)
+        _add_global_parameters(subparser)
+        _add_task_parameters(subparser, task_cls)
 
         # Workaround for bug in argparse for Python 2.7.9
         # See https://mail.python.org/pipermail/python-dev/2015-January/137699.html
@@ -261,8 +272,8 @@ class ArgParseInterface(Interface):
                 setattr(args, key, value)
 
         # Notice that this is not side effect free because it might set global params
-        set_global_parameters(args)
-        task_params = get_task_parameters(task_cls, args)
+        _set_global_parameters(args)
+        task_params = _get_task_parameters(task_cls, args)
 
         return [task_cls(**task_params)]
 
@@ -270,7 +281,7 @@ class ArgParseInterface(Interface):
         return self.parse_task(cmdline_args)
 
 
-class DynamicArgParseInterface(ArgParseInterface):
+class _DynamicArgParseInterface(_ArgParseInterface):
     """
     Uses --module as a way to load modules dynamically
 
@@ -289,7 +300,7 @@ class DynamicArgParseInterface(ArgParseInterface):
 
         parser = argparse.ArgumentParser()
 
-        add_global_parameters(parser)
+        _add_global_parameters(parser)
 
         args, unknown = parser.parse_known_args(args=[a for a in cmdline_args if a != '--help'])
         module = args.module
@@ -301,7 +312,7 @@ class DynamicArgParseInterface(ArgParseInterface):
 
 
 def run(cmdline_args=None, main_task_cls=None,
-        worker_scheduler_factory=None, use_dynamic_argparse=False, local_scheduler=False):
+        worker_scheduler_factory=None, use_dynamic_argparse=None, local_scheduler=False):
     """
     Please dont use. Instead use `luigi` binary.
 
@@ -310,16 +321,17 @@ def run(cmdline_args=None, main_task_cls=None,
     :param cmdline_args:
     :param main_task_cls:
     :param worker_scheduler_factory:
-    :param use_dynamic_argparse:
+    :param use_dynamic_argparse: Deprecated and ignored
     :param local_scheduler:
     """
+    if use_dynamic_argparse is not None:
+        warnings.warn("use_dynamic_argparse is deprecated, don't set it.",
+                      DeprecationWarning, stacklevel=2)
     if cmdline_args is None:
         cmdline_args = sys.argv[1:]
 
-    if use_dynamic_argparse:
-        interface = DynamicArgParseInterface()
-    else:
-        interface = ArgParseInterface()
+    interface = _DynamicArgParseInterface()
+
     if main_task_cls:
         cmdline_args.insert(0, main_task_cls.task_family)
     if local_scheduler:
@@ -346,9 +358,9 @@ def build(tasks, worker_scheduler_factory=None, **env_params):
     :param tasks:
     :param worker_scheduler_factory:
     :param env_params:
-    :return:
+    :return: True if there were no scheduling errors, even if tasks may fail.
     """
     if "no_lock" not in env_params:
         env_params["no_lock"] = True
 
-    Interface.run(tasks, worker_scheduler_factory, override_defaults=env_params)
+    return _Interface.run(tasks, worker_scheduler_factory, override_defaults=env_params)

@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-import hashlib
 import os
 import subprocess
 import tempfile
@@ -94,6 +93,6 @@ class LockTest(unittest.TestCase):
             f.write('%d\n' % (self.pid,))
 
         kill_signal = 77777
-        acquired = luigi.lock.acquire_for(self.pid_dir, kill_others=kill_signal)
+        acquired = luigi.lock.acquire_for(self.pid_dir, kill_signal=kill_signal)
         self.assertTrue(acquired)
         kill_fn.assert_called_once_with(self.pid, kill_signal)

@@ -116,7 +116,7 @@ class WordFreqJob(HadoopJobTask):
         return [(fn, 'my_dir/my_file')]
 
     def init_remote(self):
-        f = open('my_dir/my_file')  # make sure it exists
+        open('my_dir/my_file')  # make sure it exists
 
 
 class MapOnlyJob(HadoopJobTask):
@@ -381,7 +381,3 @@ class CreatePackagesArchive(unittest.TestCase):
         package_subpackage_submodule = __import__("package.subpackage.submodule", None, None, 'dummy')
         luigi.contrib.hadoop.create_packages_archive([package_subpackage_submodule], '/dev/null')
         self._assert_package_subpackage(tar.return_value.add)
-
-
-if __name__ == '__main__':
-    HadoopJobTest.test_run_real()

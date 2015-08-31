@@ -13,7 +13,6 @@
 # the License.
 
 import os
-import sys
 
 try:
     from setuptools import setup
@@ -22,7 +21,7 @@ except:
 
 
 def get_static_files(path):
-    return [os.path.join(dirpath.replace("luigi/", ""), ext) 
+    return [os.path.join(dirpath.replace("luigi/", ""), ext)
             for (dirpath, dirnames, filenames) in os.walk(path)
             for ext in ["*.html", "*.js", "*.css", "*.png"]]
 
@@ -40,11 +39,11 @@ with open('README.rst') as fobj:
     long_description = readme_note + fobj.read()
 
 install_requires = [
-    'cached_property',
+    'cached_property<2.0',
     'pymysql',
-    'pyparsing',
-    'tornado',
-    'python-daemon',
+    'pyparsing<3.0',
+    'tornado<5.0',
+    'python-daemon<3.0',
 ]
 
 if os.environ.get('READTHEDOCS', None) == 'True':

@@ -49,7 +49,8 @@ from luigi.event import Event
 from luigi.task_register import load_task
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDED, CentralPlannerScheduler
 from luigi.target import Target
-from luigi.task import Task, flatten, getpaths, TaskClassException, Config
+from luigi.task import Task, flatten, getpaths, Config
+from luigi.task_register import TaskClassException
 from luigi.parameter import FloatParameter, IntParameter, BoolParameter
 
 try:
@@ -159,10 +160,13 @@ class TaskProcess(multiprocessing.Process):
         except BaseException as ex:
             status = FAILED
             logger.exception("[pid %s] Worker %s failed    %s", os.getpid(), self.worker_id, self.task)
-            error_message = notifications.wrap_traceback(self.task.on_failure(ex))
             self.task.trigger_event(Event.FAILURE, self.task, ex)
             subject = "Luigi: %s FAILED" % self.task
-            notifications.send_error_email(subject, error_message, self.task.owner_email)
+
+            error_message = notifications.wrap_traceback(self.task.on_failure(ex))
+            formatted_error_message = notifications.format_task_error(subject, self.task,
+                                                                      formatted_exception=error_message)
+            notifications.send_error_email(subject, formatted_error_message, self.task.owner_email)
         finally:
             self.result_queue.put(
                 (self.task.task_id, status, error_message, missing, new_deps))
@@ -324,6 +328,21 @@ class Worker(object):
         self._task_result_queue = multiprocessing.Queue()
         self._running_tasks = {}
 
+        # Stuff for execution_summary
+        self._add_task_history = []
+        self._get_work_response_history = []
+
+    def _add_task(self, *args, **kwargs):
+        """
+        Call ``self._scheduler.add_task``, but store the values too so we can
+        implement :py:func:`luigi.execution_summary.summary`.
+        """
+        task = self._scheduled_tasks.get(kwargs['task_id'])
+        if task:
+            msg = (task, kwargs['status'], kwargs['runnable'])
+            self._add_task_history.append(msg)
+        self._scheduler.add_task(*args, **kwargs)
+
     def stop(self):
         """
         Stop the KeepAliveThread associated with this Worker.
@@ -383,15 +402,17 @@ class Worker(object):
 
     def _email_complete_error(self, task, formatted_traceback):
         # like logger.exception but with WARNING level
-        formatted_traceback = notifications.wrap_traceback(formatted_traceback)
         subject = "Luigi: {task} failed scheduling. Host: {host}".format(task=task, host=self.host)
-        message = "Will not schedule {task} or any dependencies due to error in complete() method:\n{traceback}".format(task=task, traceback=formatted_traceback)
+        headline = "Will not schedule task or any dependencies due to error in complete() method"
+
+        message = notifications.format_task_error(headline, task, formatted_traceback)
         notifications.send_error_email(subject, message, task.owner_email)
 
     def _email_unexpected_error(self, task, formatted_traceback):
-        formatted_traceback = notifications.wrap_traceback(formatted_traceback)
         subject = "Luigi: Framework error while scheduling {task}. Host: {host}".format(task=task, host=self.host)
-        message = "Luigi framework error:\n{traceback}".format(traceback=formatted_traceback)
+        headline = "Luigi framework error"
+
+        message = notifications.format_task_error(headline, task, formatted_traceback)
         notifications.send_error_email(subject, message, task.owner_email)
 
     def add(self, task, multiprocess=False):
@@ -477,7 +498,9 @@ class Worker(object):
             runnable = worker().retry_external_tasks
 
             task.trigger_event(Event.DEPENDENCY_MISSING, task)
-            logger.warning('Data for %s does not exist (yet?). The task is an external data depedency, so it can not be run from this luigi process.', task.task_id)
+            logger.warning('Data for %s does not exist (yet?). The task is an '
+                           'external data depedency, so it can not be run from'
+                           ' this luigi process.', task.task_id)
 
         else:
             deps = task.deps()
@@ -498,14 +521,14 @@ class Worker(object):
             deps = dep_ids
 
         self._scheduled_tasks[task.task_id] = task
-        self._scheduler.add_task(worker=self._id, task_id=task.task_id, status=status,
-                                 deps=deps, runnable=runnable, priority=task.priority,
-                                 resources=task.process_resources(),
-                                 params=task.to_str_params(),
-                                 supersedes_bucket=task.supersedes_bucket,
-                                 supersedes_priority=task.supersedes_priority,
-                                 family=task.task_family,
-                                 module=task.task_module)
+        self._add_task(worker=self._id, task_id=task.task_id, status=status,
+                       deps=deps, runnable=runnable, priority=task.priority,
+                       resources=task.process_resources(),
+                       params=task.to_str_params(),
+                       supersedes_bucket=task.supersedes_bucket,
+                       supersedes_priority=task.supersedes_priority,
+                       family=task.task_family,
+                       module=task.task_module)
 
         logger.info('Scheduled %s (%s)', task.task_id, status)
 
@@ -546,6 +569,11 @@ class Worker(object):
         running_tasks = r['running_tasks']
         n_unique_pending = r['n_unique_pending']
 
+        self._get_work_response_history.append(dict(
+            task_id=task_id,
+            running_tasks=running_tasks,
+        ))
+
         if task_id is not None and task_id not in self._scheduled_tasks:
             logger.info('Did not schedule %s, will load it dynamically', task_id)
 
@@ -561,8 +589,8 @@ class Worker(object):
                 subject = 'Luigi: %s' % msg
                 error_message = notifications.wrap_traceback(ex)
                 notifications.send_error_email(subject, error_message)
-                self._scheduler.add_task(worker=self._id, task_id=task_id, status=FAILED, runnable=False,
-                                         assistant=self._assistant)
+                self._add_task(worker=self._id, task_id=task_id, status=FAILED, runnable=False,
+                               assistant=self._assistant)
                 task_id = None
                 self.run_succeeded = False
 
@@ -634,19 +662,19 @@ class Worker(object):
                     self.add(t)
                 new_deps = [t.task_id for t in new_req]
 
-            self._scheduler.add_task(worker=self._id,
-                                     task_id=task_id,
-                                     status=status,
-                                     expl=error_message,
-                                     resources=task.process_resources(),
-                                     runnable=None,
-                                     params=task.to_str_params(),
-                                     family=task.task_family,
-                                     module=task.task_module,
-                                     new_deps=new_deps,
-                                     supersedes_bucket=task.supersedes_bucket,
-                                     supersedes_priority=task.supersedes_priority,
-                                     assistant=self._assistant)
+            self._add_task(worker=self._id,
+                           task_id=task_id,
+                           status=status,
+                           expl=error_message,
+                           resources=task.process_resources(),
+                           runnable=None,
+                           params=task.to_str_params(),
+                           family=task.task_family,
+                           module=task.task_module,
+                           new_deps=new_deps,
+                           supersedes_bucket=task.supersedes_bucket,
+                           supersedes_priority=task.supersedes_priority,
+                           assistant=self._assistant)
 
             if status == RUNNING:
                 continue
