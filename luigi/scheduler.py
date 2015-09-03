@@ -656,6 +656,9 @@ class CentralPlannerScheduler(Scheduler):
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
 
+        if expl is not None:
+            task.expl = expl
+
         if not (task.status == RUNNING and status == PENDING):
             # don't allow re-scheduling of task while it is running, it must either fail or succeed first
             if status == PENDING or status != task.status:
@@ -669,7 +672,7 @@ class CentralPlannerScheduler(Scheduler):
                     if superseded_task.status != DONE:
                         self._state.set_status(superseded_task, DONE, self._config)
             if status == FAILED:
-                task.retry = time.time() + self._config.retry_delay
+                task.retry = self._retry_time(task, self._config)
 
         if deps is not None:
             task.deps = set(deps)
@@ -699,9 +702,6 @@ class CentralPlannerScheduler(Scheduler):
             task.workers.add(worker_id)
             self._state.get_worker(worker_id).tasks.add(task)
             task.runnable = runnable
-
-        if expl is not None:
-            task.expl = expl
 
     def add_worker(self, worker, info, **kwargs):
         self._state.get_worker(worker).add_info(info)
@@ -752,6 +752,9 @@ class CentralPlannerScheduler(Scheduler):
             if dep_task is None or dep_task.status != DONE:
                 return False
         return True
+
+    def _retry_time(self, task, config):
+        return time.time() + config.retry_delay
 
     def get_work(self, host=None, assistant=False, **kwargs):
         # TODO: remove any expired nodes

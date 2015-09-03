@@ -116,7 +116,7 @@ class TaskProcess(multiprocessing.Process):
             random.seed((os.getpid(), time.time()))
 
         status = FAILED
-        error_message = ''
+        expl = ''
         missing = []
         new_deps = []
         try:
@@ -150,7 +150,7 @@ class TaskProcess(multiprocessing.Process):
                     self.task.mark_undirty()
                 self.task.trigger_event(
                     Event.PROCESSING_TIME, self.task, time.time() - t0)
-                error_message = json.dumps(self.task.on_success())
+                expl = json.dumps(self.task.on_success())
                 logger.info('[pid %s] Worker %s done      %s', os.getpid(),
                             self.worker_id, self.task.task_id)
                 self.task.trigger_event(Event.SUCCESS, self.task)
@@ -163,13 +163,32 @@ class TaskProcess(multiprocessing.Process):
             self.task.trigger_event(Event.FAILURE, self.task, ex)
             subject = "Luigi: %s FAILED" % self.task
 
-            error_message = notifications.wrap_traceback(self.task.on_failure(ex))
+            raw_error_message = self.task.on_failure(ex)
+            notification_error_message = notifications.wrap_traceback(raw_error_message)
+            expl = json.dumps(raw_error_message)
             formatted_error_message = notifications.format_task_error(subject, self.task,
-                                                                      formatted_exception=error_message)
+                                                                      formatted_exception=notification_error_message)
             notifications.send_error_email(subject, formatted_error_message, self.task.owner_email)
         finally:
             self.result_queue.put(
-                (self.task.task_id, status, error_message, missing, new_deps))
+                (self.task.task_id, status, expl, missing, new_deps))
+
+    def _recursive_terminate(self):
+        import psutil
+
+        parent = psutil.Process(self.pid)
+        for child in parent.children(recursive=True):
+            child.kill()
+
+        parent.kill()
+
+    def terminate(self):
+        """Terminate this process and it's subprocesses."""
+        # default terminate() doesn't cleanup child processes, it orphans them.
+        try:
+            return self._recursive_terminate()
+        except ImportError:
+            return super(TaskProcess, self).terminate()
 
 
 class SingleProcessPool(object):
@@ -643,7 +662,7 @@ class Worker(object):
             self._purge_children()  # Deal with subprocess failures
 
             try:
-                task_id, status, error_message, missing, new_requirements = (
+                task_id, status, expl, missing, new_requirements = (
                     self._task_result_queue.get(
                         timeout=float(self._config.wait_interval)))
             except Queue.Empty:
@@ -665,7 +684,7 @@ class Worker(object):
             self._add_task(worker=self._id,
                            task_id=task_id,
                            status=status,
-                           expl=error_message,
+                           expl=expl,
                            resources=task.process_resources(),
                            runnable=None,
                            params=task.to_str_params(),

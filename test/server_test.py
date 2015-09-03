@@ -146,12 +146,15 @@ class ServerTestRun(unittest.TestCase):
     def tearDown(self):
         self.stop_server()
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/78315794')
     def test_ping(self):
         self.sch.ping(worker='xyz')
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/78023665')
     def test_raw_ping(self):
         self.sch._request('/api/ping', {'worker': 'xyz'})
 
+    @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/78023665')
     def test_raw_ping_extended(self):
         self.sch._request('/api/ping', {'worker': 'xyz', 'foo': 'bar'})
 
