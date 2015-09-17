@@ -105,8 +105,6 @@ class scheduler(Config):
 
     record_task_history = parameter.BoolParameter(default=False)
 
-    visualization_graph = parameter.Parameter(default="svg", config_path=dict(section='scheduler', name='visualization-graph'))
-
     prune_on_get_work = parameter.BoolParameter(default=False)
 
 
@@ -301,11 +299,16 @@ class SimpleTaskState(object):
         self._active_workers = {}  # map from id to a Worker object
         self._supersedes_buckets = collections.defaultdict(set)
 
+    def get_state(self):
+        return self._tasks, self._active_workers
+
+    def set_state(self, state):
+        self._tasks, self._active_workers = state
+
     def dump(self):
-        state = (self._tasks, self._active_workers)
         try:
             with open(self._state_path, 'wb') as fobj:
-                pickle.dump(state, fobj)
+                pickle.dump(self.get_state(), fobj)
         except IOError:
             logger.warning("Failed saving scheduler state", exc_info=1)
         else:
@@ -322,7 +325,7 @@ class SimpleTaskState(object):
                 logger.exception("Error when loading state. Starting from clean slate.")
                 return
 
-            self._tasks, self._active_workers = state
+            self.set_state(state)
             self._status_tasks = collections.defaultdict(dict)
             for task in six.itervalues(self._tasks):
                 self._status_tasks[task.status][task.id] = task

@@ -15,10 +15,14 @@
 # limitations under the License.
 #
 import multiprocessing
+from subprocess import check_call
+import sys
 
 from helpers import unittest
-import mock
 import json
+import mock
+from psutil import Process
+from time import sleep
 
 import luigi
 import luigi.date_interval
@@ -44,12 +48,22 @@ class SuccessTask(luigi.Task):
 
 
 class FailTask(luigi.Task):
+    def __init__(self):
+        super(FailTask, self).__init__()
+        self.ex = BaseException("Uh oh.")
 
     def run(self):
-        raise BaseException("Uh oh.")
+        raise self.ex
 
     def on_failure(self, exception):
         return "test failure expl"
+
+
+class HangingSubprocessTask(luigi.Task):
+
+    def run(self):
+        python = sys.executable
+        check_call([python, '-c', 'while True: pass'])
 
 
 class WorkerTaskTest(unittest.TestCase):
@@ -74,7 +88,7 @@ class TaskProcessTest(unittest.TestCase):
 
         with mock.patch.object(result_queue, 'put') as mock_put:
             task_process.run()
-            mock_put.assert_called_once_with((task.task_id, DONE, json.dumps("test success expl"), [], None))
+            mock_put.assert_called_once_with((task.task_id, DONE, json.dumps("test success expl"), [], None, None))
 
     def test_update_result_queue_on_failure(self):
         task = FailTask()
@@ -83,7 +97,30 @@ class TaskProcessTest(unittest.TestCase):
 
         with mock.patch.object(result_queue, 'put') as mock_put:
             task_process.run()
-            mock_put.assert_called_once_with((task.task_id, FAILED, json.dumps("test failure expl"), [], []))
+            mock_put.assert_called_once_with((task.task_id, FAILED, json.dumps("test failure expl"), [], [], task.ex))
+
+    def test_cleanup_children_on_terminate(self):
+        """
+        Subprocesses spawned by tasks should be terminated on terminate
+        """
+        task = HangingSubprocessTask()
+        queue = mock.Mock()
+        worker_id = 1
+
+        task_process = TaskProcess(task, worker_id, queue)
+        task_process.start()
+
+        parent = Process(task_process.pid)
+        while not parent.children():
+            # wait for child process to startup
+            sleep(0.01)
+
+        [child] = parent.children()
+        task_process.terminate()
+        child.wait(timeout=1.0)  # wait for terminate to complete
+
+        self.assertFalse(parent.is_running())
+        self.assertFalse(child.is_running())
 
 
 if __name__ == '__main__':
