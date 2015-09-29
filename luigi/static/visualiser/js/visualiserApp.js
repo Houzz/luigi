@@ -228,11 +228,36 @@ function visualiserApp(luigi) {
 
     function processResource(resource) {
         resource.tasks = resource.running.map(taskToDisplayTask);
+        resource.percent_used = 100 * resource.num_used / resource.num_total;
+        if (resource.percent_used >= 100) {
+            resource.bar_type = 'danger';
+        } else if (resource.percent_used > 50) {
+            resource.bar_type = 'warning';
+        } else {
+            resource.bar_type = 'success';
+        }
         return resource;
     }
 
     function renderResources(resources) {
-        return renderTemplate("resourceTemplate", {"resources": resources.map(processResource)});
+        return renderTemplate("resourceTemplate", {
+            "resources": resources.map(processResource).sort(function(r1, r2) {
+                if (r1.percent_used > r2.percent_used)
+                    return -1;
+                else if (r1.percent_used < r2.percent_used)
+                    return 1;
+                else if (r1.num_used > r2.num_used)
+                    return -1;
+                else if (r1.num_used < r2.num_used)
+                    return 1;
+                else if (r1.name < r2.name)
+                    return -1;
+                else if (r1.name > r2.name)
+                    return 1;
+                else
+                    return 0;
+            })
+        });
     }
 
     function switchTab(tabId) {
@@ -714,6 +739,10 @@ function visualiserApp(luigi) {
 
         luigi.getWorkerList(function(workers) {
             $("#workerList").append(renderWorkers(workers));
+        });
+
+        luigi.getResourceList(function(resources) {
+            $("#resourceList").append(renderResources(resources));
         });
 
         dt = $('#taskTable').DataTable({
