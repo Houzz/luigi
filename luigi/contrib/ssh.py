@@ -73,6 +73,7 @@ class RemoteContext(object):
         self.no_host_key_check = kwargs.get('no_host_key_check', False)
         self.sshpass = kwargs.get('sshpass', False)
         self.tty = kwargs.get('tty', False)
+        self.ssh_config = kwargs.get('ssh_config', None)
 
     def __repr__(self):
         return '%s(%r, %r, %r, %r, %r)' % (
@@ -100,6 +101,9 @@ class RemoteContext(object):
             connection_cmd += ["-o", "BatchMode=yes"]  # no password prompts etc
         if self.port:
             connection_cmd.extend(["-p", self.port])
+
+        if self.ssh_config:
+            connection_cmd.extend(["-F", self.ssh_config])
 
         if self.connect_timeout is not None:
             connection_cmd += ['-o', 'ConnectTimeout=%d' % self.connect_timeout]
@@ -242,6 +246,8 @@ class RemoteFileSystem(luigi.target.FileSystem):
             cmd.extend(["-i", self.remote_context.key_file])
         if self.remote_context.port:
             cmd.extend(["-P", self.remote_context.port])
+        if self.remote_context.ssh_config:
+            cmd.extend(["-F", self.remote_context.ssh_config])
         if os.path.isdir(src):
             cmd.extend(["-r"])
         cmd.extend([src, dest])
