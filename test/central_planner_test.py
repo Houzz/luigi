@@ -344,6 +344,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual('C', self.sch.get_work(worker='Y')['task_id'])
 
     def test_lock_resources_when_one_of_multiple_workers_is_ready(self):
+        self.sch.get_work(worker='X')
         self.sch.add_task(worker='X', task_id='A', priority=10)
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=5)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
@@ -376,6 +377,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
     def test_lock_resources_for_second_worker(self):
+        self.sch.get_work(worker='Y')
         self.sch.add_task(worker='X', task_id='A', resources={'R': 1})
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1})
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=10)
@@ -479,6 +481,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.check_task_order('B')
 
     def test_multiple_resources_lock(self):
+        self.sch.get_work(worker='X')
         self.sch.add_task(worker='X', task_id='A', resources={'r1': 1, 'r2': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r2': 1})
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1})
@@ -505,6 +508,23 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1}, priority=0)
         self.sch.update_resources({'r1': 2, 'r2': 1})
         self.assertEqual('C', self.sch.get_work(worker=WORKER)['task_id'])
+
+    def test_allow_resource_use_while_scheduling(self):
+        self.sch.update_resources({'r1': 1})
+        self.sch.add_task(worker='SCHEDULING', task_id='A', resources={'r1': 1}, priority=10)
+        self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1}, priority=1)
+        self.assertEqual('B', self.sch.get_work(worker=WORKER)['task_id'])
+
+    def test_stop_locking_resource_for_uninterested_worker(self):
+        self.setTime(0)
+        self.sch.update_resources({'r1': 1})
+        self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
+        self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1}, priority=10)
+        self.sch.add_task(worker='LOW_PRIO', task_id='B', resources={'r1': 1}, priority=1)
+        self.assertIsNone(self.sch.get_work(worker='LOW_PRIO')['task_id'])
+
+        self.setTime(120)
+        self.assertEqual('B', self.sch.get_work(worker='LOW_PRIO')['task_id'])
 
     def check_task_order(self, order):
         for expected_id in order:
@@ -741,6 +761,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
     def test_hold_bucket_for_higher_priority_worker(self):
+        self.sch.get_work(worker='Y')
         self.sch.add_task(worker='X', task_id='A', supersedes_bucket='b', supersedes_priority=0, priority=10)
         self.sch.add_task(worker='Y', task_id='B', supersedes_bucket='b', supersedes_priority=1)
         self.assertFalse(self.sch.get_work(worker='X')['task_id'])
