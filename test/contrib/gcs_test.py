@@ -99,7 +99,7 @@ class GCSClientTest(_GCSBaseTestCase):
     def test_download(self):
         self.client.put_string('hello', bucket_url('test_download'))
         fp = self.client.download(bucket_url('test_download'))
-        self.assertEquals(b'hello', fp.read())
+        self.assertEqual(b'hello', fp.read())
 
     def test_rename(self):
         self.client.put_string('hello', bucket_url('test_rename_1'))
@@ -151,7 +151,7 @@ class GCSClientTest(_GCSBaseTestCase):
 
             self.client.put(fp.name, bucket_url('test_put_file'))
             self.assertTrue(self.client.exists(bucket_url('test_put_file')))
-            self.assertEquals(big, self.client.download(bucket_url('test_put_file')).read())
+            self.assertEqual(big, self.client.download(bucket_url('test_put_file')).read())
 
 
 @attr('gcloud')
@@ -159,3 +159,19 @@ class GCSTargetTest(_GCSBaseTestCase, FileSystemTargetTestMixin):
 
     def create_target(self, format=None):
         return gcs.GCSTarget(bucket_url(self.id()), format=format, client=self.client)
+
+    def test_close_twice(self):
+        # Ensure gcs._DeleteOnCloseFile().close() can be called multiple times
+        tgt = self.create_target()
+
+        with tgt.open('w') as dst:
+            dst.write('data')
+        assert dst.closed
+        dst.close()
+        assert dst.closed
+
+        with tgt.open() as src:
+            assert src.read().strip() == 'data'
+        assert src.closed
+        src.close()
+        assert src.closed

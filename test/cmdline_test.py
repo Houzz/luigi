@@ -23,7 +23,7 @@ except ImportError:
 import mock
 import os
 import subprocess
-from helpers import unittest
+from helpers import unittest, parsing
 
 from luigi import six
 
@@ -177,7 +177,7 @@ class InvokeOverCmdlineTest(unittest.TestCase):
         self.assertTrue(t.exists())
 
     def test_direct_python_help(self):
-        returncode, stdout, stderr = self._run_cmdline(['python', 'test/cmdline_test.py', '--help'])
+        returncode, stdout, stderr = self._run_cmdline(['python', 'test/cmdline_test.py', '--help-all'])
         self.assertTrue(stdout.find(b'--FooBaseClass-x') != -1)
         self.assertFalse(stdout.find(b'--x') != -1)
 
@@ -187,18 +187,35 @@ class InvokeOverCmdlineTest(unittest.TestCase):
         self.assertTrue(stdout.find(b'--x') != -1)
 
     def test_bin_luigi_help(self):
-        returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--module', 'cmdline_test', '--help'])
+        returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--module', 'cmdline_test', '--help-all'])
         self.assertTrue(stdout.find(b'--FooBaseClass-x') != -1)
         self.assertFalse(stdout.find(b'--x') != -1)
 
     def test_python_module_luigi_help(self):
-        returncode, stdout, stderr = self._run_cmdline(['python', '-m', 'luigi', '--module', 'cmdline_test', '--help'])
+        returncode, stdout, stderr = self._run_cmdline(['python', '-m', 'luigi', '--module', 'cmdline_test', '--help-all'])
         self.assertTrue(stdout.find(b'--FooBaseClass-x') != -1)
         self.assertFalse(stdout.find(b'--x') != -1)
 
     def test_bin_luigi_help_no_module(self):
         returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--help'])
         self.assertTrue(stdout.find(b'usage:') != -1)
+
+    def test_bin_luigi_help_not_spammy(self):
+        """
+        Test that `luigi --help` fits on one screen
+        """
+        returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--help'])
+        self.assertLessEqual(len(stdout.splitlines()), 15)
+
+    def test_bin_luigi_all_help_spammy(self):
+        """
+        Test that `luigi --help-all` doesn't fit on a screen
+
+        Naturally, I don't mind this test breaking, but it convinces me that
+        the "not spammy" test is actually testing what it claims too.
+        """
+        returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--help-all'])
+        self.assertGreater(len(stdout.splitlines()), 15)
 
     def test_bin_luigi_no_parameters(self):
         returncode, stdout, stderr = self._run_cmdline(['./bin/luigi'])
@@ -222,21 +239,14 @@ class InvokeOverCmdlineTest(unittest.TestCase):
 class NewStyleParameters822Test(unittest.TestCase):
     # See https://github.com/spotify/luigi/issues/822
 
+    @parsing(['FooSubClass', '--x', 'xyz', '--FooBaseClass-x', 'xyz'])
     def test_subclasses(self):
-        ap = luigi.interface._ArgParseInterface()
+        self.assertEqual(FooSubClass().x, 'xyz')
 
-        task, = ap.parse(['--local-scheduler', '--no-lock', 'FooSubClass', '--x', 'xyz', '--FooBaseClass-x', 'xyz'])
-        self.assertEquals(task.x, 'xyz')
-
-        # This won't work because --FooSubClass-x doesn't exist
-        self.assertRaises(BaseException, ap.parse, (['--local-scheduler', '--no-lock', 'FooBaseClass', '--x', 'xyz', '--FooSubClass-x', 'xyz']))
-
+    @parsing(['FooBaseClass', '--FooBaseClass-x', 'xyz'])
     def test_subclasses_2(self):
-        ap = luigi.interface._ArgParseInterface()
-
         # https://github.com/spotify/luigi/issues/822#issuecomment-77782714
-        task, = ap.parse(['--local-scheduler', '--no-lock', 'FooBaseClass', '--FooBaseClass-x', 'xyz'])
-        self.assertEquals(task.x, 'xyz')
+        self.assertEqual(FooBaseClass().x, 'xyz')
 
 
 if __name__ == '__main__':

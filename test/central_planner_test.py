@@ -344,7 +344,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual('C', self.sch.get_work(worker='Y')['task_id'])
 
     def test_lock_resources_when_one_of_multiple_workers_is_ready(self):
-        self.sch.get_work(worker='X')
+        self.sch.get_work(worker='X')  # indicate to the scheduler that X is active
         self.sch.add_task(worker='X', task_id='A', priority=10)
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=5)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
@@ -377,7 +377,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
     def test_lock_resources_for_second_worker(self):
-        self.sch.get_work(worker='Y')
+        self.sch.get_work(worker='Y')  # indicate to the scheduler that Y is active
         self.sch.add_task(worker='X', task_id='A', resources={'R': 1})
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1})
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=10)
@@ -481,7 +481,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.check_task_order('B')
 
     def test_multiple_resources_lock(self):
-        self.sch.get_work(worker='X')
+        self.sch.get_work(worker='X')  # indicate to the scheduler that X is active
         self.sch.add_task(worker='X', task_id='A', resources={'r1': 1, 'r2': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r2': 1})
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1})
