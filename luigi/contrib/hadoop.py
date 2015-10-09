@@ -400,7 +400,7 @@ class HadoopJobRunner(JobRunner):
         self.end_job_with_atomic_move_dir = end_job_with_atomic_move_dir
         self.tmp_dir = False
 
-    def run_job(self, job):
+    def run_job(self, job, tracking_url_callback=None):
         packages = [luigi] + self.modules + job.extra_modules() + list(_attached_packages)
 
         # find the module containing the job
@@ -513,7 +513,7 @@ class HadoopJobRunner(JobRunner):
 
         job.dump(self.tmp_dir)
 
-        run_and_track_hadoop_job(arglist)
+        run_and_track_hadoop_job(arglist, tracking_url_callback=tracking_url_callback)
 
         if self.end_job_with_atomic_move_dir:
             luigi.contrib.hdfs.HdfsTarget(output_hadoop).move_dir(output_final)
@@ -660,9 +660,14 @@ class BaseHadoopJobTask(luigi.Task):
     def init_hadoop(self):
         pass
 
-    def run(self):
+    def run(self, tracking_url_callback=None):
         self.init_local()
-        self.job_runner().run_job(self)
+        try:
+            self.job_runner().run_job(self, tracking_url_callback=tracking_url_callback)
+        except TypeError as ex:
+            if 'unexpected keyword argument' not in ex.message:
+                raise
+            self.job_runner().run_job(self)
 
     def requires_local(self):
         """
