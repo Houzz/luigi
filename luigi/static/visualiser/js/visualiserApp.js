@@ -10,6 +10,15 @@ function visualiserApp(luigi) {
         taskCategory: [],
         tableFilter: ""
     };
+    var taskIcons = {
+        PENDING: 'pause',
+        RUNNING: 'play',
+        DONE: 'check',
+        FAILED: 'times',
+        UPSTREAM_FAILED: 'warning',
+        DISABLED: 'minus-circle',
+        UPSTREAM_DISABLED: 'warning'
+    }
 
     function getVisType() {
         var cookieParts = document.cookie.match(/visType=(.*)/);
@@ -610,6 +619,7 @@ function visualiserApp(luigi) {
 
 
         $('#'+category+'_info').find('.info-box-number').html(taskCount);
+        $('#'+category+'_info i.fa').removeClass().addClass('fa fa-'+taskIcons[category]);
 
     }
 
@@ -655,6 +665,9 @@ function visualiserApp(luigi) {
     }
 
     function updateTasks() {
+        $('.status-info .info-box-number').text('?');
+        $('.status-info i.fa').removeClass().addClass('fa fa-spinner fa-pulse');
+
         var ajax1 = luigi.getRunningTaskList(function(runningTasks) {
             updateTaskCategory(dt, 'RUNNING', runningTasks);
         });
