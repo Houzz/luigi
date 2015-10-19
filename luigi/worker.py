@@ -47,7 +47,7 @@ from luigi import six
 from luigi import notifications
 from luigi.event import Event
 from luigi.task_register import load_task
-from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, SUSPENDED, CentralPlannerScheduler
+from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, CentralPlannerScheduler
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config
 from luigi.task_register import TaskClassException
@@ -155,13 +155,12 @@ class TaskProcess(multiprocessing.Process):
                 status = DONE if self.task.complete() else FAILED
             else:
                 new_deps = self._run_get_new_deps()
-                status = DONE if not new_deps else SUSPENDED
+                status = DONE if not new_deps else PENDING
 
-            if status == SUSPENDED:
+            if new_deps:
                 logger.info(
                     '[pid %s] Worker %s new requirements      %s',
                     os.getpid(), self.worker_id, self.task.task_id)
-
             elif status == DONE:
                 if pre_run_dirty:
                     self.task.mark_undirty()
@@ -290,6 +289,8 @@ class worker(Config):
                                   'well as having keep-alive true')
     wait_interval = FloatParameter(default=1.0,
                                    config_path=dict(section='core', name='worker-wait-interval'))
+    wait_jitter = FloatParameter(default=5.0)
+
     max_reschedules = IntParameter(default=1,
                                    config_path=dict(section='core', name='worker-max-reschedules'))
     timeout = IntParameter(default=0,
@@ -353,6 +354,7 @@ class Worker(object):
         self._config = worker(**kwargs)
 
         assert self._config.wait_interval >= _WAIT_INTERVAL_EPS, "[worker] wait_interval must be positive"
+        assert self._config.wait_jitter >= 0.0, "[worker] wait_jitter must be equal or greater than zero"
 
         self._id = worker_id
         self._scheduler = scheduler
@@ -388,11 +390,16 @@ class Worker(object):
         Call ``self._scheduler.add_task``, but store the values too so we can
         implement :py:func:`luigi.execution_summary.summary`.
         """
-        task = self._scheduled_tasks.get(kwargs['task_id'])
+        task_id = kwargs['task_id']
+        status = kwargs['status']
+        runnable = kwargs['runnable']
+        task = self._scheduled_tasks.get(task_id)
         if task:
-            msg = (task, kwargs['status'], kwargs['runnable'])
+            msg = (task, status, runnable)
             self._add_task_history.append(msg)
         self._scheduler.add_task(*args, **kwargs)
+
+        logger.info('Informed scheduler that task   %s   has status   %s', task_id, status)
 
     def stop(self):
         """
@@ -581,8 +588,6 @@ class Worker(object):
                        family=task.task_family,
                        module=task.task_module)
 
-        logger.info('Scheduled %s (%s)', task.task_id, status)
-
     def _validate_dependency(self, dependency):
         if isinstance(dependency, Target):
             raise Exception('requires() can not return Target objects. Wrap it in an ExternalTask class')
@@ -756,14 +761,15 @@ class Worker(object):
                 if reschedule:
                     self.add(task)
 
-            self.run_succeeded &= status in (DONE, SUSPENDED)
+            self.run_succeeded &= (status == DONE) or (len(new_deps) > 0)
             return
 
     def _sleeper(self):
         # TODO is exponential backoff necessary?
         while True:
-            wait_interval = self._config.wait_interval + random.uniform(1, 5)
-            logger.debug('Sleeping for %d seconds', wait_interval)
+            jitter = self._config.wait_jitter
+            wait_interval = self._config.wait_interval + random.uniform(0, jitter)
+            logger.debug('Sleeping for %f seconds', wait_interval)
             time.sleep(wait_interval)
             yield
 

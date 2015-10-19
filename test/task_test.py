@@ -90,9 +90,12 @@ class TaskTest(unittest.TestCase):
 
     def test_undo_do_not_remove_files_that_dont_exist(self):
         class RemoveErrorOutput(object):
-            def exists(self):
+            @staticmethod
+            def exists():
                 return False
-            def remove(self):
+
+            @staticmethod
+            def remove():
                 assert False
 
         class TestTask(luigi.Task):
@@ -104,13 +107,16 @@ class TaskTest(unittest.TestCase):
     def test_undo_remove_existing_file(self):
         class RemovableFile(object):
             _exists = True
+
             def exists(self):
                 return self._exists
+
             def remove(self):
                 self._exists = False
 
         class TestTask(luigi.Task):
             _output = RemovableFile()
+
             def output(self):
                 return self._output
 
@@ -123,13 +129,16 @@ class TaskTest(unittest.TestCase):
         class RemovableFile(object):
             def __init__(self, i):
                 self._exists = i % 3 > 0
+
             def exists(self):
                 return self._exists
+
             def remove(self):
                 self._exists = False
 
         class TestTask(luigi.Task):
             _output = map(RemovableFile, range(11))
+
             def output(self):
                 return self._output
 
@@ -137,24 +146,6 @@ class TaskTest(unittest.TestCase):
         self.assertEqual(7, sum(f.exists() for f in t.output()))
         t.undo()
         self.assertFalse(any(f.exists() for f in t.output()))
-
-    def test_id_to_name_and_params(self):
-        task_id = "InputText(date=2014-12-29)"
-        (name, params) = luigi.task.id_to_name_and_params(task_id)
-        self.assertEqual(name, "InputText")
-        self.assertEqual(params, dict(date="2014-12-29"))
-
-    def test_id_to_name_and_params_multiple_args(self):
-        task_id = "InputText(date=2014-12-29,foo=bar)"
-        (name, params) = luigi.task.id_to_name_and_params(task_id)
-        self.assertEqual(name, "InputText")
-        self.assertEqual(params, dict(date="2014-12-29", foo="bar"))
-
-    def test_id_to_name_and_params_list_args(self):
-        task_id = "InputText(date=2014-12-29,foo=[bar,baz-foo])"
-        (name, params) = luigi.task.id_to_name_and_params(task_id)
-        self.assertEqual(name, "InputText")
-        self.assertEqual(params, dict(date="2014-12-29", foo=["bar", "baz-foo"]))
 
     def test_flatten(self):
         flatten = luigi.task.flatten

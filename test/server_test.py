@@ -103,7 +103,7 @@ class _ServerTest(unittest.TestCase):
     """
     Test to start and stop the server in a more "standard" way
     """
-    server_client_class = "To be defined by subclasses"
+    #server_client_class = "To be defined by subclasses"
 
     def start_server(self):
         self._process = multiprocessing.Process(
@@ -200,7 +200,8 @@ class _INETServerTest(_ServerTest):
         """
         Test to run against the server as a normal luigi invocation does
         """
-        luigi.cmdline.luigi_run(['Task', '--scheduler-port', str(self.server_client.port), '--no-lock'])
+        params = ['Task', '--scheduler-port', str(self.server_client.port), '--no-lock']
+        self.assertTrue(luigi.interface.run(params))
 
 
 class INETProcessServerTest(_INETServerTest):
