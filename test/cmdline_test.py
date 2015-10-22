@@ -23,7 +23,7 @@ except ImportError:
 import mock
 import os
 import subprocess
-from helpers import unittest, parsing
+from helpers import unittest
 
 from luigi import six
 
@@ -218,6 +218,10 @@ class InvokeOverCmdlineTest(unittest.TestCase):
         returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--help-all'])
         self.assertGreater(len(stdout.splitlines()), 15)
 
+    def test_error_mesage_on_misspelled_task(self):
+        returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', 'RangeDaili'])
+        self.assertTrue(stderr.find(b'RangeDaily') != -1)
+
     def test_bin_luigi_no_parameters(self):
         returncode, stdout, stderr = self._run_cmdline(['./bin/luigi'])
         self.assertTrue(stderr.find(b'No task specified') != -1)
@@ -245,18 +249,15 @@ class InvokeOverCmdlineTest(unittest.TestCase):
         returncode, stdout, stderr = self._run_cmdline(['./bin/luigi', '--no-lock', '--local-scheduler', 'Task', '--unknown-param', 'hiiii'])
         self.assertNotEqual(0, returncode)
 
-
-class NewStyleParameters822Test(unittest.TestCase):
-    # See https://github.com/spotify/luigi/issues/822
-
-    @parsing(['FooSubClass', '--x', 'xyz', '--FooBaseClass-x', 'xyz'])
-    def test_subclasses(self):
-        self.assertEqual(FooSubClass().x, 'xyz')
-
-    @parsing(['FooBaseClass', '--FooBaseClass-x', 'xyz'])
-    def test_subclasses_2(self):
-        # https://github.com/spotify/luigi/issues/822#issuecomment-77782714
-        self.assertEqual(FooBaseClass().x, 'xyz')
+    def test_deps_py_script(self):
+        """
+        Test the deps.py script.
+        """
+        args = 'python luigi/tools/deps.py --module examples.top_artists ArtistToplistToDatabase --date-interval 2015-W10'.split()
+        returncode, stdout, stderr = self._run_cmdline(args)
+        self.assertEqual(0, returncode)
+        self.assertTrue(stdout.find(b'[FileSystem] data/streams_2015_03_04_faked.tsv') != -1)
+        self.assertTrue(stdout.find(b'[DB] localhost') != -1)
 
 
 if __name__ == '__main__':
