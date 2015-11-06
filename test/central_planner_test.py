@@ -172,7 +172,6 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(task_id='A', worker='X', status='RUNNING', tracking_url='stage_2')
         self.assertEqual('stage_2', self.sch.task_list('RUNNING', '')['A']['tracking_url'])
 
-
     def test_keep_tracking_url_on_done_and_fail(self):
         for status in ('DONE', 'FAILED'):
             self.sch.add_task(task_id='A', worker='X', status='RUNNING', tracking_url='trackme')

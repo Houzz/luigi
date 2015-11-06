@@ -58,7 +58,7 @@ function visualiserApp(luigi) {
     }
 
     function taskToDisplayTask(task) {
-        var taskIdParts = /([A-Za-z0-9_]*)\((.*)\)/.exec(task.taskId);
+        var taskIdParts = /([A-Za-z0-9_]*)\(([\s\S]*)\)/.exec(task.taskId);
         var taskName = taskIdParts[1];
         var taskParams = taskIdParts[2];
         var displayTime = new Date(Math.floor(task.start_time*1000)).toLocaleString();
@@ -71,6 +71,7 @@ function visualiserApp(luigi) {
         }
         return {
             taskId: task.taskId,
+            encodedTaskId: encodeURIComponent(task.taskId),
             taskName: taskName,
             taskParams: taskParams,
             priority: task.priority,
@@ -224,6 +225,7 @@ function visualiserApp(luigi) {
     }
 
     function processWorker(worker) {
+        worker.encoded_first_task = encodeURIComponent(worker.first_task);
         worker.tasks = worker.running.map(taskToDisplayTask);
         worker.tasks.sort(function(task1, task2) { return task1.timeRunning - task2.timeRunning; });
         worker.start_time = new Date(worker.started * 1000).toLocaleString();
@@ -337,13 +339,13 @@ function visualiserApp(luigi) {
     }
 
     function processHashChange(paint) {
-        var hash = location.hash;
+        var hash = decodeURIComponent(location.hash);
         if (hash == "#w") {
             switchTab("workerList");
         } else if (hash == "#r") {
             switchTab("resourceList");
         } else if (hash) {
-            var taskId = hash.substr(1);
+            var taskId = decodeURIComponent(hash.substr(1));
             $("#searchError").empty();
             $("#searchError").removeClass();
             if (taskId != "g") {
@@ -353,7 +355,6 @@ function visualiserApp(luigi) {
                     luigi.getInverseDependencyGraph(taskId, depGraphCallback);
                 } else {
                     luigi.getDependencyGraph(taskId, depGraphCallback);
-
                 }
             }
             switchTab("dependencyGraph");

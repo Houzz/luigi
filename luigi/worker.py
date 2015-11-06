@@ -101,7 +101,7 @@ class TaskProcess(multiprocessing.Process):
         try:
             task_gen = self.task.run(tracking_url_callback=self.tracking_url_callback)
         except TypeError as ex:
-            if 'unexpected keyword argument' not in ex.message:
+            if 'unexpected keyword argument' not in getattr(ex, 'message', ex.args[0]):
                 raise
             task_gen = self.task.run()
         if not isinstance(task_gen, types.GeneratorType):
@@ -371,7 +371,10 @@ class Worker(object):
         self.run_succeeded = True
         self.unfulfilled_counts = collections.defaultdict(int)
 
-        signal.signal(signal.SIGUSR1, self.handle_interrupt)
+        try:
+            signal.signal(signal.SIGUSR1, self.handle_interrupt)
+        except AttributeError:
+            pass
 
         self._keep_alive_thread = KeepAliveThread(self._scheduler, self._id, self._config.ping_interval)
         self._keep_alive_thread.daemon = True
