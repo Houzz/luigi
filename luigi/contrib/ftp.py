@@ -69,7 +69,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
         Return False if the file's modified time is older mtime.
         """
         self._connect()
-        files = self.ftpcon.nlst(path)
+        files = self.ftpcon.nlst(path.replace(' ', '\ '))
 
         result = False
         if files:
