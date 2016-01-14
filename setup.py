@@ -49,7 +49,7 @@ if os.environ.get('READTHEDOCS', None) == 'True':
     install_requires.remove('python-daemon<3.0')
 
 setup(
-    name='luigi',
+    name='houzz_luigi',
     version='2.0.0',
     description='Workflow mgmgt + task scheduling + dependency resolution',
     long_description=long_description,
