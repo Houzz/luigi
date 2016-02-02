@@ -39,7 +39,7 @@ from luigi import configuration
 from luigi import notifications
 from luigi import parameter
 from luigi import task_history as history
-from luigi.task_status import DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDED, UNKNOWN
+from luigi.task_status import BATCH_RUNNING, DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDED, UNKNOWN
 from luigi.task import Config
 
 logger = logging.getLogger("luigi.server")
@@ -71,6 +71,7 @@ UPSTREAM_SEVERITY_KEY = UPSTREAM_SEVERITY_ORDER.index
 STATUS_TO_UPSTREAM_MAP = {
     FAILED: UPSTREAM_FAILED,
     RUNNING: UPSTREAM_RUNNING,
+    BATCH_RUNNING: UPSTREAM_RUNNING,
     PENDING: UPSTREAM_MISSING_INPUT,
     DISABLED: UPSTREAM_DISABLED,
 }
@@ -80,6 +81,18 @@ POTENTIAL_RUNNABLE_STATUSES = frozenset((
     PENDING,
     DISABLED,
 ))
+
+TASKS = 'tasks'
+ACTIVE_WORKERS = 'active_workers'
+BATCH_TASKS = 'batch_tasks'
+RUNNING_BATCHES = 'running_batches'
+
+AGGREGATE_FUNCTIONS = {
+    'csv': ','.join,
+    'max': max,
+    'min': min,
+    'range': lambda args: '%s-%s' % (min(args), max(args)),
+}
 
 
 class scheduler(Config):
@@ -175,7 +188,8 @@ class Task(object):
 
     def __init__(self, task_id, status, deps, resources=None, priority=0, family='', module=None,
                  params=None, disable_failures=None, disable_window=None, disable_hard_timeout=None,
-                 supersedes_bucket=None, supersedes_priority=None, tracking_url=None):
+                 supersedes_bucket=None, supersedes_priority=None, tracking_url=None,
+                 is_batch=False):
         self.id = task_id
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
         self.workers = set()  # workers ids that can perform task - task is 'BROKEN' if none of these workers are active
@@ -203,6 +217,8 @@ class Task(object):
         self.tracking_url = tracking_url
         self.scheduler_disable_time = None
         self.runnable = False
+        self.is_batch = is_batch
+        self.batchable = False
 
     def __repr__(self):
         return "Task(%r)" % vars(self)
@@ -225,6 +241,29 @@ class Task(object):
     def can_disable(self):
         return (self.disable_failures is not None or
                 self.disable_hard_timeout is not None)
+
+
+class TaskBatcher(object):
+    def __init__(self, family, args, aggregate_args):
+        self.family = family
+        self.args = args
+        self.aggregates = aggregate_args
+
+    def task_id(self, tasks):
+        arguments = []
+        for task_arg, batch_arg in self.args:
+            raw_vals = [task.params[task_arg] for task in tasks]
+            agg_function = self.aggregates.get(task_arg)
+            if agg_function:
+                arg_val = AGGREGATE_FUNCTIONS[agg_function](raw_vals)
+            elif any(v != raw_vals[0] for v in raw_vals):
+                return None, None
+            else:
+                arg_val = raw_vals[0]
+            arguments.append((batch_arg, arg_val))
+        args_str = ', '.join('%s=%s' % arg for arg in arguments)
+        parameters = dict(arguments)
+        return '%s(%s)' % (self.family, args_str), parameters
 
 
 class Worker(object):
@@ -299,15 +338,29 @@ class SimpleTaskState(object):
     def __init__(self, state_path):
         self._state_path = state_path
         self._tasks = {}  # map from id to a Task object
+        self._batch_tasks = {}  # map from family to TaskBatch object
+        self._running_batches = {}  # map from id to list of batched task ids
         self._status_tasks = collections.defaultdict(dict)
         self._active_workers = {}  # map from id to a Worker object
         self._supersedes_buckets = collections.defaultdict(set)
 
     def get_state(self):
-        return self._tasks, self._active_workers
+        return {
+            TASKS: self._tasks,
+            ACTIVE_WORKERS: self._active_workers,
+            BATCH_TASKS: self._batch_tasks,
+            RUNNING_BATCHES: self._running_batches,
+        }
 
     def set_state(self, state):
-        self._tasks, self._active_workers = state
+        if isinstance(state, dict):
+            self._tasks = state.get(TASKS, {})
+            self._active_workers = state.get(ACTIVE_WORKERS, {})
+            self._batch_tasks = state.get(BATCH_TASKS, {})
+            self._running_batches = state.get(RUNNING_BATCHES, {})
+        else:
+            self._tasks, self._active_workers = state
+            self._batch_tasks = {}
 
     def dump(self):
         try:
@@ -360,6 +413,13 @@ class SimpleTaskState(object):
             if any(not hasattr(t, 'disable_hard_timeout') for t in six.itervalues(self._tasks)):
                 for t in six.itervalues(self._tasks):
                     t.disable_hard_timeout = None
+
+            # Compatibility since 2016-02-03
+            if any(not hasattr(t, 'is_batch') for t in six.itervalues(self._tasks)):
+                for t in six.itervalues(self._tasks):
+                    t.batchable = False
+                    t.is_batch = False
+
         else:
             logger.info("No prior state file exists at %s. Starting with clean slate", self._state_path)
 
@@ -387,6 +447,37 @@ class SimpleTaskState(object):
         return filter(lambda x: x.supersedes_priority <= supersedes_task.supersedes_priority,
                       self._supersedes_buckets[supersedes_task.supersedes_bucket])
 
+    def get_batch(self, worker_id, tasks):
+        if len(tasks) == 1:
+            return tasks[0]
+        families = set(task.family for task in tasks)
+        if len(families) != 1:
+            return None
+        family = families.pop()
+        batch_task = self.get_batcher(worker_id, family)
+        if batch_task is None:
+            return None
+        task_id, params = batch_task.task_id(tasks)
+        if task_id is None:
+            return None
+        priority = max(task.priority for task in tasks)
+        resource_keys = reduce(set.union, (task.resources.keys() for task in tasks), set())
+        resources = {key: max(task.resources.get(key, 0) for task in tasks) for key in resource_keys}
+        deps = reduce(set.union, (task.deps for task in tasks), set())
+        batch_task_obj = Task(
+            task_id=task_id,
+            status=PENDING,
+            deps=deps,
+            priority=priority,
+            resources=resources,
+            family=batch_task.family,
+            params=params,
+            is_batch=True,
+        )
+        batch_task_obj.stakeholders.add(worker_id)
+        batch_task_obj.workers.add(worker_id)
+        return batch_task_obj
+
     def mark_supersedes_bucket_tasks_done(self, supersedes_task):
         for task in self.get_supersedes_bucket_tasks(supersedes_task):
             self.set_status(task, DONE)
@@ -405,6 +496,14 @@ class SimpleTaskState(object):
         else:
             return self._tasks.get(task_id, default)
 
+    def get_batcher(self, worker, family):
+        return self._batch_tasks.get((worker, family))
+
+    def set_batcher(self, worker, family, batcher_family, batcher_args, batcher_aggregate_args):
+        batcher = TaskBatcher(batcher_family, batcher_args, batcher_aggregate_args)
+        self._batch_tasks[(worker, family)] = batcher
+        return batcher
+
     def has_task(self, task_id):
         return task_id in self._tasks
 
@@ -420,11 +519,11 @@ class SimpleTaskState(object):
         task.supersedes_bucket = new_bucket
         self._supersedes_buckets[task.supersedes_bucket].add(task)
 
-    def set_status(self, task, new_status, config=None):
+    def set_status(self, task, new_status, config=None, batch=None):
         if new_status == FAILED:
             assert config is not None
 
-        if new_status == DISABLED and task.status == RUNNING:
+        if new_status == DISABLED and task.status in (RUNNING, BATCH_RUNNING):
             return
 
         if task.status == DISABLED:
@@ -435,7 +534,7 @@ class SimpleTaskState(object):
             elif task.scheduler_disable_time is not None and new_status != DISABLED:
                 return
 
-        if new_status == FAILED and task.can_disable() and task.status != DISABLED:
+        if new_status == FAILED and task.can_disable() and task.status != DISABLED and not task.is_batch:
             task.add_failure()
             if task.has_excessive_failures():
                 task.scheduler_disable_time = time.time()
@@ -452,13 +551,25 @@ class SimpleTaskState(object):
         elif new_status == DISABLED:
             task.scheduler_disable_time = None
 
+        if new_status == RUNNING and batch:
+            self._running_batches[task.id] = set(batch)
+        elif task.id in self._running_batches and new_status != RUNNING:
+            for subtask_id in self._running_batches.pop(task.id):
+                subtask = self.get_task(subtask_id)
+                if new_status == FAILED:
+                    subtask.retry = time.time() + config.retry_delay
+                self.set_status(subtask, new_status, config)
+
+        if task.id in self._running_batches and new_status in (DONE, FAILED):
+            del self._running_batches[task.id]
+
         self._status_tasks[task.status].pop(task.id)
         self._status_tasks[new_status][task.id] = task
         task.status = new_status
 
     def fail_dead_worker_task(self, task, config, assistants):
         # If a running worker disconnects, tag all its jobs as FAILED and subject it to the same retry logic
-        if task.status == RUNNING and task.worker_running and task.worker_running not in task.stakeholders | assistants:
+        if task.status in (RUNNING, BATCH_RUNNING) and task.worker_running and task.worker_running not in task.stakeholders | assistants:
             logger.info("Task %r is marked as running by disconnected worker %r -> marking as "
                         "FAILED with retry delay of %rs", task.id, task.worker_running,
                         config.retry_delay)
@@ -484,6 +595,10 @@ class SimpleTaskState(object):
         # Remove tasks that have no stakeholders
         if task.remove and time.time() > task.remove:
             logger.info("Removing task %r (no connected stakeholders)", task.id)
+            remove = True
+
+        if task.is_batch and task.status != RUNNING:
+            logger.info("Removing batch task %r", task.id)
             remove = True
 
         # Reset FAILED tasks to PENDING if max timeout is reached, and retry delay is >= 0
@@ -550,6 +665,13 @@ class SimpleTaskState(object):
         return max(
             t.priority for t in self.get_supersedes_bucket_tasks(task)
             if t.status in POTENTIAL_RUNNABLE_STATUSES)
+
+    def update_tracking_url(self, task, tracking_url):
+        task.tracking_url = tracking_url
+        for batch_task_id in self._running_batches.get(task.id, []):
+            batch_task = self.get_task(batch_task_id)
+            if batch_task:
+                batch_task.tracking_url = tracking_url
 
 
 class CentralPlannerScheduler(Scheduler):
@@ -636,11 +758,15 @@ class CentralPlannerScheduler(Scheduler):
             if t is not None and prio > t.priority:
                 self._update_priority(t, prio, worker)
 
+    def add_task_batcher(self, worker, family, batcher_family, batcher_args, batcher_aggregate_args):
+        self._state.set_batcher(worker, family, batcher_family, batcher_args, batcher_aggregate_args)
+
     def add_task(self, task_id=None, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
                  priority=0, family='', module=None, params=None,
                  supersedes_bucket=None, supersedes_priority=None,
-                 assistant=False, tracking_url=None, **kwargs):
+                 assistant=False, tracking_url=None, batchable=None,
+                 **kwargs):
         """
         * add task identified by task_id if it doesn't exist
         * if deps is not None, update dependency list
@@ -665,7 +791,7 @@ class CentralPlannerScheduler(Scheduler):
             task.params = _get_default(params, {})
 
         if tracking_url is not None or task.status != RUNNING:
-            task.tracking_url = tracking_url
+            self._state.update_tracking_url(task, tracking_url)
 
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
@@ -673,7 +799,10 @@ class CentralPlannerScheduler(Scheduler):
         if expl is not None:
             task.expl = expl
 
-        if not (task.status == RUNNING and status == PENDING) or new_deps:
+        if batchable is not None:
+            task.batchable = batchable
+
+        if not (task.status in (RUNNING, BATCH_RUNNING) and status == PENDING) or new_deps:
             # don't allow re-scheduling of task while it is running, it must either fail or succeed first
             if status == PENDING or status != task.status:
                 # Update the DB only if there was a acctual change, to prevent noise.
@@ -802,6 +931,7 @@ class CentralPlannerScheduler(Scheduler):
             for task in sorted(self._state.get_running_tasks(), key=self._rank):
                 if task.worker_running == worker_id and task.id not in ct_set:
                     best_task = task
+        best_tasks = [] if best_task is None else [best_task]
 
         locally_pending_tasks = 0
         running_tasks = []
@@ -843,7 +973,13 @@ class CentralPlannerScheduler(Scheduler):
                 if len(task.workers) == 1 and not assistant:
                     n_unique_pending += 1
 
-            if best_task:
+            if (best_tasks and task.batchable and
+                    self._state.get_batch(worker_id, best_tasks + [task]) is not None and
+                    self._schedulable(task) and
+                    self._has_resources(task.resources, greedy_resources)):
+                best_tasks.append(task)
+
+            if best_tasks:
                 continue
 
             greedy_schedulable = lambda: (self._has_resources(task.resources, greedy_resources)
@@ -857,7 +993,7 @@ class CentralPlannerScheduler(Scheduler):
 
             if self._schedulable(task) and greedy_schedulable():
                 if in_workers and self._has_resources(task.resources, used_resources):
-                    best_task = task
+                    best_tasks = [task]
                 else:
                     workers = itertools.chain(task.workers, [worker_id]) if assistant else task.workers
                     for task_worker in workers:
@@ -880,8 +1016,18 @@ class CentralPlannerScheduler(Scheduler):
                  'task_id': None,
                  'n_unique_pending': n_unique_pending}
 
-        if best_task:
-            self._state.set_status(best_task, RUNNING, self._config)
+        if best_tasks:
+            best_batch = self._state.get_batch(worker_id, best_tasks)
+            best_task = self._state.get_task(best_batch.id, setdefault=best_batch)
+            for task in best_tasks:
+                if task == best_task:
+                    continue
+                self._state.set_status(task, BATCH_RUNNING, self._config)
+                task.worker_running = worker_id
+                task.time_running = time.time()
+                self._update_task_history(task, BATCH_RUNNING, host=host)
+            batch_tasks = [task.id for task in best_tasks if task != best_task]
+            self._state.set_status(best_task, RUNNING, self._config, batch=batch_tasks)
             best_task.worker_running = worker_id
             best_task.time_running = time.time()
             self._update_task_history(best_task, RUNNING, host=host)
