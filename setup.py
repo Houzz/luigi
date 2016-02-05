@@ -50,7 +50,7 @@ if os.environ.get('READTHEDOCS', None) == 'True':
 
 setup(
     name='houzz_luigi',
-    version='2.0.1',
+    version='2.0.2',
     description='Workflow mgmgt + task scheduling + dependency resolution',
     long_description=long_description,
     author='Erik Bernhardsson',
