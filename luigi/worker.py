@@ -619,8 +619,6 @@ class Worker(object):
                        deps=deps, runnable=runnable, priority=task.priority,
                        resources=task.process_resources(),
                        params=task.to_str_params(),
-                       supersedes_bucket=task.supersedes_bucket,
-                       supersedes_priority=task.supersedes_priority,
                        family=task.task_family,
                        module=task.task_module,
                        batchable=task.is_batchable(),
@@ -785,8 +783,6 @@ class Worker(object):
                            family=task.task_family,
                            module=task.task_module,
                            new_deps=new_deps,
-                           supersedes_bucket=task.supersedes_bucket,
-                           supersedes_priority=task.supersedes_priority,
                            assistant=self._assistant)
 
             self._running_tasks.pop(task_id)

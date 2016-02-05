@@ -114,13 +114,6 @@ class Task(object):
     priority = 0
     disabled = False
 
-    #: If multiple items from the same bucket are ready to run, the scheduler
-    #: will pick the one with highest bucket priority. When it is marked done,
-    #: so is everything else in the bucket with lower priority. bucket_priority
-    #: should have a consistent type within a bucket.
-    supersedes_bucket = None
-    supersedes_priority = None
-
     #: Specifies the class used to run this job in larger batches
     batch_class = None
 
