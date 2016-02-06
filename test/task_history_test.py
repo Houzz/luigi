@@ -42,23 +42,19 @@ class SimpleTaskHistory(luigi.task_history.TaskHistory):
 
 class TaskHistoryTest(LuigiTestCase):
 
-    def setUp(self):
-        self.th = SimpleTaskHistory()
-        self.sch = luigi.scheduler.CentralPlannerScheduler(task_history_impl=self.th)
-        self.w = luigi.worker.Worker(scheduler=self.sch)
-
-    def tearDown(self):
-        self.w.stop()
-
     def test_run(self):
-        class MyTask(luigi.Task):
-            pass
+        th = SimpleTaskHistory()
+        sch = luigi.scheduler.CentralPlannerScheduler(task_history_impl=th)
+        with luigi.worker.Worker(scheduler=sch) as w:
+            class MyTask(luigi.Task):
+                pass
 
-        self.w.add(MyTask())
-        self.w.run()
+            task = MyTask()
+            w.add(task)
+            w.run()
 
-        self.assertEqual(self.th.actions, [
-            ('scheduled', 'MyTask()'),
-            ('started', 'MyTask()'),
-            ('finished', 'MyTask()')
-        ])
+            self.assertEqual(th.actions, [
+                ('scheduled', task.task_id),
+                ('started', task.task_id),
+                ('finished', task.task_id)
+            ])

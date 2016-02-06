@@ -1,3 +1,10 @@
+Code of conduct
+---------------
+
+This project adheres to the `Open Code of Conduct 
+<https://github.com/spotify/code-of-conduct/blob/master/code-of-conduct.md>`_.  By 
+participating, you are expected to honor this code.
+
 Running the tests
 -----------------
 
@@ -8,15 +15,20 @@ patch locally before submitting it.
 If you do want to run the tests locally you'll need to ``pip install tox`` and
 then run one of the tox commands below.
 
+You will need a ``tox --version`` of at least 2.0.
+
 .. code:: bash
 
-    # These commands are pretty fast and will tell if you if you've
+    # These commands are pretty fast and will tell if you've
     # broken something major:
     tox -e flake8
     tox -e py27-nonhdfs
-    
+
     # You can also test particular files for even faster iterations
     tox -e py27-nonhdfs test/rpc_test.py
+
+    # The visualiser tests require phantomjs to be installed on your path
+    tox -e visualiser
 
     # And some of the others involve downloading and running Hadoop:
     tox -e py33-cdh

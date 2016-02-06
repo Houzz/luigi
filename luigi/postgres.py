@@ -276,7 +276,7 @@ class CopyToTable(rdbms.CopyToTable):
             user=self.user,
             password=self.password,
             table=self.table,
-            update_id=self.update_id()
+            update_id=self.update_id
         )
 
     def copy(self, cursor, file):
@@ -324,6 +324,7 @@ class CopyToTable(rdbms.CopyToTable):
                 cursor = connection.cursor()
                 self.init_copy(connection)
                 self.copy(cursor, tmp_file)
+                self.post_copy(connection)
             except psycopg2.ProgrammingError as e:
                 if e.pgcode == psycopg2.errorcodes.UNDEFINED_TABLE and attempt == 0:
                     # if first attempt fails with "relation not found", try creating table
@@ -342,3 +343,48 @@ class CopyToTable(rdbms.CopyToTable):
         connection.commit()
         connection.close()
         tmp_file.close()
+
+
+class PostgresQuery(rdbms.Query):
+    """
+    Template task for querying a Postgres compatible database
+
+    Usage:
+    Subclass and override the required `host`, `database`, `user`, `password`, `table`, and `query` attributes.
+
+    Override the `run` method if your use case requires some action with the query result.
+
+    Task instances require a dynamic `update_id`, e.g. via parameter(s), otherwise the query will only execute once
+
+    To customize the query signature as recorded in the database marker table, override the `update_id` property.
+    """
+
+    def run(self):
+        connection = self.output().connect()
+        cursor = connection.cursor()
+        sql = self.query()
+
+        logger.info('Executing query from task: {name}'.format(name=self.__class__))
+        cursor.execute(sql)
+
+        # Update marker table
+        self.output().touch(connection)
+
+        # commit and close connection
+        connection.commit()
+        connection.close()
+
+    def output(self):
+        """
+        Returns a PostgresTarget representing the executed query.
+
+        Normally you don't override this.
+        """
+        return PostgresTarget(
+            host=self.host,
+            database=self.database,
+            user=self.user,
+            password=self.password,
+            table=self.table,
+            update_id=self.update_id
+        )

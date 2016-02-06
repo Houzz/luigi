@@ -3,10 +3,6 @@ import argparse
 import logging
 import sys
 
-import luigi.interface
-import luigi.server
-import luigi.process
-import luigi.configuration
 from luigi.retcodes import run_with_retcodes
 
 
@@ -15,6 +11,9 @@ def luigi_run(argv=sys.argv[1:]):
 
 
 def luigid(argv=sys.argv[1:]):
+    import luigi.server
+    import luigi.process
+    import luigi.configuration
     parser = argparse.ArgumentParser(description=u'Central luigi server')
     parser.add_argument(u'--background', help=u'Run in background mode', action='store_true')
     parser.add_argument(u'--pidfile', help=u'Write pidfile')
@@ -42,4 +41,4 @@ def luigid(argv=sys.argv[1:]):
                                 filename=os.path.join(opts.logdir, "luigi-server.log"))
         else:
             logging.basicConfig(level=logging.INFO, format=luigi.process.get_log_format())
-        luigi.server.run(api_port=opts.port, address=opts.address)
+        luigi.server.run(api_port=opts.port, address=opts.address, unix_socket=opts.unix_socket)

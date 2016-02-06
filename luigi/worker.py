@@ -22,6 +22,10 @@ The worker communicates with the scheduler and does two things:
 
 When running in local mode, the worker talks directly to a :py:class:`~luigi.scheduler.CentralPlannerScheduler` instance.
 When you run a central server, the worker will talk to the scheduler using a :py:class:`~luigi.rpc.RemoteScheduler` instance.
+
+Everything in this module is private to luigi and may change in incompatible
+ways between versions. The exception is the exception types and the
+:py:class:`worker` config class.
 """
 
 import collections
@@ -98,11 +102,14 @@ class TaskProcess(multiprocessing.Process):
         self.timeout_time = time.time() + worker_timeout if worker_timeout else None
 
     def _run_get_new_deps(self):
+        run_again = False
         try:
             task_gen = self.task.run(tracking_url_callback=self.tracking_url_callback)
         except TypeError as ex:
-            if 'unexpected keyword argument' not in getattr(ex, 'message', ex.args[0]):
+            if 'unexpected keyword argument' not in str(ex):
                 raise
+            run_again = True
+        if run_again:
             task_gen = self.task.run()
         if not isinstance(task_gen, types.GeneratorType):
             return None
@@ -126,7 +133,7 @@ class TaskProcess(multiprocessing.Process):
                 return new_deps
 
     def run(self):
-        logger.info('[pid %s] Worker %s running   %s', os.getpid(), self.worker_id, self.task.task_id)
+        logger.info('[pid %s] Worker %s running   %s', os.getpid(), self.worker_id, self.task)
 
         if self.random_seed:
             # Need to have different random seeds if running in separate processes
@@ -139,11 +146,15 @@ class TaskProcess(multiprocessing.Process):
         try:
             pre_run_dirty = self.task.is_dirty()
 
-            # Verify that all the tasks are fulfilled!
-            missing = [dep.task_id for dep in self.task.deps() if not dep.actual_complete()]
-            if missing:
-                deps = 'dependency' if len(missing) == 1 else 'dependencies'
-                raise RuntimeError('Unfulfilled %s at run time: %s' % (deps, ', '.join(missing)))
+            # Verify that all the tasks are fulfilled! For external tasks we
+            # don't care about unfulfilled dependencies, because we are just
+            # checking completeness of self.task so outputs of dependencies are
+            # irrelevant.
+            if self.task.run != NotImplemented:
+                missing = [dep.task_id for dep in self.task.deps() if not dep.actual_complete()]
+                if missing:
+                    deps = 'dependency' if len(missing) == 1 else 'dependencies'
+                    raise RuntimeError('Unfulfilled %s at run time: %s' % (deps, ', '.join(missing)))
             self.task.trigger_event(Event.START, self.task)
             t0 = time.time()
             status = None
@@ -152,7 +163,12 @@ class TaskProcess(multiprocessing.Process):
                 # External task
                 # TODO(erikbern): We should check for task completeness after non-external tasks too!
                 # This will resolve #814 and make things a lot more consistent
-                status = DONE if self.task.complete() else FAILED
+                if self.task.complete():
+                    status = DONE
+                else:
+                    status = FAILED
+                    expl = 'Task is an external data dependency ' \
+                        'and data does not exist (yet?).'
             else:
                 new_deps = self._run_get_new_deps()
                 status = DONE if not new_deps else PENDING
@@ -160,15 +176,15 @@ class TaskProcess(multiprocessing.Process):
             if new_deps:
                 logger.info(
                     '[pid %s] Worker %s new requirements      %s',
-                    os.getpid(), self.worker_id, self.task.task_id)
+                    os.getpid(), self.worker_id, self.task)
             elif status == DONE:
                 if pre_run_dirty:
                     self.task.mark_undirty()
                 self.task.trigger_event(
                     Event.PROCESSING_TIME, self.task, time.time() - t0)
-                expl = json.dumps(self.task.on_success())
+                expl = self.task.on_success()
                 logger.info('[pid %s] Worker %s done      %s', os.getpid(),
-                            self.worker_id, self.task.task_id)
+                            self.worker_id, self.task)
                 self.task.trigger_event(Event.SUCCESS, self.task)
 
         except KeyboardInterrupt:
@@ -178,18 +194,11 @@ class TaskProcess(multiprocessing.Process):
             logger.exception("[pid %s] Worker %s failed    %s", os.getpid(), self.worker_id, self.task)
             self.task.trigger_event(Event.FAILURE, self.task, ex)
             raw_error_message = self.task.on_failure(ex)
-            expl = json.dumps(raw_error_message)
-            self._send_error_notification(raw_error_message)
+            expl = raw_error_message
+
         finally:
             self.result_queue.put(
                 (self.task.task_id, status, expl, missing, new_deps))
-
-    def _send_error_notification(self, raw_error_message):
-        subject = "Luigi: %s FAILED" % self.task
-        notification_error_message = notifications.wrap_traceback(raw_error_message)
-        formatted_error_message = notifications.format_task_error(subject, self.task,
-                                                                  formatted_exception=notification_error_message)
-        notifications.send_error_email(subject, formatted_error_message, self.task.owner_email)
 
     def _recursive_terminate(self):
         import psutil
@@ -242,8 +251,11 @@ class DequeQueue(collections.deque):
     deque wrapper implementing the Queue interface.
     """
 
-    put = collections.deque.append
-    get = collections.deque.pop
+    def put(self, obj, block=None, timeout=None):
+        return self.append(obj)
+
+    def get(self, block=None, timeout=None):
+        return self.pop()
 
 
 class AsyncCompletionException(Exception):
@@ -271,12 +283,13 @@ def check_complete(task, out_queue):
     logger.debug("Checking if %s is complete", task)
     try:
         is_complete = not task.disabled and task.actual_complete()
-    except BaseException:
+    except Exception:
         is_complete = TracebackWrapper(traceback.format_exc())
     out_queue.put((task, is_complete))
 
 
 class worker(Config):
+    # NOTE: `section.config-variable` in the config_path argument is deprecated in favor of `worker.config_variable`
 
     ping_interval = FloatParameter(default=1.0,
                                    config_path=dict(section='core', name='worker-ping-interval'))
@@ -301,6 +314,9 @@ class worker(Config):
                                          config_path=dict(section='core', name='retry-external-tasks'),
                                          description='If true, incomplete external tasks will be '
                                          'retested for completion while Luigi is running.')
+    no_install_shutdown_handler = BoolParameter(default=False,
+                                                description='If true, the SIGUSR1 shutdown handler will'
+                                                'NOT be install on the worker')
 
 
 class KeepAliveThread(threading.Thread):
@@ -372,17 +388,20 @@ class Worker(object):
         self.run_succeeded = True
         self.unfulfilled_counts = collections.defaultdict(int)
 
-        try:
-            signal.signal(signal.SIGUSR1, self.handle_interrupt)
-        except AttributeError:
-            pass
-
-        self._keep_alive_thread = KeepAliveThread(self._scheduler, self._id, self._config.ping_interval)
-        self._keep_alive_thread.daemon = True
-        self._keep_alive_thread.start()
+        # note that ``signal.signal(signal.SIGUSR1, fn)`` only works inside the main execution thread, which is why we
+        # provide the ability to conditionally install the hook.
+        if not self._config.no_install_shutdown_handler:
+            try:
+                signal.signal(signal.SIGUSR1, self.handle_interrupt)
+            except AttributeError:
+                pass
 
         # Keep info about what tasks are running (could be in other processes)
-        self._task_result_queue = multiprocessing.Queue()
+        if worker_processes == 1:
+            self._task_result_queue = DequeQueue()
+        else:
+            self._task_result_queue = multiprocessing.Queue()
+
         self._running_tasks = {}
 
         # Stuff for execution_summary
@@ -405,25 +424,25 @@ class Worker(object):
 
         logger.info('Informed scheduler that task   %s   has status   %s', task_id, status)
 
-    def stop(self):
+    def __enter__(self):
         """
-        Stop the KeepAliveThread associated with this Worker.
+        Start the KeepAliveThread.
+        """
+        self._keep_alive_thread = KeepAliveThread(self._scheduler, self._id, self._config.ping_interval)
+        self._keep_alive_thread.daemon = True
+        self._keep_alive_thread.start()
+        return self
 
-        This should be called whenever you are done with a worker instance to clean up.
-
-        Warning: this should _only_ be performed if you are sure this worker
-        is not performing any work or will perform any work after this has been called
-
-        TODO: also kill all currently running tasks
-
-        TODO (maybe): Worker should be/have a context manager to enforce calling this
-            whenever you stop using a Worker instance
+    def __exit__(self, type, value, traceback):
+        """
+        Stop the KeepAliveThread and kill still running tasks.
         """
         self._keep_alive_thread.stop()
         self._keep_alive_thread.join()
         for task in self._running_tasks.values():
             if task.is_alive():
                 task.terminate()
+        return False  # Don't suppress exception
 
     def _generate_worker_info(self):
         # Generate as much info as possible about the worker
@@ -470,12 +489,16 @@ class Worker(object):
         logger.exception("Luigi unexpected framework error while scheduling %s", task)  # needs to be called from within except clause
 
     def _email_complete_error(self, task, formatted_traceback):
-        # like logger.exception but with WARNING level
-        subject = "Luigi: {task} failed scheduling. Host: {host}".format(task=task, host=self.host)
-        headline = "Will not schedule task or any dependencies due to error in complete() method"
+        self._email_error(task, formatted_traceback,
+                          subject="Luigi: {task} failed scheduling. Host: {host}",
+                          headline="Will not schedule task or any dependencies due to error in complete() method",
+                          )
 
-        message = notifications.format_task_error(headline, task, formatted_traceback)
-        notifications.send_error_email(subject, message, task.owner_email)
+    def _email_dependency_error(self, task, formatted_traceback):
+        self._email_error(task, formatted_traceback,
+                          subject="Luigi: {task} failed scheduling. Host: {host}",
+                          headline="Will not schedule task or any dependencies due to error in deps() method",
+                          )
 
     def _email_dependency_error(self, task, formatted_traceback):
         subject = "Luigi: {task} failed scheduling. Host: {host}".format(task=task, host=self.host)
@@ -485,11 +508,21 @@ class Worker(object):
         notifications.send_error_email(subject, message, task.owner_email)
 
     def _email_unexpected_error(self, task, formatted_traceback):
-        subject = "Luigi: Framework error while scheduling {task}. Host: {host}".format(task=task, host=self.host)
-        headline = "Luigi framework error"
+        self._email_error(task, formatted_traceback,
+                          subject="Luigi: Framework error while scheduling {task}. Host: {host}",
+                          headline="Luigi framework error",
+                          )
 
+    def _email_task_failure(self, task, formatted_traceback):
+        self._email_error(task, formatted_traceback,
+                          subject="Luigi: {task} FAILED. Host: {host}",
+                          headline="A task failed when running. Most likely run() raised an exception.",
+                          )
+
+    def _email_error(self, task, formatted_traceback, subject, headline):
+        formatted_subject = subject.format(task=task, host=self.host)
         message = notifications.format_task_error(headline, task, formatted_traceback)
-        notifications.send_error_email(subject, message, task.owner_email)
+        notifications.send_error_email(formatted_subject, message, task.owner_email)
 
     def add(self, task, multiprocess=False):
         """
@@ -576,15 +609,16 @@ class Worker(object):
             task.trigger_event(Event.DEPENDENCY_MISSING, task)
             logger.warning('Data for %s does not exist (yet?). The task is an '
                            'external data depedency, so it can not be run from'
-                           ' this luigi process.', task.task_id)
+                           ' this luigi process.', task)
 
         else:
             try:
                 deps = task.deps()
-            except Exception:
+            except Exception as ex:
                 formatted_traceback = traceback.format_exc()
                 self.add_succeeded = False
                 self._log_dependency_error(task, formatted_traceback)
+                task.trigger_event(Event.BROKEN_TASK, task, ex)
                 self._email_dependency_error(task, formatted_traceback)
                 return
             status = PENDING
@@ -641,15 +675,15 @@ class Worker(object):
         self._scheduler.add_worker(self._id, self._worker_info)
 
     def _log_remote_tasks(self, running_tasks, n_pending_tasks, n_unique_pending):
-        logger.info("Done")
-        logger.info("There are no more tasks to run at this time")
+        logger.debug("Done")
+        logger.debug("There are no more tasks to run at this time")
         if running_tasks:
             for r in running_tasks:
-                logger.info('%s is currently run by worker %s', r['task_id'], r['worker'])
+                logger.debug('%s is currently run by worker %s', r['task_id'], r['worker'])
         elif n_pending_tasks:
-            logger.info("There are %s pending tasks possibly being run by other workers", n_pending_tasks)
+            logger.debug("There are %s pending tasks possibly being run by other workers", n_pending_tasks)
             if n_unique_pending:
-                logger.info("There are %i pending tasks unique to this worker", n_unique_pending)
+                logger.debug("There are %i pending tasks unique to this worker", n_unique_pending)
 
     def _get_work(self):
         if self._stop_requesting_work:
@@ -731,10 +765,10 @@ class Worker(object):
         """
         for task_id, p in six.iteritems(self._running_tasks):
             if not p.is_alive() and p.exitcode:
-                error_msg = 'Worker task %s died unexpectedly with exit code %s' % (task_id, p.exitcode)
+                error_msg = 'Task %s died unexpectedly with exit code %s' % (task_id, p.exitcode)
             elif p.timeout_time is not None and time.time() > float(p.timeout_time) and p.is_alive():
                 p.terminate()
-                error_msg = 'Worker task %s timed out and was terminated.' % task_id
+                error_msg = 'Task %s timed out and was terminated.' % task_id
             else:
                 continue
 
@@ -765,6 +799,12 @@ class Worker(object):
                 continue
                 # Not a running task. Probably already removed.
                 # Maybe it yielded something?
+
+            # external task if run not implemented, retry-able if config option is enabled.
+            external_task_retryable = task.run == NotImplemented and self._config.retry_external_tasks
+            if status == FAILED and not external_task_retryable:
+                self._email_task_failure(task, expl)
+
             new_deps = []
             if new_requirements:
                 new_req = [load_task(module, name, params)
@@ -776,7 +816,7 @@ class Worker(object):
             self._add_task(worker=self._id,
                            task_id=task_id,
                            status=status,
-                           expl=expl,
+                           expl=json.dumps(expl),
                            resources=task.process_resources(),
                            runnable=None,
                            params=task.to_str_params(),

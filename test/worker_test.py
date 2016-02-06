@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 import psutil
-from helpers import unittest, with_config, skipOnTravis
+from helpers import unittest, with_config, skipOnTravis, LuigiTestCase
 
 import luigi.notifications
 import luigi.worker
@@ -35,6 +35,7 @@ from luigi.mock import MockTarget, MockFileSystem
 from luigi.scheduler import CentralPlannerScheduler
 from luigi.worker import Worker
 from luigi import six
+from luigi.cmdline import luigi_run
 
 luigi.notifications.DEBUG = True
 
@@ -49,7 +50,7 @@ class DummyTask(Task):
         return self.has_run
 
     def run(self):
-        logging.debug("%s - setting has_run", self.task_id)
+        logging.debug("%s - setting has_run", self)
         self.has_run = True
 
 
@@ -108,18 +109,16 @@ class DynamicRequiresOtherModule(Task):
 
 class WorkerTest(unittest.TestCase):
 
-    def setUp(self):
-        # InstanceCache.disable()
+    def run(self, result=None):
         self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        self.w = Worker(scheduler=self.sch, worker_id='X')
-        self.w2 = Worker(scheduler=self.sch, worker_id='Y')
         self.time = time.time
+        with Worker(scheduler=self.sch, worker_id='X') as w, Worker(scheduler=self.sch, worker_id='Y') as w2:
+            self.w = w
+            self.w2 = w2
+            super(WorkerTest, self).run(result)
 
-    def tearDown(self):
         if time.time != self.time:
             time.time = self.time
-        self.w.stop()
-        self.w2.stop()
 
     def setTime(self, t):
         time.time = lambda: t
@@ -165,6 +164,33 @@ class WorkerTest(unittest.TestCase):
             raise unittest.SkipTest('signal.SIGUSR1 not found on this system')
         self.w.run()
         self.assertFalse(d.complete())
+
+    def test_disabled_shutdown_hook(self):
+        w = Worker(scheduler=self.sch, keep_alive=True, no_install_shutdown_handler=True)
+        with w:
+            try:
+                # try to kill the worker!
+                os.kill(os.getpid(), signal.SIGUSR1)
+            except AttributeError:
+                raise unittest.SkipTest('signal.SIGUSR1 not found on this system')
+            # try to kill the worker... AGAIN!
+            t = SuicidalWorker(signal.SIGUSR1)
+            w.add(t)
+            w.run()
+            # task should have stepped away from the ledge, and completed successfully despite all the SIGUSR1 signals
+            self.assertEqual(list(self.sch.task_list('DONE', '').keys()), [t.task_id])
+
+    @with_config({"worker": {"no_install_shutdown_handler": "True"}})
+    def test_can_run_luigi_in_thread(self):
+        class A(DummyTask):
+            pass
+        task = A()
+        # Note that ``signal.signal(signal.SIGUSR1, fn)`` can only be called in the main thread.
+        # So if we do not disable the shutdown handler, this would fail.
+        t = threading.Thread(target=lambda: luigi.build([task], local_scheduler=True))
+        t.start()
+        t.join()
+        self.assertTrue(task.complete())
 
     def test_external_dep(self):
         class A(ExternalTask):
@@ -214,7 +240,7 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(self.w.run())
         tasks = self.sch.task_list('DONE', '')
         self.assertEqual(1, len(tasks))
-        self.assertEqual(tracking_url, tasks['A()']['tracking_url'])
+        self.assertEqual(tracking_url, tasks[a.task_id]['tracking_url'])
 
     def test_type_error_in_tracking_run(self):
         class A(Task):
@@ -356,7 +382,7 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(self.w.add(a))
 
         # simulate a missed get_work response
-        self.assertEqual('A()', self.sch.get_work(worker='X')['task_id'])
+        self.assertEqual(a.task_id, self.sch.get_work(worker='X')['task_id'])
 
         self.assertTrue(self.w.run())
         self.assertTrue(a.complete())
@@ -437,24 +463,20 @@ class WorkerTest(unittest.TestCase):
 
         b = B()
         eb = ExternalB()
-        self.assertEqual(eb.task_id, "B()")
+        self.assertEqual(str(eb), "B()")
 
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        w = Worker(scheduler=sch, worker_id='X')
-        w2 = Worker(scheduler=sch, worker_id='Y')
-
-        self.assertTrue(w.add(b))
-        self.assertTrue(w2.add(eb))
-        logging.debug("RUNNING BROKEN WORKER")
-        self.assertTrue(w2.run())
-        self.assertFalse(a.complete())
-        self.assertFalse(b.complete())
-        logging.debug("RUNNING FUNCTIONAL WORKER")
-        self.assertTrue(w.run())
-        self.assertTrue(a.complete())
-        self.assertTrue(b.complete())
-        w.stop()
-        w2.stop()
+        with Worker(scheduler=sch, worker_id='X') as w, Worker(scheduler=sch, worker_id='Y') as w2:
+            self.assertTrue(w.add(b))
+            self.assertTrue(w2.add(eb))
+            logging.debug("RUNNING BROKEN WORKER")
+            self.assertTrue(w2.run())
+            self.assertFalse(a.complete())
+            self.assertFalse(b.complete())
+            logging.debug("RUNNING FUNCTIONAL WORKER")
+            self.assertTrue(w.run())
+            self.assertTrue(a.complete())
+            self.assertTrue(b.complete())
 
     def test_interleaved_workers2(self):
         # two tasks without dependencies, one external, one not
@@ -470,21 +492,17 @@ class WorkerTest(unittest.TestCase):
         b = B()
         eb = ExternalB()
 
-        self.assertEqual(eb.task_id, "B()")
+        self.assertEqual(str(eb), "B()")
 
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        w = Worker(scheduler=sch, worker_id='X')
-        w2 = Worker(scheduler=sch, worker_id='Y')
+        with Worker(scheduler=sch, worker_id='X') as w, Worker(scheduler=sch, worker_id='Y') as w2:
+            self.assertTrue(w2.add(eb))
+            self.assertTrue(w.add(b))
 
-        self.assertTrue(w2.add(eb))
-        self.assertTrue(w.add(b))
-
-        self.assertTrue(w2.run())
-        self.assertFalse(b.complete())
-        self.assertTrue(w.run())
-        self.assertTrue(b.complete())
-        w.stop()
-        w2.stop()
+            self.assertTrue(w2.run())
+            self.assertFalse(b.complete())
+            self.assertTrue(w.run())
+            self.assertTrue(b.complete())
 
     def test_interleaved_workers3(self):
         class A(DummyTask):
@@ -509,20 +527,16 @@ class WorkerTest(unittest.TestCase):
 
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
 
-        w = Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True)
-        w2 = Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1)
+        with Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True) as w:
+            with Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1) as w2:
+                self.assertTrue(w.add(a))
+                self.assertTrue(w2.add(b))
 
-        self.assertTrue(w.add(a))
-        self.assertTrue(w2.add(b))
+                threading.Thread(target=w.run).start()
+                self.assertTrue(w2.run())
 
-        threading.Thread(target=w.run).start()
-        self.assertTrue(w2.run())
-
-        self.assertTrue(a.complete())
-        self.assertTrue(b.complete())
-
-        w.stop()
-        w2.stop()
+                self.assertTrue(a.complete())
+                self.assertTrue(b.complete())
 
     def test_die_for_non_unique_pending(self):
         class A(DummyTask):
@@ -547,19 +561,16 @@ class WorkerTest(unittest.TestCase):
 
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
 
-        w = Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True)
-        w2 = Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1)
+        with Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True) as w:
+            with Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1) as w2:
+                self.assertTrue(w.add(b))
+                self.assertTrue(w2.add(b))
 
-        self.assertTrue(w.add(b))
-        self.assertTrue(w2.add(b))
+                self.assertEqual(w._get_work()[0], a.task_id)
+                self.assertTrue(w2.run())
 
-        self.assertEqual(w._get_work()[0], 'A()')
-        self.assertTrue(w2.run())
-
-        self.assertFalse(a.complete())
-        self.assertFalse(b.complete())
-
-        w2.stop()
+                self.assertFalse(a.complete())
+                self.assertFalse(b.complete())
 
     def test_complete_exception(self):
         "Tests that a task is still scheduled if its sister task crashes in the complete() method"
@@ -582,13 +593,12 @@ class WorkerTest(unittest.TestCase):
 
         b = B()
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        w = Worker(scheduler=sch, worker_id="foo")
-        self.assertFalse(w.add(b))
-        self.assertTrue(w.run())
-        self.assertFalse(b.has_run)
-        self.assertTrue(c.has_run)
-        self.assertFalse(a.has_run)
-        w.stop()
+        with Worker(scheduler=sch, worker_id="foo") as w:
+            self.assertFalse(w.add(b))
+            self.assertTrue(w.run())
+            self.assertFalse(b.has_run)
+            self.assertTrue(c.has_run)
+            self.assertFalse(a.has_run)
 
     def test_requires_exception(self):
         class A(DummyTask):
@@ -616,14 +626,13 @@ class WorkerTest(unittest.TestCase):
 
         b = B()
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        w = Worker(scheduler=sch, worker_id="foo")
-        self.assertFalse(w.add(b))
-        self.assertTrue(w.run())
-        self.assertFalse(b.has_run)
-        self.assertTrue(c.has_run)
-        self.assertTrue(d.has_run)
-        self.assertFalse(a.has_run)
-        w.stop()
+        with Worker(scheduler=sch, worker_id="foo") as w:
+            self.assertFalse(w.add(b))
+            self.assertTrue(w.run())
+            self.assertFalse(b.has_run)
+            self.assertTrue(c.has_run)
+            self.assertTrue(d.has_run)
+            self.assertFalse(a.has_run)
 
     def test_disable_bad_complete(self):
         class BadCompleteTask(DummyTask):
@@ -766,24 +775,21 @@ class WorkerPingThreadTests(unittest.TestCase):
 
         sch.ping = fail_ping
 
-        w = Worker(
-            scheduler=sch,
-            worker_id="foo",
-            ping_interval=0.01  # very short between pings to make test fast
-        )
-
-        # let the keep-alive thread run for a bit...
-        time.sleep(0.1)  # yes, this is ugly but it's exactly what we need to test
-        w.stop()
+        with Worker(
+                scheduler=sch,
+                worker_id="foo",
+                ping_interval=0.01  # very short between pings to make test fast
+                ):
+            # let the keep-alive thread run for a bit...
+            time.sleep(0.1)  # yes, this is ugly but it's exactly what we need to test
         self.assertTrue(
             self._total_pings > 1,
             msg="Didn't retry pings (%d pings performed)" % (self._total_pings,)
         )
 
     def test_ping_thread_shutdown(self):
-        w = Worker(ping_interval=0.01)
-        self.assertTrue(w._keep_alive_thread.is_alive())
-        w.stop()  # should stop within 0.01 s
+        with Worker(ping_interval=0.01) as w:
+            self.assertTrue(w._keep_alive_thread.is_alive())
         self.assertFalse(w._keep_alive_thread.is_alive())
 
 
@@ -810,20 +816,17 @@ def custom_email_patch(config):
     return functools.partial(email_patch, email_config=config)
 
 
-class WorkerEmailTest(unittest.TestCase):
+class WorkerEmailTest(LuigiTestCase):
 
-    def setUp(self):
+    def run(self, result=None):
         super(WorkerEmailTest, self).setUp()
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        self.worker = Worker(scheduler=sch, worker_id="foo")
-
-    def tearDown(self):
-        self.worker.stop()
+        with Worker(scheduler=sch, worker_id="foo") as self.worker:
+            super(WorkerEmailTest, self).run(result)
 
     @email_patch
     def test_connection_error(self, emails):
         sch = RemoteScheduler('http://tld.invalid:1337', connect_timeout=1)
-        worker = Worker(scheduler=sch)
 
         self.waits = 0
 
@@ -837,11 +840,11 @@ class WorkerEmailTest(unittest.TestCase):
 
         a = A()
         self.assertEqual(emails, [])
-        worker.add(a)
-        self.assertEqual(self.waits, 2)  # should attempt to add it 3 times
-        self.assertNotEqual(emails, [])
-        self.assertTrue(emails[0].find("Luigi: Framework error while scheduling %s" % (a,)) != -1)
-        worker.stop()
+        with Worker(scheduler=sch) as worker:
+            worker.add(a)
+            self.assertEqual(self.waits, 2)  # should attempt to add it 3 times
+            self.assertNotEqual(emails, [])
+            self.assertTrue(emails[0].find("Luigi: Framework error while scheduling %s" % (a,)) != -1)
 
     @email_patch
     def test_complete_error(self, emails):
@@ -890,10 +893,6 @@ class WorkerEmailTest(unittest.TestCase):
     @email_patch
     def test_run_error(self, emails):
         class A(luigi.Task):
-
-            def complete(self):
-                return False
-
             def run(self):
                 raise Exception("b0rk")
 
@@ -902,6 +901,39 @@ class WorkerEmailTest(unittest.TestCase):
         self.assertEqual(emails, [])
         self.worker.run()
         self.assertTrue(emails[0].find("Luigi: %s FAILED" % (a,)) != -1)
+
+    @email_patch
+    def test_task_process_dies(self, emails):
+        a = SuicidalWorker(signal.SIGKILL)
+        luigi.build([a], workers=2, local_scheduler=True)
+        self.assertTrue(emails[0].find("Luigi: %s FAILED" % (a,)) != -1)
+        self.assertTrue(emails[0].find("died unexpectedly with exit code -9") != -1)
+
+    @email_patch
+    def test_task_times_out(self, emails):
+        class A(luigi.Task):
+            worker_timeout = 0.00001
+
+            def run(self):
+                time.sleep(5)
+
+        a = A()
+        luigi.build([a], workers=2, local_scheduler=True)
+        self.assertTrue(emails[0].find("Luigi: %s FAILED" % (a,)) != -1)
+        self.assertTrue(emails[0].find("timed out and was terminated.") != -1)
+
+    @with_config(dict(worker=dict(retry_external_tasks='true')))
+    @email_patch
+    def test_external_task_retries(self, emails):
+        """
+        Test that we do not send error emails on the failures of external tasks
+        """
+        class A(luigi.ExternalTask):
+            pass
+
+        a = A()
+        luigi.build([a], workers=2, local_scheduler=True)
+        self.assertEqual(emails, [])
 
     @email_patch
     def test_no_error(self, emails):
@@ -1004,20 +1036,19 @@ class MultipleWorkersTest(unittest.TestCase):
         w._handle_next_task()
 
     def test_stop_worker_kills_subprocesses(self):
-        w = Worker(worker_processes=2)
-        hung_task = HungWorker()
-        w.add(hung_task)
+        with Worker(worker_processes=2) as w:
+            hung_task = HungWorker()
+            w.add(hung_task)
 
-        w._run_task(hung_task.task_id)
-        pids = [p.pid for p in w._running_tasks.values()]
-        self.assertEqual(1, len(pids))
-        pid = pids[0]
+            w._run_task(hung_task.task_id)
+            pids = [p.pid for p in w._running_tasks.values()]
+            self.assertEqual(1, len(pids))
+            pid = pids[0]
 
-        def is_running():
-            return pid in {p.pid for p in psutil.Process().children()}
+            def is_running():
+                return pid in {p.pid for p in psutil.Process().children()}
 
-        self.assertTrue(is_running())
-        w.stop()
+            self.assertTrue(is_running())
         self.assertFalse(is_running())
 
     def test_time_out_hung_worker(self):
@@ -1028,8 +1059,9 @@ class MultipleWorkersTest(unittest.TestCase):
     def test_purge_hung_worker_default_timeout_time(self, mock_time):
         w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
         mock_time.time.return_value = 0
-        w.add(HungWorker())
-        w._run_task('HungWorker(worker_timeout=None)')
+        task = HungWorker()
+        w.add(task)
+        w._run_task(task.task_id)
 
         mock_time.time.return_value = 5
         w._handle_next_task()
@@ -1044,8 +1076,9 @@ class MultipleWorkersTest(unittest.TestCase):
     def test_purge_hung_worker_override_timeout_time(self, mock_time):
         w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
         mock_time.time.return_value = 0
-        w.add(HungWorker(10))
-        w._run_task('HungWorker(worker_timeout=10)')
+        task = HungWorker(worker_timeout=10)
+        w.add(task)
+        w._run_task(task.task_id)
 
         mock_time.time.return_value = 10
         w._handle_next_task()
@@ -1073,11 +1106,12 @@ class InsignificantParameterTask(Dummy2Task):
 
 
 class AssistantTest(unittest.TestCase):
-    def setUp(self):
+    def run(self, result=None):
         self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        self.w = Worker(scheduler=self.sch, worker_id='X')
         self.assistant = Worker(scheduler=self.sch, worker_id='Y', assistant=True)
-        luigi.task.Register.clear_instance_cache()
+        with Worker(scheduler=self.sch, worker_id='X') as w:
+            self.w = w
+            super(AssistantTest, self).run(result)
 
     def tearDown(self):
         luigi.task.Register.clear_instance_cache()
@@ -1100,7 +1134,7 @@ class AssistantTest(unittest.TestCase):
         self.assertFalse(d.complete())
         self.assertFalse(self.assistant.run())
         self.assertFalse(d.complete())
-        self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [str(d)])
+        self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [d.task_id])
 
     def test_unimported_job_type(self):
         class NotImportedTask(luigi.Task):
@@ -1112,13 +1146,13 @@ class AssistantTest(unittest.TestCase):
         # verify that it can't run the task without the module info necessary to import it
         self.w.add(task)
         self.assertFalse(self.assistant.run())
-        self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), ['UnimportedTask()'])
+        self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [task.task_id])
 
         # check that it can import with the right module
         task.task_module = 'dummy_test_module.not_imported'
         self.w.add(task)
         self.assertTrue(self.assistant.run())
-        self.assertEqual(list(self.sch.task_list('DONE', '').keys()), ['UnimportedTask()'])
+        self.assertEqual(list(self.sch.task_list('DONE', '').keys()), [task.task_id])
 
     def test_optional_parameter(self):
         task = InsignificantParameterTask()
@@ -1221,3 +1255,37 @@ class WorkerWaitJitterTest(unittest.TestCase):
         six.next(x)
         mock_random.assert_called_with(0, 5.0)
         mock_sleep.assert_called_with(4.3)
+
+
+class KeyboardInterruptBehaviorTest(LuigiTestCase):
+
+    def test_propagation_when_executing(self):
+        """
+        Ensure that keyboard interrupts causes luigi to quit when you are
+        executing tasks.
+
+        TODO: Add a test that tests the multiprocessing (--worker >1) case
+        """
+        class KeyboardInterruptTask(luigi.Task):
+            def run(self):
+                raise KeyboardInterrupt()
+
+        cmd = 'KeyboardInterruptTask --local-scheduler --no-lock'.split(' ')
+        self.assertRaises(KeyboardInterrupt, luigi_run, cmd)
+
+    def test_propagation_when_scheduling(self):
+        """
+        Test that KeyboardInterrupt causes luigi to quit while scheduling.
+        """
+        class KeyboardInterruptTask(luigi.Task):
+            def complete(self):
+                raise KeyboardInterrupt()
+
+        class ExternalKeyboardInterruptTask(luigi.ExternalTask):
+            def complete(self):
+                raise KeyboardInterrupt()
+
+        self.assertRaises(KeyboardInterrupt, luigi_run,
+                          ['KeyboardInterruptTask', '--local-scheduler', '--no-lock'])
+        self.assertRaises(KeyboardInterrupt, luigi_run,
+                          ['ExternalKeyboardInterruptTask', '--local-scheduler', '--no-lock'])

@@ -18,6 +18,7 @@
 import datetime
 from helpers import with_config, LuigiTestCase, parsing, in_parse, RunOnceTask
 from datetime import timedelta
+import enum
 
 import luigi
 import luigi.date_interval
@@ -121,6 +122,10 @@ class NoopTask(luigi.Task):
     pass
 
 
+class MyEnum(enum.Enum):
+    A = 1
+
+
 def _value(parameter):
     """
     A hackish way to get the "value" of a parameter.
@@ -180,6 +185,12 @@ class ParameterTest(LuigiTestCase):
     def test_bool_default_true(self):
         self.assertTrue(WithDefaultTrue().x)
 
+    def test_bool_coerce(self):
+        self.assertEquals(True, WithDefaultTrue(x='yes').x)
+
+    def test_bool_no_coerce_none(self):
+        self.assertIsNone(WithDefaultTrue(x=None).x)
+
     def test_forgot_param(self):
         self.assertRaises(luigi.parameter.MissingParameterException, self.run_locally, ['ForgotParam'],)
 
@@ -201,12 +212,12 @@ class ParameterTest(LuigiTestCase):
             bar = luigi.Parameter()
 
         t1 = InsignificantParameterTask(foo='x', bar='y')
-        self.assertEqual(t1.task_id, 'InsignificantParameterTask(bar=y)')
+        self.assertEqual(str(t1), 'InsignificantParameterTask(bar=y)')
 
         t2 = InsignificantParameterTask('u', 'z')
         self.assertEqual(t2.foo, 'u')
         self.assertEqual(t2.bar, 'z')
-        self.assertEqual(t2.task_id, 'InsignificantParameterTask(bar=z)')
+        self.assertEqual(str(t2), 'InsignificantParameterTask(bar=z)')
 
     def test_local_significant_param(self):
         """ Obviously, if anything should be positional, so should local
@@ -232,12 +243,23 @@ class ParameterTest(LuigiTestCase):
     def test_nonpositional_param(self):
         """ Ensure we have the same behavior as in before a78338c  """
         class MyTask(luigi.Task):
-            # This could typically be "--num-threads=True"
+            # This could typically be "--num-threads=10"
             x = luigi.Parameter(significant=False, positional=False)
 
         MyTask(x='arg')
         self.assertRaises(luigi.parameter.UnknownParameterException,
                           lambda: MyTask('arg'))
+
+    def test_enum_param_valid(self):
+        p = luigi.parameter.EnumParameter(enum=MyEnum)
+        self.assertEqual(MyEnum.A, p.parse('A'))
+
+    def test_enum_param_invalid(self):
+        p = luigi.parameter.EnumParameter(enum=MyEnum)
+        self.assertRaises(ValueError, lambda: p.parse('B'))
+
+    def test_enum_param_missing(self):
+        self.assertRaises(ParameterException, lambda: luigi.parameter.EnumParameter())
 
 
 class TestNewStyleGlobalParameters(LuigiTestCase):
@@ -391,9 +413,19 @@ class TestParamWithDefaultFromConfig(LuigiTestCase):
         p = luigi.DateHourParameter(config_path=dict(section="foo", name="bar"))
         self.assertEqual(datetime.datetime(2001, 2, 3, 4, 0, 0), _value(p))
 
+    @with_config({"foo": {"bar": "2001-02-03T05"}})
+    def testDateHourWithInterval(self):
+        p = luigi.DateHourParameter(config_path=dict(section="foo", name="bar"), interval=2)
+        self.assertEqual(datetime.datetime(2001, 2, 3, 4, 0, 0), _value(p))
+
     @with_config({"foo": {"bar": "2001-02-03T0430"}})
     def testDateMinute(self):
         p = luigi.DateMinuteParameter(config_path=dict(section="foo", name="bar"))
+        self.assertEqual(datetime.datetime(2001, 2, 3, 4, 30, 0), _value(p))
+
+    @with_config({"foo": {"bar": "2001-02-03T0431"}})
+    def testDateWithMinuteInterval(self):
+        p = luigi.DateMinuteParameter(config_path=dict(section="foo", name="bar"), interval=2)
         self.assertEqual(datetime.datetime(2001, 2, 3, 4, 30, 0), _value(p))
 
     @with_config({"foo": {"bar": "2001-02-03T04H30"}})
@@ -406,15 +438,33 @@ class TestParamWithDefaultFromConfig(LuigiTestCase):
         p = luigi.DateParameter(config_path=dict(section="foo", name="bar"))
         self.assertEqual(datetime.date(2001, 2, 3), _value(p))
 
+    @with_config({"foo": {"bar": "2001-02-03"}})
+    def testDateWithInterval(self):
+        p = luigi.DateParameter(config_path=dict(section="foo", name="bar"),
+                                interval=3, start=datetime.date(2001, 2, 1))
+        self.assertEqual(datetime.date(2001, 2, 1), _value(p))
+
     @with_config({"foo": {"bar": "2015-07"}})
     def testMonthParameter(self):
         p = luigi.MonthParameter(config_path=dict(section="foo", name="bar"))
         self.assertEqual(datetime.date(2015, 7, 1), _value(p))
 
+    @with_config({"foo": {"bar": "2015-07"}})
+    def testMonthWithIntervalParameter(self):
+        p = luigi.MonthParameter(config_path=dict(section="foo", name="bar"),
+                                 interval=13, start=datetime.date(2014, 1, 1))
+        self.assertEqual(datetime.date(2015, 2, 1), _value(p))
+
     @with_config({"foo": {"bar": "2015"}})
     def testYearParameter(self):
         p = luigi.YearParameter(config_path=dict(section="foo", name="bar"))
         self.assertEqual(datetime.date(2015, 1, 1), _value(p))
+
+    @with_config({"foo": {"bar": "2015"}})
+    def testYearWithIntervalParameter(self):
+        p = luigi.YearParameter(config_path=dict(section="foo", name="bar"),
+                                start=datetime.date(2011, 1, 1), interval=5)
+        self.assertEqual(datetime.date(2011, 1, 1), _value(p))
 
     @with_config({"foo": {"bar": "123"}})
     def testInt(self):
@@ -677,7 +727,8 @@ class TestTaskParameter(LuigiTestCase):
 
         # So I first thought this "should" work, but actually it should not,
         # because it should not need to parse values known at run-time
-        self.assertNotEqual(MetaTask(a="mynamespace.MetaTask").a, MetaTask)
+        self.assertRaises(AttributeError,
+                          lambda: MetaTask(a="mynamespace.MetaTask"))
 
         # But is should be able to parse command line arguments
         self.assertRaises(luigi.task_register.TaskClassNotFoundException,
@@ -688,6 +739,35 @@ class TestTaskParameter(LuigiTestCase):
         self.assertEqual(MetaTask.saved_value, MetaTask)
         self.assertTrue(self.run_locally_split('mynamespace.MetaTask --a other_namespace.OtherTask'))
         self.assertEqual(MetaTask.saved_value, OtherTask)
+
+    def testSerialize(self):
+
+        class OtherTask(luigi.Task):
+
+            def complete(self):
+                return True
+
+        class DepTask(luigi.Task):
+
+            dep = luigi.TaskParameter()
+            ran = False
+
+            def complete(self):
+                return self.__class__.ran
+
+            def requires(self):
+                return self.dep()
+
+            def run(self):
+                self.__class__.ran = True
+
+        class MainTask(luigi.Task):
+
+            def run(self):
+                yield DepTask(dep=OtherTask)
+
+        # OtherTask is serialized because it is used as an argument for DepTask.
+        self.assertTrue(self.run_locally(['MainTask']))
 
 
 class NewStyleParameters822Test(LuigiTestCase):

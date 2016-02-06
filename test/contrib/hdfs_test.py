@@ -64,9 +64,9 @@ class ConfigurationTest(MiniClusterTestCase):
         client.mkdir('d/b')
         self.assertEqual(2, len(list(client.listdir('d'))))
         target = hdfs.HdfsTarget('d/a', fs=client)
-        self.assertFalse(target.move_dir('d/b'))
+        self.assertRaises(luigi.target.FileSystemException, lambda: target.move_dir('d/b'))
         self.assertEqual(2, len(list(client.listdir('d'))))
-        self.assertTrue(target.move_dir('d/c'))
+        target.move_dir('d/c')
         self.assertEqual(2, len(list(client.listdir('d'))))
 
     @helpers.with_config({"hdfs": {}}, replace_sections=True)
@@ -279,8 +279,7 @@ class ComplexOldFormatTest(MiniClusterTestCase):
         self.assertEqual(a, b'foo')
 
 
-@attr('minicluster')
-class HdfsTargetTests(MiniClusterTestCase, FileSystemTargetTestMixin):
+class HdfsTargetTestMixin(FileSystemTargetTestMixin):
 
     def create_target(self, format=None):
         target = hdfs.HdfsTarget(self._test_file(), format=format)
@@ -454,6 +453,11 @@ class HdfsTargetTests(MiniClusterTestCase, FileSystemTargetTestMixin):
     def test_pickle(self):
         t = hdfs.HdfsTarget("/tmp/dir")
         pickle.dumps(t)
+
+
+@attr('minicluster')
+class HdfsTargetTest(MiniClusterTestCase, HdfsTargetTestMixin):
+    pass
 
 
 @attr('minicluster')

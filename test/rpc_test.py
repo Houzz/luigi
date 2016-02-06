@@ -87,6 +87,7 @@ class RemoteSchedulerTest(unittest.TestCase):
         fetch_results = ['{"response": null}'] * 3 + ['{"response": {}}']
         self.assertRaises(luigi.rpc.RPCError, self.get_work, fetch_results)
 
+
 class RPCTest(central_planner_test.CentralPlannerTest, ServerTestBase):
 
     def get_app(self):

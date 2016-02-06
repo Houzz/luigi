@@ -59,9 +59,8 @@ function visualiserApp(luigi) {
     }
 
     function taskToDisplayTask(task) {
-        var taskIdParts = /([A-Za-z0-9_]*)\(([\s\S]*)\)/.exec(task.taskId);
-        var taskName = taskIdParts[1];
-        var taskParams = taskIdParts[2];
+        var taskName = task.name;
+        var taskParams = JSON.stringify(task.params);
         var displayTime = new Date(Math.floor(task.start_time*1000)).toLocaleString();
         var time_running = -1;
         if (task.status == "RUNNING" && "time_running" in task) {
@@ -193,6 +192,9 @@ function visualiserApp(luigi) {
         $.each(counts, function (name) {
             taskList.push({name: name, count: counts[name]});
         });
+        taskList.sort(function(a,b){
+          return a.name.localeCompare(b.name);
+        });
         return renderTemplate("sidebarTemplate", {"tasks": taskList});
     }
 
@@ -284,9 +286,42 @@ function visualiserApp(luigi) {
         updateSidebar(tabId);
     }
 
-    function showErrorTrace(error) {
-        $("#errorModal").empty().append(renderTemplate("errorTemplate", decodeError(error)));
+    function showErrorTrace(data) {
+        data.error = decodeError(data.error)
+        $("#errorModal").empty().append(renderTemplate("errorTemplate", data));
         $("#errorModal").modal({});
+    }
+
+    function preProcessGraph(dependencyGraph) {
+        var extraNodes = [];
+        var seen = {};
+        $.each(dependencyGraph, function(i, node) {
+            seen[node.taskId] = true;
+        });
+        $.each(dependencyGraph, function(i, node) {
+            $.each(node.deps, function(j, dep) {
+                if (!seen[dep]) {
+                    seen[dep] = true;
+                    var paramsStrs = (/\((.*)\)/.exec(dep) || ['', ''])[1].split(', ');
+                    var params = {};
+                    $.each(paramsStrs, function(i, param) {
+                        if (param !== "") {
+                            var kv = param.split('=');
+                            params[kv[0]] = kv[1];
+                        }
+                    });
+
+                    extraNodes.push({
+                        name: (/(\w+)\(/.exec(dep) || [])[1],
+                        taskId: dep,
+                        deps: [],
+                        params: params,
+                        status: "TRUNCATED"
+                    });
+                }
+            });
+        });
+        return dependencyGraph.concat(extraNodes);
     }
 
     function makeGraphCallback(visType, taskId, paint) {
@@ -333,12 +368,19 @@ function visualiserApp(luigi) {
             }
         }
 
+        function processedCallback(callback) {
+            function processed(dependencyGraph) {
+                return callback(preProcessGraph(dependencyGraph));
+            }
+            return processed;
+        }
+
 
         if (visType == 'd3') {
-            return depGraphCallbackD3;
+            return processedCallback(depGraphCallbackD3);
         }
         else {
-            return depGraphCallback;
+            return processedCallback(depGraphCallback);
         }
 
     }
@@ -758,6 +800,19 @@ function visualiserApp(luigi) {
         return decoded;
     }
 
+    /**
+     * Return HTML of a task parameter dictionary
+     * @param params: task parameter dictionary
+     */
+    function renderParams(params) {
+        var htmls = [];
+        for (var key in params) {
+            htmls.push('<span class="param-name">' + key +
+                '</span>=<span class="param-value">' + params[key] + '</span>');
+        }
+        return htmls.join(', ');
+    }
+
     $(document).ready(function() {
         loadTemplates();
 
@@ -785,11 +840,12 @@ function visualiserApp(luigi) {
                 {
                     data: 'taskParams',
                     render: function(data, type, row) {
+                        var params = JSON.parse(data);
                         if (row.resources !== '{}') {
-                            return '<div>(' + data + ')</div><div>' + row.resources + '</div>';
+                            return '<div>' + renderParams(params) + '</div><div>' + row.resources + '</div>';
                         }
                         else {
-                            return '<div>(' + data + ')</div>';
+                            return '<div>' + renderParams(params) + '</div>';
                         }
                     }
                 },

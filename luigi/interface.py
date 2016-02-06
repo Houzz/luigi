@@ -16,6 +16,9 @@
 #
 """
 This module contains the bindings for command line integration and dynamic loading of tasks
+
+If you don't want to run luigi from the command line. You may use the methods
+defined in this module to programatically run luigi.
 """
 
 import logging
@@ -129,7 +132,7 @@ class core(task.Config):
 class _WorkerSchedulerFactory(object):
 
     def create_local_scheduler(self):
-        return scheduler.CentralPlannerScheduler(prune_on_get_work=True)
+        return scheduler.CentralPlannerScheduler(prune_on_get_work=True, record_task_history=False)
 
     def create_remote_scheduler(self, url):
         return rpc.RemoteScheduler(url)
@@ -182,23 +185,20 @@ def _schedule_and_run(tasks, worker_scheduler_factory=None, override_defaults=No
             )
         sch = worker_scheduler_factory.create_remote_scheduler(url=url)
 
-    w = worker_scheduler_factory.create_worker(
+    worker = worker_scheduler_factory.create_worker(
         scheduler=sch, worker_processes=env_params.workers, assistant=env_params.assistant)
 
     success = True
     luigi_state.set_state(luigi_state.SCHEDULING)
-    for t in tasks:
-        success &= w.add(t, env_params.parallel_scheduling)
     logger = logging.getLogger('luigi-interface')
-    logger.info('Done scheduling tasks')
-    luigi_state.set_state(luigi_state.RUNNING)
-    if env_params.workers != 0:
-        try:
-            success &= w.run()
-        finally:
-            w.stop()
-    logger.info(execution_summary.summary(w))
-    return dict(success=success, worker=w)
+    with worker:
+        for t in tasks:
+            success &= worker.add(t, env_params.parallel_scheduling)
+        logger.info('Done scheduling tasks')
+        if env_params.workers != 0:
+            success &= worker.run()
+    logger.info(execution_summary.summary(worker))
+    return dict(success=success, worker=worker)
 
 
 class PidLockAlreadyTakenExit(SystemExit):

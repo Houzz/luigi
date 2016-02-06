@@ -25,6 +25,8 @@ In particular using the config `error-email` should set up Luigi so that it will
 
     [core]
     error-email: foo@bar.baz
+
+TODO: Eventually, all email configuration should move into the [email] section.
 '''
 
 import logging
@@ -33,12 +35,37 @@ import sys
 import textwrap
 
 from luigi import configuration
+import luigi.task
+import luigi.parameter
 
 logger = logging.getLogger("luigi-interface")
 
 
 DEFAULT_CLIENT_EMAIL = 'luigi-client@%s' % socket.gethostname()
 DEBUG = False
+
+
+class TestNotificationsTask(luigi.task.Task):
+    """
+    You may invoke this task to quickly check if you correctly have setup your
+    notifications Configuration.  You can run:
+
+    .. code:: console
+
+            $ luigi TestNotifications --local-scheduler
+
+    And then check your email inbox to see if you got an error email or any
+    other kind of notifications that you expected.
+    """
+    raise_in_complete = luigi.parameter.BoolParameter(description='If true, fail in complete() instead of run()')
+
+    def run(self):
+        raise ValueError('Testing notifications triggering')
+
+    def complete(self):
+        if self.raise_in_complete:
+            raise ValueError('Testing notifications triggering')
+        return False
 
 
 def email_type():
@@ -59,9 +86,8 @@ def generate_email(sender, subject, message, recipients, image_png):
     msg_root.attach(msg_text)
 
     if image_png:
-        fp = open(image_png, 'rb')
-        msg_image = email.mime.image.MIMEImage(fp.read(), 'png')
-        fp.close()
+        with open(image_png, 'rb') as fp:
+            msg_image = email.mime.image.MIMEImage(fp.read(), 'png')
         msg_root.attach(msg_image)
 
     msg_root['Subject'] = subject
@@ -72,6 +98,9 @@ def generate_email(sender, subject, message, recipients, image_png):
 
 
 def wrap_traceback(traceback):
+    """
+    For internal use only (until further notice)
+    """
     if email_type() == 'html':
         try:
             from pygments import highlight
@@ -96,6 +125,7 @@ def send_email_smtp(config, sender, subject, message, recipients, image_png):
     import smtplib
 
     smtp_ssl = config.getboolean('core', 'smtp_ssl', False)
+    smtp_without_tls = config.getboolean('core', 'smtp_without_tls', False)
     smtp_host = config.get('core', 'smtp_host', 'localhost')
     smtp_port = config.getint('core', 'smtp_port', 0)
     smtp_local_hostname = config.get('core', 'smtp_local_hostname', None)
@@ -108,7 +138,8 @@ def send_email_smtp(config, sender, subject, message, recipients, image_png):
     smtp_password = config.get('core', 'smtp_password', None)
     smtp = smtplib.SMTP(**kwargs) if not smtp_ssl else smtplib.SMTP_SSL(**kwargs)
     smtp.ehlo_or_helo_if_needed()
-    smtp.starttls()
+    if smtp.has_extn('starttls') and not smtp_without_tls:
+        smtp.starttls()
     if smtp_login and smtp_password:
         smtp.login(smtp_login, smtp_password)
 
@@ -118,14 +149,28 @@ def send_email_smtp(config, sender, subject, message, recipients, image_png):
 
 
 def send_email_ses(config, sender, subject, message, recipients, image_png):
-    import boto.ses
-    con = boto.ses.connect_to_region(config.get('email', 'region', 'us-east-1'),
-                                     aws_access_key_id=config.get('email', 'AWS_ACCESS_KEY', None),
-                                     aws_secret_access_key=config.get('email', 'AWS_SECRET_KEY', None))
+    """
+    Sends notification through AWS SES.
+
+    Does not handle access keys.  Use either
+      1/ configuration file
+      2/ EC2 instance profile
+
+    See also http://boto3.readthedocs.org/en/latest/guide/configuration.html.
+    """
+    from boto3 import client as boto3_client
+
+    client = boto3_client('ses')
+
     msg_root = generate_email(sender, subject, message, recipients, image_png)
-    con.send_raw_email(msg_root.as_string(),
-                       source=msg_root['From'],
-                       destinations=msg_root['To'])
+    response = client.send_raw_email(Source=sender,
+                                     Destinations=recipients,
+                                     RawMessage={'Data': msg_root.as_string()})
+
+    logger.debug(("Message sent to SES.\nMessageId: {},\nRequestId: {},\n"
+                 "HTTPSStatusCode: {}").format(response['MessageId'],
+                                               response['ResponseMetadata']['RequestId'],
+                                               response['ResponseMetadata']['HTTPStatusCode']))
 
 
 def send_email_sendgrid(config, sender, subject, message, recipients, image_png):
@@ -162,8 +207,45 @@ def _email_disabled():
         return False
 
 
+def send_email_sns(config, sender, subject, message, topic_ARN, image_png):
+    """
+    Sends notification through AWS SNS. Takes Topic ARN from recipients.
+
+    Does not handle access keys.  Use either
+      1/ configuration file
+      2/ EC2 instance profile
+
+    See also http://boto3.readthedocs.org/en/latest/guide/configuration.html.
+    """
+    from boto3 import resource as boto3_resource
+
+    sns = boto3_resource('sns')
+    topic = sns.Topic(topic_ARN[0])
+
+    # Subject is max 100 chars
+    if len(subject) > 100:
+        subject = subject[0:48] + '...' + subject[-49:]
+
+    response = topic.publish(Subject=subject, Message=message)
+
+    logger.debug(("Message sent to SNS.\nMessageId: {},\nRequestId: {},\n"
+                 "HTTPSStatusCode: {}").format(response['MessageId'],
+                                               response['ResponseMetadata']['RequestId'],
+                                               response['ResponseMetadata']['HTTPStatusCode']))
+
+
 def send_email(subject, message, sender, recipients, image_png=None):
+    """
+    Decides whether to send notification. Notification is cancelled if there are
+    no recipients or if stdout is onto tty or if in debug mode.
+
+    Dispatches on config value email.type.  Default is 'smtp'.
+    """
     config = configuration.get_config()
+    notifiers = {'ses': send_email_ses,
+                 'sendgrid': send_email_sendgrid,
+                 'smtp': send_email_smtp,
+                 'sns': send_email_sns}
 
     subject = _prefix(subject)
     if not recipients or recipients == (None,):
@@ -180,13 +262,10 @@ def send_email(subject, message, sender, recipients, image_png=None):
     # Replace original recipients with the clean list
     recipients = recipients_tmp
 
+    # Get appropriate sender and call it to send the notification
     email_sender_type = config.get('email', 'type', None)
-    if email_sender_type == "ses":
-        send_email_ses(config, sender, subject, message, recipients, image_png)
-    elif email_sender_type == "sendgrid":
-        send_email_sendgrid(config, sender, subject, message, recipients, image_png)
-    else:
-        send_email_smtp(config, sender, subject, message, recipients, image_png)
+    email_sender = notifiers.get(email_sender_type, send_email_smtp)
+    email_sender(config, sender, subject, message, recipients, image_png)
 
 
 def _email_recipients(additional_recipients=None):
@@ -245,7 +324,6 @@ def format_task_error(headline, task, formatted_exception=None):
     :param formatted_exception: optional string showing traceback
 
     :return: message body
-
     """
 
     typ = email_type()

@@ -19,6 +19,7 @@ import abc
 import json
 import logging
 import time
+import os
 
 import luigi
 from luigi import postgres
@@ -69,7 +70,7 @@ class S3CopyToTable(rdbms.CopyToTable):
       * `s3_load_path`.
     """
 
-    @abc.abstractproperty
+    @abc.abstractmethod
     def s3_load_path(self):
         """
         Override to return the load path.
@@ -103,7 +104,7 @@ class S3CopyToTable(rdbms.CopyToTable):
         """
         return ''
 
-    @property    
+    @property
     def prune_table(self):
         """
         Override to set equal to the name of the table which is to be pruned.
@@ -141,6 +142,7 @@ class S3CopyToTable(rdbms.CopyToTable):
         """
         return ''
 
+    @property
     def do_truncate_table(self):
         """
         Return True if table should be truncated before copying new data in.
@@ -167,6 +169,7 @@ class S3CopyToTable(rdbms.CopyToTable):
         """
         return ''
 
+    @property
     def queries(self):
         """
         Override to return a list of queries to be executed in order.
@@ -216,10 +219,10 @@ class S3CopyToTable(rdbms.CopyToTable):
             query = ("CREATE {type} TABLE "
                      "{table} ({coldefs}) "
                      "{table_attributes}").format(
-                type=self.table_type(),
+                type=self.table_type,
                 table=self.table,
                 coldefs=coldefs,
-                table_attributes=self.table_attributes())
+                table_attributes=self.table_attributes)
 
             connection.cursor().execute(query)
 
@@ -232,7 +235,8 @@ class S3CopyToTable(rdbms.CopyToTable):
             raise Exception("table need to be specified")
 
         path = self.s3_load_path()
-        connection = self.output().connect()
+        output = self.output()
+        connection = output.connect()
         cursor = connection.cursor()
 
         self.init_copy(connection)
@@ -240,7 +244,7 @@ class S3CopyToTable(rdbms.CopyToTable):
         self.post_copy(cursor)
 
         # update marker table
-        self.output().touch(connection)
+        output.touch(connection)
         connection.commit()
 
         # commit and clean up
@@ -270,7 +274,7 @@ class S3CopyToTable(rdbms.CopyToTable):
             user=self.user,
             password=self.password,
             table=self.table,
-            update_id=self.update_id())
+            update_id=self.update_id)
 
     def does_table_exist(self, connection):
         """
@@ -301,7 +305,7 @@ class S3CopyToTable(rdbms.CopyToTable):
             logger.info("Creating table %s", self.table)
             connection.reset()
             self.create_table(connection)
-        elif self.do_truncate_table():
+        elif self.do_truncate_table:
             logger.info("Truncating table %s", self.table)
             self.truncate_table(connection)
         elif self.do_prune():
@@ -313,7 +317,7 @@ class S3CopyToTable(rdbms.CopyToTable):
         Performs post-copy sql - such as cleansing data, inserting into production table (if copied to temp table), etc.
         """
         logger.info('Executing post copy queries')
-        for query in self.queries():
+        for query in self.queries:
             cursor.execute(query)
 
 
@@ -450,6 +454,7 @@ class KillOpenRedshiftSessions(luigi.Task):
     def password(self):
         return None
 
+    @property
     def update_id(self):
         """
         This update id will be a unique identifier
@@ -470,7 +475,7 @@ class KillOpenRedshiftSessions(luigi.Task):
             user=self.user,
             password=self.password,
             table=self.__class__.__name__,
-            update_id=self.update_id())
+            update_id=self.update_id)
 
     def run(self):
         """
@@ -510,3 +515,133 @@ class KillOpenRedshiftSessions(luigi.Task):
             connection.close()
 
         logger.info('Done killing all open Redshift sessions for database: %s', self.database)
+
+
+class RedshiftQuery(postgres.PostgresQuery):
+    """
+    Template task for querying an Amazon Redshift database
+
+    Usage:
+    Subclass and override the required `host`, `database`, `user`, `password`, `table`, and `query` attributes.
+
+    Override the `run` method if your use case requires some action with the query result.
+
+    Task instances require a dynamic `update_id`, e.g. via parameter(s), otherwise the query will only execute once
+
+    To customize the query signature as recorded in the database marker table, override the `update_id` property.
+    """
+
+    def output(self):
+        """
+        Returns a RedshiftTarget representing the executed query.
+
+        Normally you don't override this.
+        """
+        return RedshiftTarget(
+            host=self.host,
+            database=self.database,
+            user=self.user,
+            password=self.password,
+            table=self.table,
+            update_id=self.update_id
+        )
+
+
+class RedshiftUnloadTask(postgres.PostgresQuery):
+    """
+    Template task for running UNLOAD on an Amazon Redshift database
+
+    Usage:
+    Subclass and override the required `host`, `database`, `user`, `password`, `table`, and `query` attributes.
+    Override the `run` method if your use case requires some action with the query result.
+    Task instances require a dynamic `update_id`, e.g. via parameter(s), otherwise the query will only execute once
+    To customize the query signature as recorded in the database marker table, override the `update_id` property.
+    """
+
+    @abc.abstractproperty
+    def aws_access_key_id(self):
+        """
+        Override to return the key id.
+        """
+        return None
+
+    @abc.abstractproperty
+    def aws_secret_access_key(self):
+        """
+        Override to return the secret access key.
+        """
+        return None
+
+    @property
+    def s3_unload_path(self):
+        """
+        Override to return the load path.
+        """
+        return ''
+
+    @property
+    def unload_options(self):
+        """
+        Add extra or override default unload options:
+        """
+        return "DELIMITER '|' ADDQUOTES GZIP ALLOWOVERWRITE PARALLEL ON"
+
+    @property
+    def unload_query(self):
+        """
+        Default UNLOAD command
+        """
+        return ("UNLOAD ( '{query}' ) TO '{s3_unload_path}' "
+                "credentials 'aws_access_key_id={s3_access_key};aws_secret_access_key={s3_security_key}' "
+                "{unload_options};")
+
+    def run(self):
+        connection = self.output().connect()
+        cursor = connection.cursor()
+
+        # Retrieve AWS s3 credentials
+        config = luigi.configuration.get_config()
+        if self.aws_access_key_id is None or self.aws_secret_access_key is None:
+            self.aws_access_key_id = config.get('s3', 'aws_access_key_id')
+            self.aws_secret_access_key = config.get('s3', 'aws_secret_access_key')
+        # Optionally we can access env variables to get the keys
+        if self.aws_access_key_id is None or self.aws_access_key_id.strip() == '' \
+                or self.aws_secret_access_key is None or self.aws_secret_access_key.strip() == '':
+            self.aws_access_key_id = os.environ['AWS_ACCESS_KEY_ID']
+            self.aws_secret_access_key = os.environ['AWS_SECRET_ACCESS_KEY']
+
+        unload_query = self.unload_query.format(
+            query=self.query().replace("'", "\'"),
+            s3_unload_path=self.s3_unload_path,
+            unload_options=self.unload_options,
+            s3_access_key=self.aws_access_key_id,
+            s3_security_key=self.aws_secret_access_key)
+
+        logger.info('Executing unload query from task: {name}'.format(name=self.__class__))
+        try:
+            cursor = connection.cursor()
+            cursor.execute(unload_query)
+            logger.info(cursor.statusmessage)
+        except:
+            raise
+
+        # Update marker table
+        self.output().touch(connection)
+        # commit and close connection
+        connection.commit()
+        connection.close()
+
+    def output(self):
+        """
+        Returns a RedshiftTarget representing the executed query.
+
+        Normally you don't override this.
+        """
+        return RedshiftTarget(
+            host=self.host,
+            database=self.database,
+            user=self.user,
+            password=self.password,
+            table=self.table,
+            update_id=self.update_id
+        )

@@ -245,6 +245,9 @@ class HadoopJobError(RuntimeError):
         self.out = out
         self.err = err
 
+    def __str__(self):
+        return self.message
+
 
 def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
     """
@@ -301,7 +304,9 @@ def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
                         tracking_url_callback(tracking_url)
                     except Exception as e:
                         logger.error("Error in tracking_url_callback, disabling! %s", e)
-                        tracking_url_callback = lambda x: None
+
+                        def tracking_url_callback(x):
+                            return None
                 if err_line.find('running job') != -1:
                     # hadoop jar output
                     job_id = err_line.split('running job: ')[-1]
@@ -339,7 +344,7 @@ def run_and_track_hadoop_job(arglist, tracking_url_callback=None, env=None):
             raise HadoopJobError(message + 'Output from tasks below:\n%s' % task_failures, out, err)
 
     if tracking_url_callback is None:
-        tracking_url_callback = lambda x: None
+        def tracking_url_callback(x): return None
 
     return track_process(arglist, tracking_url_callback, env)
 
@@ -606,7 +611,6 @@ class LocalJobRunner(JobRunner):
             map_output.close()
             return
 
-        job.init_mapper()
         # run job now...
         map_output = StringIO()
         job.run_mapper(map_input, map_output)
@@ -621,7 +625,6 @@ class LocalJobRunner(JobRunner):
             combine_output.seek(0)
             reduce_input = self.group(combine_output)
 
-        job.init_reducer()
         reduce_output = job.output().open('w')
         job.run_reducer(reduce_input, reduce_output)
         reduce_output.close()
@@ -862,6 +865,7 @@ class JobTask(BaseHadoopJobTask):
                 continue
             args = list(key) + [count]
             self._incr_counter(*args)
+            self._counter_dict[key] = 0
 
     def _incr_counter(self, *args):
         """

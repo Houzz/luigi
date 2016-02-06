@@ -36,12 +36,12 @@ class DummyS3CopyToTable(luigi.contrib.redshift.S3CopyToTable):
     password = 'dummy_password'
     table = luigi.Parameter(default='dummy_table')
     columns = (
-        ('some_text', 'text'),
+        ('some_text', 'varchar(255)'),
         ('some_int', 'int'),
     )
 
-    aws_access_key_id = AWS_ACCESS_KEY
-    aws_secret_access_key = AWS_SECRET_KEY
+    aws_access_key_id = 'AWS_ACCESS_KEY'
+    aws_secret_access_key = 'AWS_SECRET_KEY'
     copy_options = ''
     prune_table = ''
     prune_column = ''
@@ -50,35 +50,19 @@ class DummyS3CopyToTable(luigi.contrib.redshift.S3CopyToTable):
     def s3_load_path(self):
         return 's3://%s/%s' % (BUCKET, KEY)
 
-class DummyS3CopyToTempTable(luigi.contrib.redshift.S3CopyToTable):
-    # Class attributes taken from `DummyPostgresImporter` in
-    # `../postgres_test.py`.
-    host = 'dummy_host'
-    database = 'dummy_database'
-    user = 'dummy_user'
-    password = 'dummy_password'
-    table = luigi.Parameter(default='stage_dummy_table')
-    columns = (
-        ('some_text', 'text'),
-        ('some_int', 'int'),
-    )
 
-    aws_access_key_id = AWS_ACCESS_KEY
-    aws_secret_access_key = AWS_SECRET_KEY
-    copy_options = ''
-    sql = ["insert into dummy_table select * from stage_dummy_table;"]
+class DummyS3CopyToTempTable(DummyS3CopyToTable):
+    # Extend/alter DummyS3CopyToTable for temp table copying
+    table = luigi.Parameter(default='stage_dummy_table')
+
+    table_type = 'TEMP'
+
     prune_date = 'current_date - 30'
     prune_column = 'dumb_date'
     prune_table = 'stage_dummy_table'
 
-    def s3_load_path(self):
-        return 's3://%s/%s' % (BUCKET, KEY)
+    queries = ["insert into dummy_table select * from stage_dummy_table;"]
 
-    def table_type(self):
-        return 'TEMP'
-
-    def queries(self):
-        return self.sql
 
 class TestS3CopyToTable(unittest.TestCase):
     @mock.patch("luigi.contrib.redshift.S3CopyToTable.copy")
@@ -99,7 +83,7 @@ class TestS3CopyToTable(unittest.TestCase):
         # returned by S3CopyToTable.output(self).
         mock_redshift_target.assert_called_with(database=task.database,
                                                 host=task.host,
-                                                update_id='DummyS3CopyToTable(table=dummy_table)',
+                                                update_id=task.task_id,
                                                 user=task.user,
                                                 table=task.table,
                                                 password=task.password)
@@ -115,6 +99,31 @@ class TestS3CopyToTable(unittest.TestCase):
                                                "from pg_table_def "
                                                "where tablename = %s limit 1",
                                                (task.table,))
+
+        return
+
+    @mock.patch("luigi.contrib.redshift.S3CopyToTable.does_table_exist",
+                return_value=False)
+    @mock.patch("luigi.contrib.redshift.RedshiftTarget")
+    def test_s3_copy_to_missing_table(self,
+                                      mock_redshift_target,
+                                      mock_does_exist):
+        """
+        Test missing table creation
+        """
+        # Ensure `S3CopyToTable.create_table` does not throw an error.
+        task = DummyS3CopyToTable()
+        task.run()
+
+        # Make sure the cursor was successfully used to create the table in
+        # `create_table` as expected.
+        mock_cursor = (mock_redshift_target.return_value
+                                           .connect
+                                           .return_value
+                                           .cursor
+                                           .return_value)
+        assert mock_cursor.execute.call_args_list[0][0][0].startswith(
+            "CREATE  TABLE %s" % task.table)
 
         return
 
@@ -134,14 +143,14 @@ class TestS3CopyToTable(unittest.TestCase):
 
         # `mock_redshift_target` is the mocked `RedshiftTarget` object
         # returned by S3CopyToTable.output(self).
-        mock_redshift_target.assert_called_once_with(database=task.database,
-                                                host=task.host,
-                                                update_id='DummyS3CopyToTable(table=stage_dummy_table)',
-                                                user=task.user,
-                                                table=task.table,
-                                                password=task.password,
-                                                table_type='TEMP',
-                                                sql=task.sql)
+        mock_redshift_target.assert_called_once_with(
+            database=task.database,
+            host=task.host,
+            update_id=task.task_id,
+            user=task.user,
+            table=task.table,
+            password=task.password,
+        )
 
         # Check if the `S3CopyToTable.s3_load_path` class attribute was
         # successfully referenced in the `S3CopyToTable.run` method, which is
@@ -150,12 +159,12 @@ class TestS3CopyToTable(unittest.TestCase):
         mock_copy.assert_called_once_with(mock_cursor, task.s3_load_path())
 
         # Check the SQL query in `S3CopyToTable.does_table_exist`. # temp table
-        mock_cursor.execute.assert_called_once_with("select 1 as table_exists "
-                                               "from pg_table_def "
-                                               "where tablename = %s limit 1",
-                                               (task.table,))
-
-        return
+        mock_cursor.execute.assert_any_call(
+            "select 1 as table_exists "
+            "from pg_table_def "
+            "where tablename = %s limit 1",
+            (task.table,),
+        )
 
 
 class TestS3CopyToSchemaTable(unittest.TestCase):
@@ -174,10 +183,56 @@ class TestS3CopyToSchemaTable(unittest.TestCase):
                                            .return_value)
 
         # Check the SQL query in `S3CopyToTable.does_table_exist`.
-        mock_cursor.execute.assert_called_with("select 1 as table_exists "
-                                               "from information_schema.tables "
-                                               "where table_schema = %s and "
-                                               "table_name = %s limit 1",
-                                               tuple(task.table.split('.')))
+        mock_cursor.execute.assert_called_with(
+            "select 1 as table_exists "
+            "from information_schema.tables "
+            "where table_schema = %s and "
+            "table_name = %s limit 1",
+            tuple(task.table.split('.')),
+        )
 
-        return
+
+class DummyRedshiftUnloadTask(luigi.contrib.redshift.RedshiftUnloadTask):
+    # Class attributes taken from `DummyPostgresImporter` in
+    # `../postgres_test.py`.
+    host = 'dummy_host'
+    database = 'dummy_database'
+    user = 'dummy_user'
+    password = 'dummy_password'
+    table = luigi.Parameter(default='dummy_table')
+    columns = (
+        ('some_text', 'varchar(255)'),
+        ('some_int', 'int'),
+    )
+
+    aws_access_key_id = 'AWS_ACCESS_KEY'
+    aws_secret_access_key = 'AWS_SECRET_KEY'
+
+    s3_unload_path = 's3://%s/%s' % (BUCKET, KEY)
+    unload_options = "DELIMITER ',' ADDQUOTES GZIP ALLOWOVERWRITE PARALLEL OFF"
+
+    def query(self):
+        return "SELECT 'a' as col_a, current_date as col_b"
+
+
+class TestRedshiftUnloadTask(unittest.TestCase):
+    @mock.patch("luigi.contrib.redshift.RedshiftTarget")
+    def test_redshift_unload_command(self, mock_redshift_target):
+
+        task = DummyRedshiftUnloadTask()
+        task.run()
+
+        # The mocked connection cursor passed to
+        # RedshiftUnloadTask.
+        mock_cursor = (mock_redshift_target.return_value
+                                           .connect
+                                           .return_value
+                                           .cursor
+                                           .return_value)
+
+        # Check the Unload query.
+        mock_cursor.execute.assert_called_with(
+            "UNLOAD ( 'SELECT \'a\' as col_a, current_date as col_b' ) TO 's3://bucket/key' "
+            "credentials 'aws_access_key_id=AWS_ACCESS_KEY;aws_secret_access_key=AWS_SECRET_KEY' "
+            "DELIMITER ',' ADDQUOTES GZIP ALLOWOVERWRITE PARALLEL OFF;"
+        )

@@ -38,7 +38,7 @@ with open('README.rst') as fobj:
 
 install_requires = [
     'pymysql',
-    'tornado<5.0',
+    'tornado>=4.0,<5',
     'python-daemon<3.0',
 ]
 
@@ -50,11 +50,10 @@ if os.environ.get('READTHEDOCS', None) == 'True':
 
 setup(
     name='houzz_luigi',
-    version='2.0.2',
+    version='2.0.3',
     description='Workflow mgmgt + task scheduling + dependency resolution',
     long_description=long_description,
     author='Erik Bernhardsson',
-    author_email='erikbern@spotify.com',
     url='https://github.com/spotify/luigi',
     license='Apache License 2.0',
     packages=[
@@ -72,6 +71,7 @@ setup(
             'luigid = luigi.cmdline:luigid',
             'luigi-grep = luigi.tools.luigi_grep:main',
             'luigi-deps = luigi.tools.deps:main',
+            'luigi-migrate = luigi.tools.migrate:main'
         ]
     },
     install_requires=install_requires,
@@ -85,6 +85,7 @@ setup(
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
         'Topic :: System :: Monitoring',
     ],
 )

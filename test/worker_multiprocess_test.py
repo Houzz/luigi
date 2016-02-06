@@ -40,20 +40,19 @@ class DummyTask(Task):
         return old_value
 
     def run(self):
-        logging.debug("%s - setting has_run", self.task_id)
+        logging.debug("%s - setting has_run", self)
         self.has_run = True
 
 
 class MultiprocessWorkerTest(unittest.TestCase):
 
-    def setUp(self):
+    def run(self, result=None):
         self.scheduler = RemoteScheduler()
         self.scheduler.add_worker = Mock()
         self.scheduler.add_task = Mock()
-        self.worker = Worker(scheduler=self.scheduler, worker_id='X', worker_processes=2)
-
-    def tearDown(self):
-        self.worker.stop()
+        with Worker(scheduler=self.scheduler, worker_id='X', worker_processes=2) as worker:
+            self.worker = worker
+            super(MultiprocessWorkerTest, self).run(result)
 
     def gw_res(self, pending, task_id):
         return dict(n_pending_tasks=pending,
@@ -73,9 +72,9 @@ class MultiprocessWorkerTest(unittest.TestCase):
 
         self.assertTrue(self.worker.add(c))
 
-        self.scheduler.get_work = Mock(side_effect=[self.gw_res(3, str(a)),
-                                                    self.gw_res(2, str(b)),
-                                                    self.gw_res(1, str(c)),
+        self.scheduler.get_work = Mock(side_effect=[self.gw_res(3, a.task_id),
+                                                    self.gw_res(2, b.task_id),
+                                                    self.gw_res(1, c.task_id),
                                                     self.gw_res(0, None),
                                                     self.gw_res(0, None)])
 
@@ -100,9 +99,9 @@ class MultiprocessWorkerTest(unittest.TestCase):
 
         self.assertTrue(self.worker.add(c))
 
-        self.scheduler.get_work = Mock(side_effect=[self.gw_res(3, str(a)),
-                                                    self.gw_res(2, str(b)),
-                                                    self.gw_res(1, str(c)),
+        self.scheduler.get_work = Mock(side_effect=[self.gw_res(3, a.task_id),
+                                                    self.gw_res(2, b.task_id),
+                                                    self.gw_res(1, c.task_id),
                                                     self.gw_res(0, None),
                                                     self.gw_res(0, None)])
 
