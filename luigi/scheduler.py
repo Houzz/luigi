@@ -40,7 +40,7 @@ from luigi import notifications
 from luigi import parameter
 from luigi import task_history as history
 from luigi.task_status import BATCH_RUNNING, DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDED, UNKNOWN
-from luigi.task import Config
+from luigi.task import Config, task_id_str
 
 logger = logging.getLogger("luigi.server")
 
@@ -248,7 +248,7 @@ class TaskBatcher(object):
         self.aggregates = aggregate_args
 
     def task_id(self, tasks):
-        arguments = []
+        params = {}
         for task_arg, batch_arg in self.args:
             raw_vals = [task.params[task_arg] for task in tasks]
             agg_function = self.aggregates.get(task_arg)
@@ -258,10 +258,8 @@ class TaskBatcher(object):
                 return None, None
             else:
                 arg_val = raw_vals[0]
-            arguments.append((batch_arg, arg_val))
-        args_str = ', '.join('%s=%s' % arg for arg in arguments)
-        parameters = dict(arguments)
-        return '%s(%s)' % (self.family, args_str), parameters
+            params[batch_arg] = arg_val
+        return task_id_str(self.family, params), params
 
 
 class Worker(object):

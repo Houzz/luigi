@@ -672,14 +672,13 @@ class WorkerTest(unittest.TestCase):
 
         jobs = list(map(BatchRunnableJob, range(5)))
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        w = Worker(scheduler=sch, worker_id="foo")
-
-        self.assertFalse(any(job.complete() for job in jobs))
-        for job in jobs:
-            self.assertTrue(w.add(job))
-        self.assertTrue(w.run())
-        self.assertTrue(all(job.complete() for job in jobs))
-        self.assertItemsEqual(map(str, jobs), sch.task_list('DONE', ''))
+        with Worker(scheduler=sch, worker_id="foo") as worker:
+            self.assertFalse(any(job.complete() for job in jobs))
+            for job in jobs:
+                self.assertTrue(worker.add(job))
+            self.assertTrue(worker.run())
+            self.assertTrue(all(job.complete() for job in jobs))
+            self.assertItemsEqual([job.task_id for job in jobs], sch.task_list('DONE', ''))
 
     def test_run_overwrite_job_as_max_batch(self):
         complete_jobs = set()
@@ -704,16 +703,15 @@ class WorkerTest(unittest.TestCase):
                 return bool(complete_jobs) and self.val <= max(complete_jobs)
 
         sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        w = Worker(scheduler=sch, worker_id="foo")
-
-        job = OverwriteWrapper()
-        w.add(job)
-        self.assertTrue(w.run())
-        self.assertEqual({4}, complete_jobs)
-        complete = [str(job)]
-        complete.extend(map(str, job.requires()))
-        self.assertItemsEqual(complete, sch.task_list('DONE', ''))
-        self.assertTrue(job.complete())
+        with Worker(scheduler=sch, worker_id="foo") as worker:
+            job = OverwriteWrapper()
+            worker.add(job)
+            self.assertTrue(worker.run())
+            self.assertEqual({4}, complete_jobs)
+            complete = [job.task_id]
+            complete.extend([subtask.task_id for subtask in job.requires()])
+            self.assertItemsEqual(complete, sch.task_list('DONE', ''))
+            self.assertTrue(job.complete())
 
 
 class DynamicDependenciesTest(unittest.TestCase):
