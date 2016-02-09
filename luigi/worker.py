@@ -500,13 +500,6 @@ class Worker(object):
                           headline="Will not schedule task or any dependencies due to error in deps() method",
                           )
 
-    def _email_dependency_error(self, task, formatted_traceback):
-        subject = "Luigi: {task} failed scheduling. Host: {host}".format(task=task, host=self.host)
-        headline = "Will not schedule task or any dependencies due to error in deps() method"
-
-        message = notifications.format_task_error(headline, task, formatted_traceback)
-        notifications.send_error_email(subject, message, task.owner_email)
-
     def _email_unexpected_error(self, task, formatted_traceback):
         self._email_error(task, formatted_traceback,
                           subject="Luigi: Framework error while scheduling {task}. Host: {host}",
