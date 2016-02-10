@@ -1137,6 +1137,13 @@ class CentralPlannerScheduler(Scheduler):
             return {'num_tasks': len(result)}
         return result
 
+    def _first_task_display_name(self, worker):
+        task_id = worker.info.get('first_task', '')
+        if self._state.has_task(task_id):
+            return self._state.get_task(task_id).pretty_id
+        else:
+            return task_id
+
     def worker_list(self, include_running=True, **kwargs):
         self.prune()
         workers = [
@@ -1144,6 +1151,7 @@ class CentralPlannerScheduler(Scheduler):
                 name=worker.id,
                 last_active=worker.last_active,
                 started=getattr(worker, 'started', None),
+                first_task_display_name=self._first_task_display_name(worker),
                 **worker.info
             ) for worker in self._state.get_active_workers()]
         workers.sort(key=lambda worker: worker['started'], reverse=True)
