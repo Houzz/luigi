@@ -114,6 +114,7 @@ class scheduler(Config):
     record_task_history = parameter.BoolParameter(default=False)
 
     prune_on_get_work = parameter.BoolParameter(default=False)
+    prefer_newer_tasks = parameter.BoolParameter(default=False)
 
 
 def fix_time(x):
@@ -177,6 +178,14 @@ def _get_default(x, default):
         return x
     else:
         return default
+
+
+def rank_prefer_older(task):
+    return task.priority, -task.time
+
+
+def rank_prefer_newer(task):
+    return task.priority, task.time
 
 
 class Task(object):
@@ -667,6 +676,7 @@ class CentralPlannerScheduler(Scheduler):
             disable_hard_timeout=self._config.disable_hard_timeout,
             disable_window=self._config.disable_window)
         self._worker_requests = {}
+        self._rank = rank_prefer_newer if self._config.prefer_newer_tasks else rank_prefer_older
 
     def load(self):
         self._state.load()
@@ -831,15 +841,6 @@ class CentralPlannerScheduler(Scheduler):
                     for resource, amount in six.iteritems(task.resources):
                         used_resources[resource] += amount
         return used_resources
-
-    def _rank(self, task):
-        """
-        Return worker's rank function for task scheduling.
-
-        :return:
-        """
-
-        return task.priority, -task.time
 
     def _schedulable(self, task):
         if task.status != PENDING:

@@ -600,11 +600,12 @@ class CentralPlannerTest(unittest.TestCase):
         self.setTime(120)
         self.assertEqual('B', self.sch.get_work(worker='LOW_PRIO')['task_id'])
 
-    def check_task_order(self, order):
+    def check_task_order(self, order, sch=None):
+        sch = sch or self.sch
         for expected_id in order:
-            self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], expected_id)
-            self.sch.add_task(worker=WORKER, task_id=expected_id, status=DONE)
-        self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], None)
+            self.assertEqual(sch.get_work(worker=WORKER)['task_id'], expected_id)
+            sch.add_task(worker=WORKER, task_id=expected_id, status=DONE)
+        self.assertEqual(sch.get_work(worker=WORKER)['task_id'], None)
 
     def test_priorities(self):
         self.sch.add_task(worker=WORKER, task_id='A', priority=10)
@@ -635,6 +636,18 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='C', priority=10, deps=['B'])
         self.sch.add_task(worker=WORKER, task_id='D', priority=6)
         self.check_task_order(['A', 'B', 'C', 'D'])
+
+    def test_ranking_prefer_newer(self):
+        sch = CentralPlannerScheduler(prefer_newer_tasks=True)
+        sch.add_task(task_id='A', worker=WORKER)
+        sch.add_task(task_id='B', worker=WORKER)
+        self.check_task_order(['B', 'A'], sch)
+
+    def test_ranking_prefer_older(self):
+        sch = CentralPlannerScheduler(prefer_newer_tasks=False)
+        sch.add_task(task_id='A', worker=WORKER)
+        sch.add_task(task_id='B', worker=WORKER)
+        self.check_task_order(['A', 'B'], sch)
 
     def test_disable(self):
         self.sch.add_task(worker=WORKER, task_id='A')
