@@ -923,7 +923,7 @@ class CentralPlannerScheduler(Scheduler):
                 if len(task.workers) == 1 and not assistant:
                     n_unique_pending += 1
 
-            if (best_tasks and task.batchable and
+            if (in_workers and best_tasks and task.batchable and
                     self._state.get_batch(worker_id, best_tasks + [task]) is not None and
                     self._schedulable(task) and
                     self._has_resources(task.resources, greedy_resources)):

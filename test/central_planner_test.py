@@ -1068,6 +1068,17 @@ class CentralPlannerTest(unittest.TestCase):
         failed_tasks = ['DOW(d=2016-01-31)', 'DOW(d=2016-02-01)']
         self.assertItemsEqual(failed_tasks, self.sch.task_list(FAILED, ''))
 
+    def test_batch_task_does_not_batch_jobs_from_other_workers(self):
+        self.sch.add_task(worker=WORKER, task_id='DOW(d=2016-01-31)', family='DOW', params={'d': '2016-01-31'}, batchable=True, resources={'a': 1})
+        self.sch.add_task(worker='OTHER_WORKER', task_id='DOW(d=2016-02-01)', family='DOW', params={'d': '2016-02-01'}, batchable=True, resources={'a': 1})
+        self.sch.add_task_batcher(
+            worker=WORKER, family='DOW', batcher_family='DOW', batcher_args=[('d', 'd')],
+            batcher_aggregate_args={'d': 'max'},
+        )
+        done_tasks = {'DOW(d=2016-01-31)'}
+        self.check_task_order(done_tasks)
+        self.assertEqual(done_tasks, set(self.sch.task_list(DONE, '')))
+
     def test_done_batch_tasks_fall_out_of_scheduler(self):
         self.sch.add_task(worker=WORKER, task_id='DOW(d=2016-01-31)', family='DOW', params={'d': '2016-01-31'}, batchable=True)
         self.sch.add_task(worker=WORKER, task_id='DOW(d=2016-02-01)', family='DOW', params={'d': '2016-02-01'}, batchable=True)
