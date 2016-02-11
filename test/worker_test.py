@@ -713,6 +713,44 @@ class WorkerTest(unittest.TestCase):
             self.assertItemsEqual(complete, sch.task_list('DONE', ''))
             self.assertTrue(job.complete())
 
+    def test_batch_size_limit(self):
+        complete_jobs = set()
+
+        class LimitedBatchRunner(DummyTask):
+            val = luigi.Parameter()
+
+            def vals(self):
+                return map(int, self.val.split(','))
+
+            def run(self):
+                assert len(self.vals()) <= 3
+                complete_jobs.update(self.vals())
+
+            def complete(self):
+                return complete_jobs.issuperset(self.vals())
+
+        class LimitedBatchRunnableJob(DummyTask):
+            val = luigi.IntParameter()
+
+            batch_class = LimitedBatchRunner
+            batcher_aggregate_args = {'val': 'csv'}
+            max_batch_size = 3
+
+            def run(self):
+                raise RuntimeError('this should be run as a batch')
+
+            def complete(self):
+                return self.val in complete_jobs
+
+        jobs = list(map(LimitedBatchRunnableJob, range(5)))
+        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        with Worker(scheduler=sch, worker_id="foo") as worker:
+            self.assertFalse(any(job.complete() for job in jobs))
+            for job in jobs:
+                self.assertTrue(worker.add(job))
+            self.assertTrue(worker.run())
+            self.assertTrue(all(job.complete() for job in jobs))
+            self.assertItemsEqual([job.task_id for job in jobs], sch.task_list('DONE', ''))
 
 class DynamicDependenciesTest(unittest.TestCase):
     n_workers = 1

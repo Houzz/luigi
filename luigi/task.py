@@ -174,6 +174,9 @@ class Task(object):
     #: Only works when using multiple workers.
     worker_timeout = None
 
+    #: Maximum number of jobs that can be batched together
+    max_batch_size = None
+
     #: Owner of the task: it is used for sending out error email in addition to
     #: the one defined in luigi config
     owner = None

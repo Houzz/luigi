@@ -176,13 +176,14 @@ class RemoteScheduler(Scheduler):
         })
 
     def add_task_batcher(self, worker, family, batcher_family, batcher_args,
-                         batcher_aggregate_args):
+                         batcher_aggregate_args, max_batch_size=None):
         self._request('/api/add_task_batcher', {
             'worker': worker,
             'family': family,
             'batcher_family': batcher_family,
             'batcher_args': batcher_args,
             'batcher_aggregate_args': batcher_aggregate_args,
+            'max_batch_size': max_batch_size,
         })
 
     def get_work(self, worker, host=None, assistant=False, current_tasks=None):

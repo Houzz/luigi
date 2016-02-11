@@ -1057,6 +1057,28 @@ class CentralPlannerTest(unittest.TestCase):
         self.test_multiple_args_aggregate_args()
         self.assertTrue(all(task['status'] == DONE for task in self.sch.task_list('', '').values()))
 
+    def test_batch_task_size_limit(self):
+        for i in range(9):
+            self.sch.add_task(worker=WORKER, task_id='A(a=%i)' % i, family='A', params={'a': str(i)}, batchable=True)
+        self.sch.add_task_batcher(
+            worker=WORKER, family='A', batcher_family='As', batcher_args=[('a', 'a')],
+            batcher_aggregate_args={'a': 'csv'}, max_batch_size=3,
+        )
+        self.check_task_order([self.task_id_str('As', {'a': v}) for v in ['0,1,2', '3,4,5', '6,7,8']])
+
+    def test_batch_task_size_limit_date_range(self):
+        dates = ['2016-02-06', '2016-02-04', '2016-02-03', '2016-02-05']
+        for date in dates:
+            self.sch.add_task(worker=WORKER, task_id='A(dt=%s)' % date, params={'dt': date}, family='A', batchable=True)
+        self.sch.add_task_batcher(
+            worker=WORKER, family='A', batcher_family='As', batcher_args=[('dt', 'date_range')],
+            batcher_aggregate_args={'dt': 'range'}, max_batch_size=3,
+        )
+        self.check_task_order([
+            self.task_id_str('As', {'date_range': '2016-02-04-2016-02-06'}),
+            'A(dt=2016-02-03)',
+        ])
+
     def test_daily_overwrite_task(self):
         self.sch.add_task(worker=WORKER, task_id='DOW(d=2016-01-31)', family='DOW', params={'d': '2016-01-31'}, batchable=True)
         self.sch.add_task(worker=WORKER, task_id='DOW(d=2016-02-01)', family='DOW', params={'d': '2016-02-01'}, batchable=True)

@@ -250,12 +250,35 @@ class Task(object):
 
 
 class TaskBatcher(object):
-    def __init__(self, family, args, aggregate_args):
+    def __init__(self, family, args, aggregate_args, max_batch_size):
         self.family = family
         self.args = args
         self.aggregates = aggregate_args
+        self.max_batch_size = max_batch_size
+
+    def _valid_batch_size(self, tasks):
+        if self.max_batch_size is None:
+            return True
+        elif len(tasks) > self.max_batch_size:
+            return False
+        elif 'range' in self.aggregates.values():
+            for arg, agg_type in self.aggregates.items():
+                if agg_type == 'range':
+                    params = [task.params[arg] for task in tasks]
+                    low_bound, up_bound = min(params), max(params)
+                    try:
+                        low_bound = datetime.datetime.strptime(low_bound, '%Y-%m-%d')
+                        up_bound = datetime.datetime.strptime(up_bound, '%Y-%m-%d')
+                    except ValueError:
+                        continue
+                    diff = (up_bound - low_bound).days + 1
+                    if diff > self.max_batch_size:
+                        return False
+        return True
 
     def task_id(self, tasks):
+        if not self._valid_batch_size(tasks):
+            return None, None
         params = {}
         for task_arg, batch_arg in self.args:
             raw_vals = [task.params[task_arg] for task in tasks]
@@ -486,8 +509,8 @@ class SimpleTaskState(object):
     def get_batcher(self, worker, family):
         return self._batch_tasks.get((worker, family))
 
-    def set_batcher(self, worker, family, batcher_family, batcher_args, batcher_aggregate_args):
-        batcher = TaskBatcher(batcher_family, batcher_args, batcher_aggregate_args)
+    def set_batcher(self, worker, family, batcher_family, batcher_args, batcher_aggregate_args, max_batch_size):
+        batcher = TaskBatcher(batcher_family, batcher_args, batcher_aggregate_args, max_batch_size)
         self._batch_tasks[(worker, family)] = batcher
         return batcher
 
@@ -732,8 +755,8 @@ class CentralPlannerScheduler(Scheduler):
             if t is not None and prio > t.priority:
                 self._update_priority(t, prio, worker)
 
-    def add_task_batcher(self, worker, family, batcher_family, batcher_args, batcher_aggregate_args):
-        self._state.set_batcher(worker, family, batcher_family, batcher_args, batcher_aggregate_args)
+    def add_task_batcher(self, worker, family, batcher_family, batcher_args, batcher_aggregate_args, max_batch_size=None):
+        self._state.set_batcher(worker, family, batcher_family, batcher_args, batcher_aggregate_args, max_batch_size)
 
     def add_task(self, task_id=None, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,

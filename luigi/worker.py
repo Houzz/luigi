@@ -638,6 +638,7 @@ class Worker(object):
                 batcher_family=batch_class.task_family,
                 batcher_args=task.get_batcher_args(),
                 batcher_aggregate_args=task.get_batcher_aggregate_args(),
+                max_batch_size=task.max_batch_size,
             )
             self._scheduled_batches.add(task.task_family)
 
