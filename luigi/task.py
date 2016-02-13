@@ -358,6 +358,10 @@ class Task(object):
 
         return params_str
 
+    def dirty_params_str(self):
+        return json.dumps(
+            self.to_str_params(only_significant=True), sort_keys=True, separators=',:')
+
     def clone(self, cls=None, **kwargs):
         """
         Creates a new instance from an existing instance where some of the args have changed.
