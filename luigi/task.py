@@ -42,7 +42,8 @@ from luigi.task_register import Register
 Parameter = parameter.Parameter
 logger = logging.getLogger('luigi-interface')
 
-DIRTY_QUERY = '''INSERT INTO `%s` (task_id, created) VALUES(%%s, NOW())
+DIRTY_QUERY = '''INSERT INTO `%s` (task_id, family, parameters, created)
+    VALUES(%%s, %%s, %%s, NOW())
     ON DUPLICATE KEY UPDATE created=NOW()'''
 CLEAN_QUERY = "DELETE FROM `%s` where task_id=%%s and created=%%s LIMIT 1"
 
@@ -580,8 +581,7 @@ class Task(object):
                 rows = cursor.execute(sql)
                 dirty_created = cursor.fetchone()[0] if rows > 0 else None
 
-        if dirty_created is not None:
-            self._dirty_created = dirty_created
+        self._dirty_created = dirty_created
         return dirty_created is not None
 
     def _dirty_jobs_table(self):
@@ -605,7 +605,8 @@ class Task(object):
             return
 
         with self._dirty_jobs_db_cursor() as cursor:
-            cursor.execute(DIRTY_QUERY % table, (self.task_id,))
+            cursor.execute(DIRTY_QUERY % table, (
+                self.task_id, self.task_family, self.dirty_params_str))
 
     def on_failure(self, exception):
         """
