@@ -195,6 +195,7 @@ def _schedule_and_run(tasks, worker_scheduler_factory=None, override_defaults=No
         for t in tasks:
             success &= worker.add(t, env_params.parallel_scheduling)
         logger.info('Done scheduling tasks')
+        luigi_state.set_state(luigi_state.RUNNING)
         if env_params.workers != 0:
             success &= worker.run()
     logger.info(execution_summary.summary(worker))
