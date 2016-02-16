@@ -559,14 +559,12 @@ class SimpleTaskState(object):
         if new_status == RUNNING and batch:
             self._running_batches[task.id] = set(batch)
         elif task.id in self._running_batches and new_status != RUNNING:
+            subtask_status = FAILED if new_status == DISABLED else new_status
             for subtask_id in self._running_batches.pop(task.id):
                 subtask = self.get_task(subtask_id)
-                if new_status == FAILED:
+                if subtask_status == FAILED:
                     subtask.retry = time.time() + config.retry_delay
-                self.set_status(subtask, new_status, config)
-
-        if task.id in self._running_batches and new_status in (DONE, FAILED):
-            del self._running_batches[task.id]
+                self.set_status(subtask, subtask_status, config)
 
         self._status_tasks[task.status].pop(task.id)
         self._status_tasks[new_status][task.id] = task

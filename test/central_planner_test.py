@@ -1103,6 +1103,27 @@ class CentralPlannerTest(unittest.TestCase):
         failed_tasks = ['DOW(d=2016-01-31)', 'DOW(d=2016-02-01)']
         self.assertItemsEqual(failed_tasks, self.sch.task_list(FAILED, ''))
 
+    def test_daily_overwrite_task_auto_disable(self):
+        sch = CentralPlannerScheduler(disable_failures=2, disable_persist=10**8, disable_window=10**8)
+        sch.add_task_batcher(
+            worker=WORKER, family='A', batcher_family='A', batcher_args=[('i', 'i')],
+            batcher_aggregate_args={'i': 'max'},
+        )
+        all_tasks = [self.task_id_str('A', {'i': str(i)}) for i in range(5)]
+        batch_running = set(all_tasks[:-1])
+
+        for _ in range(2):
+            for i, task_id in enumerate(all_tasks):
+                sch.add_task(worker=WORKER, task_id=task_id, family='A', params={'i': str(i)}, batchable=True, status=PENDING)
+            running_task = self.task_id_str('A', {'i': '4'})
+            self.assertEqual(running_task, sch.get_work(worker=WORKER)['task_id'])
+            self.assertEqual(batch_running, set(sch.task_list(BATCH_RUNNING, '')))
+            sch.add_task(worker=WORKER, task_id=running_task, status=FAILED)
+            self.assertEqual(set(), set(sch.task_list(BATCH_RUNNING, '')))
+
+        self.assertEqual(set(all_tasks), set(sch.task_list(DISABLED, '')))
+        self.assertTrue(all(task['re_enable_able'] for task in sch.task_list(DISABLED, '').values()))
+
     def test_batch_task_does_not_batch_jobs_from_other_workers(self):
         self.sch.add_task(worker=WORKER, task_id='DOW(d=2016-01-31)', family='DOW', params={'d': '2016-01-31'}, batchable=True, resources={'a': 1})
         self.sch.add_task(worker='OTHER_WORKER', task_id='DOW(d=2016-02-01)', family='DOW', params={'d': '2016-02-01'}, batchable=True, resources={'a': 1})
