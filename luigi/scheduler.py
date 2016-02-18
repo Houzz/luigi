@@ -780,7 +780,7 @@ class CentralPlannerScheduler(Scheduler):
             task.family = family
         if not getattr(task, 'module', None):
             task.module = module
-        if not task.params:
+        if params or not task.params:
             task.params = _get_default(params, {})
 
         if tracking_url is not None or task.status != RUNNING:
