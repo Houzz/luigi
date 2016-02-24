@@ -882,6 +882,29 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='A')
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
 
+    def test_disable_worker_can_finish_task(self, new_status=DONE, new_deps=[]):
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
+
+        self.sch.disable_worker(worker=WORKER)
+        self.assertEqual(['A'], self.sch.task_list('RUNNING', '').keys())
+
+        for dep in new_deps:
+            self.sch.add_task(worker=WORKER, task_id=dep, status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', status=new_status, new_deps=new_deps)
+        self.assertFalse(self.sch.task_list('RUNNING', '').keys())
+        self.assertEqual(['A'], self.sch.task_list(new_status, '').keys())
+
+        self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
+        for task in self.sch.task_list('', '').values():
+            self.assertFalse(task['workers'])
+
+    def test_disable_worker_can_fail_task(self):
+        self.test_disable_worker_can_finish_task(new_status=FAILED)
+
+    def test_disable_worker_stays_disabled_on_new_deps(self):
+        self.test_disable_worker_can_finish_task(new_status='PENDING', new_deps=['B', 'C'])
+
     def test_task_list_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for c in 'ABCD':

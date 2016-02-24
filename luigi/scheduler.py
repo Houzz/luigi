@@ -776,12 +776,20 @@ class CentralPlannerScheduler(Scheduler):
         * update priority when needed
         """
         worker_id = kwargs['worker']
-        if not self.update(worker_id):
-            return
+        worker_enabled = self.update(worker_id)
 
-        task = self._state.get_task(task_id, setdefault=self._make_task(
-            task_id=task_id, status=PENDING, deps=deps, resources=resources,
-            priority=priority, family=family, module=module, params=params))
+        if worker_enabled:
+            _default_task = self._make_task(
+                task_id=task_id, status=PENDING, deps=deps, resources=resources,
+                priority=priority, family=family, module=module, params=params,
+            )
+        else:
+            _default_task = None
+
+        task = self._state.get_task(task_id, setdefault=_default_task)
+
+        if task is None or (task.status != RUNNING and not worker_enabled):
+            return
 
         # for setting priority, we'll sometimes create tasks with unset family and params
         if not task.family:
@@ -823,7 +831,7 @@ class CentralPlannerScheduler(Scheduler):
         if resources is not None:
             task.resources = resources
 
-        if not assistant:
+        if worker_enabled and not assistant:
             task.stakeholders.add(worker_id)
 
             # Task dependencies might not exist yet. Let's create dummy tasks for them for now.
@@ -834,7 +842,7 @@ class CentralPlannerScheduler(Scheduler):
 
         self._update_priority(task, priority, worker_id)
 
-        if runnable and status != FAILED:
+        if runnable and status != FAILED and worker_enabled:
             task.workers.add(worker_id)
             self._state.get_worker(worker_id).tasks.add(task)
             task.runnable = runnable
