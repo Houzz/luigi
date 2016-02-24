@@ -307,6 +307,7 @@ class Worker(object):
         self.started = time.time()  # seconds since epoch
         self.tasks = set()  # task objects
         self.info = {}
+        self.disabled = False
 
     def add_info(self, info):
         self.info.update(info)
@@ -652,6 +653,8 @@ class SimpleTaskState(object):
             if remove_stakeholders:
                 task.stakeholders.difference_update(workers)
             task.workers.difference_update(workers)
+        for worker in workers:
+            self.get_worker(worker).disabled = True
 
     def get_necessary_tasks(self):
         necessary_tasks = set()
@@ -742,6 +745,7 @@ class CentralPlannerScheduler(Scheduler):
         """
         worker = self._state.get_worker(worker_id)
         worker.update(worker_reference, get_work=get_work)
+        return not getattr(worker, 'disabled', False)
 
     def _update_priority(self, task, prio, worker):
         """
@@ -772,7 +776,8 @@ class CentralPlannerScheduler(Scheduler):
         * update priority when needed
         """
         worker_id = kwargs['worker']
-        self.update(worker_id)
+        if not self.update(worker_id):
+            return
 
         task = self._state.get_task(task_id, setdefault=self._make_task(
             task_id=task_id, status=PENDING, deps=deps, resources=resources,

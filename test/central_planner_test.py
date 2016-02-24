@@ -877,6 +877,11 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='other_worker', task_id='B')
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
 
+    def test_disable_worker_cannot_continue_scheduling(self):
+        self.sch.disable_worker(worker=WORKER)
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
+
     def test_task_list_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for c in 'ABCD':
