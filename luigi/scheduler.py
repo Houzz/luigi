@@ -202,6 +202,7 @@ class Task(object):
             self.deps = set(deps)
         self.status = status  # PENDING, RUNNING, FAILED or DONE
         self.time = time.time()  # Timestamp when task was first added
+        self.updated = self.time
         self.retry = None
         self.remove = None
         self.worker_running = None  # the worker id that is currently running the task or None
@@ -566,9 +567,11 @@ class SimpleTaskState(object):
                     subtask.retry = time.time() + config.retry_delay
                 self.set_status(subtask, subtask_status, config)
 
-        self._status_tasks[task.status].pop(task.id)
-        self._status_tasks[new_status][task.id] = task
-        task.status = new_status
+        if new_status != task.status:
+            self._status_tasks[task.status].pop(task.id)
+            self._status_tasks[new_status][task.id] = task
+            task.status = new_status
+            task.updated = time.time()
 
     def fail_dead_worker_task(self, task, config, assistants):
         # If a running worker disconnects, tag all its jobs as FAILED and subject it to the same retry logic
@@ -1045,6 +1048,7 @@ class CentralPlannerScheduler(Scheduler):
             'worker_running': task.worker_running,
             'time_running': getattr(task, "time_running", None),
             'start_time': task.time,
+            'last_updated': getattr(task, "updated", task.time),
             'params': task.params,
             'name': task.family,
             'priority': task.priority,
