@@ -645,14 +645,16 @@ class SimpleTaskState(object):
         # Mark workers as inactive
         for worker in delete_workers:
             self._active_workers.pop(worker)
-        self.disable_workers(delete_workers)
+        self._remove_workers_from_tasks(delete_workers)
 
-    def disable_workers(self, workers, remove_stakeholders=True):
-        # remove workers from tasks
+    def _remove_workers_from_tasks(self, workers, remove_stakeholders=True):
         for task in self.get_active_tasks():
             if remove_stakeholders:
                 task.stakeholders.difference_update(workers)
             task.workers.difference_update(workers)
+
+    def disable_workers(self, workers):
+        self._remove_workers_from_tasks(workers, remove_stakeholders=False)
         for worker in workers:
             self.get_worker(worker).disabled = True
 
@@ -851,7 +853,7 @@ class CentralPlannerScheduler(Scheduler):
         self._state.get_worker(worker).add_info(info)
 
     def disable_worker(self, worker):
-        self._state.disable_workers({worker}, remove_stakeholders=False)
+        self._state.disable_workers({worker})
 
     def update_resources(self, resources=None):
         if resources is None:

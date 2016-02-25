@@ -905,6 +905,15 @@ class CentralPlannerTest(unittest.TestCase):
     def test_disable_worker_stays_disabled_on_new_deps(self):
         self.test_disable_worker_can_finish_task(new_status='PENDING', new_deps=['B', 'C'])
 
+    def test_prune_worker(self):
+        self.setTime(1)
+        self.sch.add_worker(worker=WORKER, info={})
+        self.setTime(10000)
+        self.sch.prune()
+        self.setTime(20000)
+        self.sch.prune()
+        self.assertFalse(self.sch.worker_list())
+
     def test_task_list_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for c in 'ABCD':
