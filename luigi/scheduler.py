@@ -22,6 +22,7 @@ See :doc:`/central_scheduler` for more info.
 """
 
 import collections
+
 try:
     import cPickle as pickle
 except ImportError:
@@ -31,6 +32,7 @@ import functools
 import itertools
 import logging
 import os
+import re
 import time
 
 from luigi import six
@@ -80,6 +82,8 @@ TASKS = 'tasks'
 ACTIVE_WORKERS = 'active_workers'
 BATCH_TASKS = 'batch_tasks'
 RUNNING_BATCHES = 'running_batches'
+
+TASK_FAMILY_RE = re.compile(r'([^(_]+)[(_]')
 
 AGGREGATE_FUNCTIONS = {
     'csv': ','.join,
@@ -1115,8 +1119,9 @@ class CentralPlannerScheduler(Scheduler):
 
                 # NOTE : If a dependency is missing from self._state there is no way to deduce the
                 #        task family and parameters.
-
-                family, params = UNKNOWN, {}
+                family_match = TASK_FAMILY_RE.match(task_id)
+                family = family_match.group(1) if family_match else UNKNOWN
+                params = {'task_id': task_id}
                 serialized[task_id] = {
                     'deps': [],
                     'status': UNKNOWN,
