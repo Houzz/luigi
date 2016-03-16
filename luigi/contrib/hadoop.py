@@ -415,7 +415,7 @@ class HadoopJobRunner(JobRunner):
         self.end_job_with_atomic_move_dir = end_job_with_atomic_move_dir
         self.tmp_dir = False
 
-    def run_job(self, job, tracking_url_callback=None, package_binary=None):
+    def run_job(self, job, tracking_url_callback=None):
         packages = [luigi] + self.modules + job.extra_modules() + list(_attached_packages)
 
         # find the module containing the job
@@ -444,7 +444,7 @@ class HadoopJobRunner(JobRunner):
         # build arguments
         config = configuration.get_config()
         python_executable = config.get('hadoop', 'python-executable', 'python')
-        runner_arg = 'mrrunner.pex' if package_binary else 'mrrunner.py'
+        runner_arg = 'mrrunner.pex' if job.package_binary else 'mrrunner.py'
         command = '{0} {1} {{step}}'.format(python_executable, runner_arg)
         map_cmd = command.format(step='map')
         cmb_cmd = command.format(step='combiner')
@@ -504,9 +504,9 @@ class HadoopJobRunner(JobRunner):
             arglist += ['-combiner', cmb_cmd]
         if job.reducer != NotImplemented:
             arglist += ['-reducer', red_cmd]
-        packages_fn = 'mrrunner.pex' if package_binary else 'packages.tar'
+        packages_fn = 'mrrunner.pex' if job.package_binary else 'packages.tar'
         files = [
-            mrrunner if not package_binary else None,
+            mrrunner if not job.package_binary else None,
             os.path.join(self.tmp_dir, packages_fn),
             os.path.join(self.tmp_dir, 'job-instance.pickle'),
         ]
@@ -531,8 +531,8 @@ class HadoopJobRunner(JobRunner):
         arglist += ['-output', output_hadoop]
 
         # submit job
-        if package_binary:
-            shutil.copy(package_binary, os.path.join(self.tmp_dir, 'mrrunner.pex'))
+        if job.package_binary:
+            shutil.copy(job.package_binary, os.path.join(self.tmp_dir, 'mrrunner.pex'))
         else:
             create_packages_archive(packages, os.path.join(self.tmp_dir, 'packages.tar'))
 
@@ -701,7 +701,6 @@ class BaseHadoopJobTask(luigi.Task):
             self.job_runner().run_job(
                 self,
                 tracking_url_callback=tracking_url_callback,
-                package_binary=self.package_binary,
             )
         except TypeError as ex:
             if 'unexpected keyword argument' not in ex.message:
