@@ -51,7 +51,10 @@ def fix_paths(job):
                 logger.info('Using temp path: %s for path %s', y.path, x.path)
                 args.append(y.path)
         else:
-            args.append(str(x))
+            try:
+                args.append(x.path)
+            except AttributeError:
+                args.append(str(x))
 
     return (tmp_files, args)
 
