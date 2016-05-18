@@ -28,6 +28,7 @@ from helpers import unittest
 from luigi import six
 
 import luigi
+import luigi.cmdline
 from luigi.mock import MockTarget
 
 
@@ -132,9 +133,9 @@ class CmdlineTest(unittest.TestCase):
     @mock.patch("luigi.interface.setup_interface_logging")
     def test_cmdline_logger(self, setup_mock, warn):
         with mock.patch("luigi.interface.core") as env_params:
-            env_params.return_value.logging_conf_file = None
+            env_params.return_value.logging_conf_file = ''
             luigi.run(['SomeTask', '--n', '7', '--local-scheduler', '--no-lock'])
-            self.assertEqual([mock.call(None)], setup_mock.call_args_list)
+            self.assertEqual([mock.call('')], setup_mock.call_args_list)
 
         with mock.patch("luigi.configuration.get_config") as getconf:
             getconf.return_value.get.side_effect = ConfigParser.NoOptionError(section='foo', option='bar')
@@ -152,6 +153,43 @@ class CmdlineTest(unittest.TestCase):
     @mock.patch('argparse.ArgumentParser.print_usage')
     def test_no_task(self, print_usage):
         self.assertRaises(SystemExit, luigi.run, ['--local-scheduler', '--no-lock'])
+
+    def test_luigid_logging_conf(self):
+        with mock.patch('luigi.server.run') as server_run, \
+                mock.patch('logging.config.fileConfig') as fileConfig:
+            luigi.cmdline.luigid([])
+            self.assertTrue(server_run.called)
+            # the default test configuration specifies a logging conf file
+            fileConfig.assert_called_with("test/testconfig/logging.cfg")
+
+    def test_luigid_no_configure_logging(self):
+        with mock.patch('luigi.server.run') as server_run, \
+                mock.patch('logging.basicConfig') as basicConfig, \
+                mock.patch('luigi.configuration.get_config') as get_config:
+            get_config.return_value.getboolean.return_value = True  # no_configure_logging=True
+            luigi.cmdline.luigid([])
+            self.assertTrue(server_run.called)
+            self.assertTrue(basicConfig.called)
+
+    def test_luigid_no_logging_conf(self):
+        with mock.patch('luigi.server.run') as server_run, \
+                mock.patch('logging.basicConfig') as basicConfig, \
+                mock.patch('luigi.configuration.get_config') as get_config:
+            get_config.return_value.getboolean.return_value = False  # no_configure_logging=False
+            get_config.return_value.get.return_value = None  # logging_conf_file=None
+            luigi.cmdline.luigid([])
+            self.assertTrue(server_run.called)
+            self.assertTrue(basicConfig.called)
+
+    def test_luigid_missing_logging_conf(self):
+        with mock.patch('luigi.server.run') as server_run, \
+                mock.patch('logging.basicConfig') as basicConfig, \
+                mock.patch('luigi.configuration.get_config') as get_config:
+            get_config.return_value.getboolean.return_value = False  # no_configure_logging=False
+            get_config.return_value.get.return_value = "nonexistent.cfg"  # logging_conf_file=None
+            self.assertRaises(Exception, luigi.cmdline.luigid, [])
+            self.assertFalse(server_run.called)
+            self.assertFalse(basicConfig.called)
 
 
 class InvokeOverCmdlineTest(unittest.TestCase):

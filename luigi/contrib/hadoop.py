@@ -49,6 +49,7 @@ from luigi import six
 from luigi import configuration
 import luigi
 import luigi.task
+import luigi.contrib.gcs
 import luigi.contrib.hdfs
 import luigi.s3
 from luigi import mrrunner
@@ -401,7 +402,7 @@ class HadoopJobRunner(JobRunner):
     def __init__(self, streaming_jar, modules=None, streaming_args=None,
                  libjars=None, libjars_in_hdfs=None, jobconfs=None,
                  input_format=None, output_format=None,
-                 end_job_with_atomic_move_dir=True):
+                 end_job_with_atomic_move_dir=True, archives=None):
         def get(x, default):
             return x is not None and x or default
         self.streaming_jar = streaming_jar
@@ -409,6 +410,7 @@ class HadoopJobRunner(JobRunner):
         self.streaming_args = get(streaming_args, [])
         self.libjars = get(libjars, [])
         self.libjars_in_hdfs = get(libjars_in_hdfs, [])
+        self.archives = get(archives, [])
         self.jobconfs = get(jobconfs, {})
         self.input_format = input_format
         self.output_format = output_format
@@ -416,6 +418,10 @@ class HadoopJobRunner(JobRunner):
         self.tmp_dir = False
 
     def run_job(self, job, tracking_url_callback=None):
+        if tracking_url_callback is not None:
+            warnings.warn("tracking_url_callback argument is deprecated, task.set_tracking_url is "
+                          "used instead.", DeprecationWarning)
+
         packages = [luigi] + self.modules + job.extra_modules() + list(_attached_packages)
 
         # find the module containing the job
@@ -453,9 +459,11 @@ class HadoopJobRunner(JobRunner):
         output_final = job.output().path
         # atomic output: replace output with a temporary work directory
         if self.end_job_with_atomic_move_dir:
-            if isinstance(job.output(), luigi.s3.S3FlagTarget):
+            illegal_targets = (
+                luigi.s3.S3FlagTarget, luigi.contrib.gcs.GCSFlagTarget)
+            if isinstance(job.output(), illegal_targets):
                 raise TypeError("end_job_with_atomic_move_dir is not supported"
-                                " for S3FlagTarget")
+                                " for {}".format(illegal_targets))
             output_hadoop = '{output}-temp-{time}'.format(
                 output=output_final,
                 time=datetime.datetime.now().isoformat().replace(':', '-'))
@@ -475,6 +483,10 @@ class HadoopJobRunner(JobRunner):
 
         if libjars:
             arglist += ['-libjars', ','.join(libjars)]
+
+        # 'archives' is also a generic option
+        if self.archives:
+            arglist += ['-archives', ','.join(self.archives)]
 
         # Add static files and directories
         extra_files = get_extra_files(job.extra_files())
@@ -519,15 +531,23 @@ class HadoopJobRunner(JobRunner):
         if self.input_format:
             arglist += ['-inputformat', self.input_format]
 
+        allowed_input_targets = (
+            luigi.contrib.hdfs.HdfsTarget,
+            luigi.s3.S3Target,
+            luigi.contrib.gcs.GCSTarget)
         for target in luigi.task.flatten(job.input_hadoop()):
-            if not isinstance(target, luigi.contrib.hdfs.HdfsTarget) \
-                    and not isinstance(target, luigi.s3.S3Target):
-                raise TypeError('target must be an HdfsTarget or S3Target')
+            if not isinstance(target, allowed_input_targets):
+                raise TypeError('target must one of: {}'.format(
+                    allowed_input_targets))
             arglist += ['-input', target.path]
 
-        if not isinstance(job.output(), luigi.contrib.hdfs.HdfsTarget) \
-                and not isinstance(job.output(), luigi.s3.S3FlagTarget):
-            raise TypeError('output must be an HdfsTarget or S3FlagTarget')
+        allowed_output_targets = (
+            luigi.contrib.hdfs.HdfsTarget,
+            luigi.s3.S3FlagTarget,
+            luigi.contrib.gcs.GCSFlagTarget)
+        if not isinstance(job.output(), allowed_output_targets):
+            raise TypeError('output must be one of: {}'.format(
+                allowed_output_targets))
         arglist += ['-output', output_hadoop]
 
         # submit job
@@ -538,7 +558,7 @@ class HadoopJobRunner(JobRunner):
 
         job.dump(self.tmp_dir)
 
-        run_and_track_hadoop_job(arglist, tracking_url_callback=tracking_url_callback)
+        run_and_track_hadoop_job(arglist, tracking_url_callback=job.set_tracking_url)
 
         if self.end_job_with_atomic_move_dir:
             luigi.contrib.hdfs.HdfsTarget(output_hadoop).move_dir(output_final)
@@ -687,7 +707,7 @@ class BaseHadoopJobTask(luigi.Task):
     # available formats are "python" and "json".
     data_interchange_format = "python"
 
-    def run(self, tracking_url_callback=None):
+    def run(self):
         # The best solution is to store them as lazy `cached_property`, but it
         # has extraneous dependency. And `property` is slow (need to be
         # calculated every time when called), so we save them as attributes
@@ -697,15 +717,7 @@ class BaseHadoopJobTask(luigi.Task):
         self.deserialize = DataInterchange[self.data_interchange_format]['deserialize']
 
         self.init_local()
-        try:
-            self.job_runner().run_job(
-                self,
-                tracking_url_callback=tracking_url_callback,
-            )
-        except TypeError as ex:
-            if 'unexpected keyword argument' not in ex.message:
-                raise
-            self.job_runner().run_job(self)
+        self.job_runner().run_job(self)
 
     def requires_local(self):
         """
@@ -929,6 +941,11 @@ class JobTask(BaseHadoopJobTask):
         """
         Dump instance to file.
         """
+        _set_tracking_url = self.set_tracking_url
+        self.set_tracking_url = None
+        _set_status_message = self.set_status_message
+        self.set_status_message = None
+
         file_name = os.path.join(directory, 'job-instance.pickle')
         if self.__module__ == '__main__':
             d = pickle.dumps(self)
@@ -938,6 +955,9 @@ class JobTask(BaseHadoopJobTask):
 
         else:
             pickle.dump(self, open(file_name, "wb"))
+
+        self.set_tracking_url = _set_tracking_url
+        self.set_status_message = _set_status_message
 
     def _map_input(self, input_stream):
         """

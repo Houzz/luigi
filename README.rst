@@ -83,7 +83,7 @@ Dependency graph example
 ------------------------
 
 Just to give you an idea of what Luigi does, this is a screen shot from
-something we are running in production. Using Luigi's visualizer, we get
+something we are running in production. Using Luigi's visualiser, we get
 a nice visual overview of the dependency graph of the workflow. Each
 node represents a task which has to be run. Green tasks are already
 completed whereas yellow tasks are yet to be run. Most of these tasks
@@ -137,6 +137,11 @@ or held presentations about Luigi:
 * `Treasure Data <http://blog.treasuredata.com/blog/2015/02/25/managing-the-data-pipeline-with-git-luigi/>`_
 * `Growth Intelligence <http://www.slideshare.net/growthintel/a-beginners-guide-to-building-data-pipelines-with-luigi>`_
 * `AdRoll <http://tech.adroll.com/blog/data/2015/09/22/data-pipelines-docker.html>`_
+* `Schibsted <http://www.schibsted.com/>`_
+* `17zuoye <https://speakerdeck.com/mvj3/luiti-an-offline-task-management-framework>`_
+* `enbrite.ly <http://enbrite.ly/>`_
+* `Dow Jones / The Wall Street Journal <http://wsj.com>`_
+* `Hotels.com <https://hotels.com>`_
 
 We're more than happy to have your company added here. Just send a PR on GitHub.
 

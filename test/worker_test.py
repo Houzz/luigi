@@ -34,6 +34,7 @@ from luigi import ExternalTask, RemoteScheduler, Task
 from luigi.mock import MockTarget, MockFileSystem
 from luigi.scheduler import CentralPlannerScheduler
 from luigi.worker import Worker
+from luigi.rpc import RPCError
 from luigi import six
 from luigi.cmdline import luigi_run
 
@@ -221,7 +222,52 @@ class WorkerTest(unittest.TestCase):
         self.assertFalse(a.has_run)
         self.assertFalse(b.has_run)
 
-    def test_tracking_url(self):
+    def test_externalized_dep(self):
+        class A(Task):
+            has_run = False
+
+            def run(self):
+                self.has_run = True
+
+            def complete(self):
+                return self.has_run
+        a = A()
+
+        class B(A):
+            def requires(self):
+                return luigi.task.externalize(a)
+        b = B()
+
+        self.assertTrue(self.w.add(b))
+        self.assertTrue(self.w.run())
+
+        self.assertFalse(a.has_run)
+        self.assertFalse(b.has_run)
+
+    def test_legacy_externalized_dep(self):
+        class A(Task):
+            has_run = False
+
+            def run(self):
+                self.has_run = True
+
+            def complete(self):
+                return self.has_run
+        a = A()
+        a.run = NotImplemented
+
+        class B(A):
+            def requires(self):
+                return a
+        b = B()
+
+        self.assertTrue(self.w.add(b))
+        self.assertTrue(self.w.run())
+
+        self.assertFalse(a.has_run)
+        self.assertFalse(b.has_run)
+
+    def test_tracking_url_deprecated(self):
         tracking_url = 'http://test_url.com/'
 
         class A(Task):
@@ -242,7 +288,7 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(1, len(tasks))
         self.assertEqual(tracking_url, tasks[a.task_id]['tracking_url'])
 
-    def test_type_error_in_tracking_run(self):
+    def test_type_error_in_tracking_run_deprecated(self):
         class A(Task):
             num_runs = 0
 
@@ -259,6 +305,26 @@ class WorkerTest(unittest.TestCase):
 
         # Should only run and fail once, not retry because of the type error
         self.assertEqual(1, a.num_runs)
+
+    def test_tracking_url(self):
+        tracking_url = 'http://test_url.com/'
+
+        class A(Task):
+            has_run = False
+
+            def complete(self):
+                return self.has_run
+
+            def run(self):
+                self.set_tracking_url(tracking_url)
+                self.has_run = True
+
+        a = A()
+        self.assertTrue(self.w.add(a))
+        self.assertTrue(self.w.run())
+        tasks = self.sch.task_list('DONE', '')
+        self.assertEqual(1, len(tasks))
+        self.assertEqual(tracking_url, tasks[a.task_id]['tracking_url'])
 
     def test_fail(self):
         class CustomException(BaseException):
@@ -877,10 +943,14 @@ class WorkerEmailTest(LuigiTestCase):
         a = A()
         self.assertEqual(emails, [])
         with Worker(scheduler=sch) as worker:
-            worker.add(a)
-            self.assertEqual(self.waits, 2)  # should attempt to add it 3 times
-            self.assertNotEqual(emails, [])
-            self.assertTrue(emails[0].find("Luigi: Framework error while scheduling %s" % (a,)) != -1)
+            try:
+                worker.add(a)
+            except RPCError:
+                self.assertEqual(self.waits, 2)  # should attempt to add it 3 times
+                self.assertNotEqual(emails, [])
+                self.assertTrue(emails[0].find("Luigi: Framework error while scheduling %s" % (a,)) != -1)
+            else:
+                self.fail()
 
     @email_patch
     def test_complete_error(self, emails):

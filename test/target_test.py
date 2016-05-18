@@ -262,6 +262,9 @@ class FileSystemTargetTestMixin(object):
         t._touchz()
         fs = t.fs
         self.assertTrue(t.exists())
+        if fs.exists(t.path+"-yay"):
+            fs.remove(t.path+"-yay")
+        self.assertFalse(fs.exists(t.path+"-yay"))
         fs.rename_dont_move(t.path, t.path+"-yay")
         self.assertFalse(t.exists())
         self.assertRaises(luigi.target.FileAlreadyExists,

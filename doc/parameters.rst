@@ -98,7 +98,7 @@ subclasses of :class:`~luigi.parameter.Parameter`. There are a few of them, like
 :class:`~luigi.parameter.IntParameter`,
 :class:`~luigi.parameter.FloatParameter`, etc.
 
-Python is not a strongly typed language and you don't have to specify the types
+Python is not a statically typed language and you don't have to specify the types
 of any of your parameters.
 You can simply use the base class :class:`~luigi.parameter.Parameter` if you don't care.
 
@@ -133,7 +133,7 @@ It is still possible to override it inside Python if you instantiate ``TaskA(x=4
 All parameters can also be set from the configuration file.
 For instance, you can put this in the config:
 
-.. code:: console
+.. code:: ini
 
     [TaskA]
     x: 45
@@ -153,4 +153,3 @@ Parameters are resolved in the following order of decreasing priority:
 4. Any default value provided to the parameter (applies on a class level)
 
 See the :class:`~luigi.parameter.Parameter` class for more information.
-

@@ -75,6 +75,13 @@ def namespace(namespace=None):
 
 
 def task_id_str(task_family, params):
+    """
+    Returns a canonical string used to identify a particular task
+
+    :param task_family: The task family (class name) of the task
+    :param params: a dict mapping parameter names to their serialized values
+    :return: A unique, shortened identifier corresponding to the family and params
+    """
     # task_id is a concatenation of task family, the first values of the first 3 parameters
     # sorted by parameter name and a md5hash of the family/parameters as a cananocalised json.
     param_str = json.dumps(params, separators=(',', ':'), sort_keys=True)
@@ -326,6 +333,9 @@ class Task(object):
 
         self.task_id = task_id_str(self.task_family, self.to_str_params(only_significant=True))
         self.__hash = hash(self.task_id)
+
+        self.set_tracking_url = None
+        self.set_status_message = None
 
     def initialized(self):
         """
@@ -665,7 +675,7 @@ def externalize(task):
 
     See :py:class:`ExternalTask`.
     """
-    task.run = NotImplemented
+    task.run = None
     return task
 
 
@@ -677,7 +687,7 @@ class ExternalTask(Task):
     the framework that this Task's :py:meth:`output` is generated outside of
     Luigi.
     """
-    run = NotImplemented
+    run = None
 
 
 class WrapperTask(Task):

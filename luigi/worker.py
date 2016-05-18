@@ -34,6 +34,8 @@ import logging
 import multiprocessing  # Note: this seems to have some stability issues: https://github.com/spotify/luigi/pull/438
 import os
 import signal
+import subprocess
+import sys
 
 try:
     import Queue
@@ -45,13 +47,14 @@ import threading
 import time
 import traceback
 import types
+import warnings
 
 from luigi import six
 
 from luigi import notifications
 from luigi.event import Event
 from luigi.task_register import load_task
-from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, CentralPlannerScheduler
+from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, UNKNOWN, CentralPlannerScheduler
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config
 from luigi.task_register import TaskClassException
@@ -79,6 +82,10 @@ fork_lock = threading.Lock()
 _WAIT_INTERVAL_EPS = 0.00001
 
 
+def _is_external(task):
+    return task.run is None or task.run == NotImplemented
+
+
 class TaskException(Exception):
     pass
 
@@ -89,28 +96,41 @@ class TaskProcess(multiprocessing.Process):
 
     Mainly for convenience since this is run in a separate process. """
 
-    def __init__(self, task, worker_id, result_queue, random_seed=False, worker_timeout=0,
-                 tracking_url_callback=None):
+    def __init__(self, task, worker_id, result_queue, tracking_url_callback,
+                 status_message_callback, random_seed=False, worker_timeout=0):
         super(TaskProcess, self).__init__()
         self.task = task
         self.worker_id = worker_id
         self.result_queue = result_queue
-        self.random_seed = random_seed
         self.tracking_url_callback = tracking_url_callback
+        self.status_message_callback = status_message_callback
+        self.random_seed = random_seed
         if task.worker_timeout is not None:
             worker_timeout = task.worker_timeout
         self.timeout_time = time.time() + worker_timeout if worker_timeout else None
 
     def _run_get_new_deps(self):
+        self.task.set_tracking_url = self.tracking_url_callback
+        self.task.set_status_message = self.status_message_callback
+
+        def deprecated_tracking_url_callback(*args, **kwargs):
+            warnings.warn("tracking_url_callback in run() args is deprecated, use "
+                          "set_tracking_url instead.", DeprecationWarning)
+            self.tracking_url_callback(*args, **kwargs)
+
         run_again = False
         try:
-            task_gen = self.task.run(tracking_url_callback=self.tracking_url_callback)
+            task_gen = self.task.run(tracking_url_callback=deprecated_tracking_url_callback)
         except TypeError as ex:
             if 'unexpected keyword argument' not in str(ex):
                 raise
             run_again = True
         if run_again:
             task_gen = self.task.run()
+
+        self.task.set_tracking_url = None
+        self.task.set_status_message = None
+
         if not isinstance(task_gen, types.GeneratorType):
             return None
 
@@ -125,11 +145,11 @@ class TaskProcess(multiprocessing.Process):
                 return None
 
             new_req = flatten(requires)
-            new_deps = [(t.task_module, t.task_family, t.to_str_params())
-                        for t in new_req]
             if all(t.complete() for t in new_req):
                 next_send = getpaths(requires)
             else:
+                new_deps = [(t.task_module, t.task_family, t.to_str_params())
+                            for t in new_req]
                 return new_deps
 
     def run(self):
@@ -150,7 +170,7 @@ class TaskProcess(multiprocessing.Process):
             # don't care about unfulfilled dependencies, because we are just
             # checking completeness of self.task so outputs of dependencies are
             # irrelevant.
-            if self.task.run != NotImplemented:
+            if not _is_external(self.task):
                 missing = [dep.task_id for dep in self.task.deps() if not dep.actual_complete()]
                 if missing:
                     deps = 'dependency' if len(missing) == 1 else 'dependencies'
@@ -159,7 +179,7 @@ class TaskProcess(multiprocessing.Process):
             t0 = time.time()
             status = None
 
-            if self.task.run == NotImplemented:
+            if _is_external(self.task):
                 # External task
                 # TODO(erikbern): We should check for task completeness after non-external tasks too!
                 # This will resolve #814 and make things a lot more consistent
@@ -255,7 +275,10 @@ class DequeQueue(collections.deque):
         return self.append(obj)
 
     def get(self, block=None, timeout=None):
-        return self.pop()
+        try:
+            return self.pop()
+        except IndexError:
+            raise Queue.Empty
 
 
 class AsyncCompletionException(Exception):
@@ -478,11 +501,11 @@ class Worker(object):
             raise TaskException('Task of class %s not initialized. Did you override __init__ and forget to call super(...).__init__?' % task.__class__.__name__)
 
     def _log_complete_error(self, task, tb):
-        log_msg = "Will not schedule {task} or any dependencies due to error in complete() method:\n{tb}".format(task=task, tb=tb)
+        log_msg = "Will not run {task} or any dependencies due to error in complete() method:\n{tb}".format(task=task, tb=tb)
         logger.warning(log_msg)
 
     def _log_dependency_error(self, task, tb):
-        log_msg = "Will not schedule {task} or any dependencies due to error in deps() method:\n{tb}".format(task=task, tb=tb)
+        log_msg = "Will not run {task} or any dependencies due to error in deps() method:\n{tb}".format(task=task, tb=tb)
         logger.warning(log_msg)
 
     def _log_unexpected_error(self, task):
@@ -491,13 +514,13 @@ class Worker(object):
     def _email_complete_error(self, task, formatted_traceback):
         self._email_error(task, formatted_traceback,
                           subject="Luigi: {task} failed scheduling. Host: {host}",
-                          headline="Will not schedule task or any dependencies due to error in complete() method",
+                          headline="Will not run {task} or any dependencies due to error in complete() method",
                           )
 
     def _email_dependency_error(self, task, formatted_traceback):
         self._email_error(task, formatted_traceback,
                           subject="Luigi: {task} failed scheduling. Host: {host}",
-                          headline="Will not schedule task or any dependencies due to error in deps() method",
+                          headline="Will not run {task} or any dependencies due to error in deps() method",
                           )
 
     def _email_unexpected_error(self, task, formatted_traceback):
@@ -514,7 +537,8 @@ class Worker(object):
 
     def _email_error(self, task, formatted_traceback, subject, headline):
         formatted_subject = subject.format(task=task, host=self.host)
-        message = notifications.format_task_error(headline, task, formatted_traceback)
+        command = subprocess.list2cmdline(sys.argv)
+        message = notifications.format_task_error(headline, task, command, formatted_traceback)
         notifications.send_error_email(formatted_subject, message, task.owner_email)
 
     def add(self, task, multiprocess=False):
@@ -557,6 +581,7 @@ class Worker(object):
             self._log_unexpected_error(task)
             task.trigger_event(Event.BROKEN_TASK, task, ex)
             self._email_unexpected_error(task, formatted_traceback)
+            raise
         finally:
             pool.close()
             pool.join()
@@ -582,19 +607,17 @@ class Worker(object):
             self._log_complete_error(task, formatted_traceback)
             task.trigger_event(Event.DEPENDENCY_MISSING, task)
             self._email_complete_error(task, formatted_traceback)
-            # abort, i.e. don't schedule any subtasks of a task with
-            # failing complete()-method since we don't know if the task
-            # is complete and subtasks might not be desirable to run if
-            # they have already ran before
-            return
+            deps = None
+            status = UNKNOWN
+            runnable = False
 
-        if is_complete:
+        elif is_complete:
             deps = None
             status = DONE
             runnable = False
 
             task.trigger_event(Event.DEPENDENCY_PRESENT, task)
-        elif task.run == NotImplemented:
+        elif _is_external(task):
             deps = None
             status = PENDING
             runnable = worker().retry_external_tasks
@@ -613,9 +636,12 @@ class Worker(object):
                 self._log_dependency_error(task, formatted_traceback)
                 task.trigger_event(Event.BROKEN_TASK, task, ex)
                 self._email_dependency_error(task, formatted_traceback)
-                return
-            status = PENDING
-            runnable = True
+                deps = None
+                status = UNKNOWN
+                runnable = False
+            else:
+                status = PENDING
+                runnable = True
 
         if task.disabled:
             status = DISABLED
@@ -744,11 +770,13 @@ class Worker(object):
                 tracking_url=tracking_url,
             )
 
+        def update_status_message(message):
+            self._scheduler.set_task_status_message(task.task_id, message)
+
         return TaskProcess(
-            task, self._id, self._task_result_queue,
+            task, self._id, self._task_result_queue, update_tracking_url, update_status_message,
             random_seed=bool(self.worker_processes > 1),
-            worker_timeout=self._config.timeout,
-            tracking_url_callback=update_tracking_url,
+            worker_timeout=self._config.timeout
         )
 
     def _purge_children(self):
@@ -795,7 +823,7 @@ class Worker(object):
                 # Maybe it yielded something?
 
             # external task if run not implemented, retry-able if config option is enabled.
-            external_task_retryable = task.run == NotImplemented and self._config.retry_external_tasks
+            external_task_retryable = _is_external(task) and self._config.retry_external_tasks
             if status == FAILED and not external_task_retryable:
                 self._email_task_failure(task, expl)
 

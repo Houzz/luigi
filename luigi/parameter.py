@@ -23,6 +23,13 @@ See :ref:`Parameter` for more info on how to define parameters.
 import abc
 import datetime
 import warnings
+import json
+from json import JSONEncoder
+from collections import OrderedDict, Mapping
+import operator
+import functools
+from ast import literal_eval
+
 try:
     from ConfigParser import NoOptionError, NoSectionError
 except ImportError:
@@ -30,9 +37,9 @@ except ImportError:
 
 from luigi import task_register
 from luigi import six
-
 from luigi import configuration
 from luigi.cmdline_parser import CmdlineParser
+
 
 _no_value = object()
 
@@ -147,7 +154,7 @@ class Parameter(object):
 
         if config_path is not None and ('section' not in config_path or 'name' not in config_path):
             raise ParameterException('config_path must be a hash containing entries for section and name')
-        self.__config = config_path
+        self._config_path = config_path
 
         self._counter = Parameter._counter  # We need to keep track of this to get the order right (see Task class)
         Parameter._counter += 1
@@ -187,10 +194,10 @@ class Parameter(object):
         yield (self._get_value_from_config(task_name, param_name.replace('_', '-')),
                'Configuration [{}] {} (with dashes) should be avoided. Please use underscores.'.format(
                task_name, param_name))
-        if self.__config:
-            yield (self._get_value_from_config(self.__config['section'], self.__config['name']),
+        if self._config_path:
+            yield (self._get_value_from_config(self._config_path['section'], self._config_path['name']),
                    'The use of the configuration [{}] {} is deprecated. Please use [{}] {}'.format(
-                   self.__config['section'], self.__config['name'], task_name, param_name))
+                   self._config_path['section'], self._config_path['name'], task_name, param_name))
         yield (self._default, None)
 
     def has_task_value(self, task_name, param_name):
@@ -223,6 +230,8 @@ class Parameter(object):
 
         :param x: the value to serialize.
         """
+        if not isinstance(x, six.string_types) and self.__class__ == Parameter:
+            warnings.warn("Parameter {0} is not of type string.".format(str(x)))
         return str(x)
 
     def normalize(self, x):
@@ -640,7 +649,7 @@ class TaskParameter(Parameter):
     ``MyMetaTask(my_task_param=my_tasks.MyTask)``. On the command line,
     you specify the :py:attr:`luigi.task.Task.task_family`. Like
 
-    .. code:: console
+    .. code-block:: console
 
             $ luigi --module my_tasks MyMetaTask --my_task_param my_namespace.MyTask
 
@@ -671,11 +680,12 @@ class EnumParameter(Parameter):
 
     .. code-block:: python
 
-        class Models(enum.IntEnum):
+        class Model(enum.Enum):
           Honda = 1
+          Volvo = 2
 
         class MyTask(luigi.Task):
-          my_param = luigi.EnumParameter(enum=Models)
+          my_param = luigi.EnumParameter(enum=Model)
 
     At the command line, use,
 
@@ -699,3 +709,209 @@ class EnumParameter(Parameter):
 
     def serialize(self, e):
         return e.name
+
+
+class FrozenOrderedDict(Mapping):
+    """
+    It is an immutable wrapper around ordered dictionaries that implements the complete :py:class:`collections.Mapping`
+    interface. It can be used as a drop-in replacement for dictionaries where immutability and ordering are desired.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.__dict = OrderedDict(*args, **kwargs)
+        self.__hash = None
+
+    def __getitem__(self, key):
+        return self.__dict[key]
+
+    def __iter__(self):
+        return iter(self.__dict)
+
+    def __len__(self):
+        return len(self.__dict)
+
+    def __repr__(self):
+        return '<FrozenOrderedDict %s>' % repr(self.__dict)
+
+    def __hash__(self):
+        if self.__hash is None:
+            hashes = map(hash, self.items())
+            self.__hash = functools.reduce(operator.xor, hashes, 0)
+
+        return self.__hash
+
+    def get_wrapped(self):
+        return self.__dict
+
+
+class DictParameter(Parameter):
+    """
+    Parameter whose value is a ``dict``.
+
+    In the task definition, use
+
+    .. code-block:: python
+
+        class MyTask(luigi.Task):
+          tags = luigi.DictParameter()
+
+            def run(self):
+                logging.info("Find server with role: %s", self.tags['role'])
+                server = aws.ec2.find_my_resource(self.tags)
+
+
+    At the command line, use
+
+    .. code-block:: console
+
+        $ luigi --module my_tasks MyTask --tags <JSON string>
+
+    Simple example with two tags:
+
+    .. code-block:: console
+
+        $ luigi --module my_tasks MyTask --tags '{"role": "web", "env": "staging"}'
+
+    It can be used to define dynamic parameters, when you do not know the exact list of your parameters (e.g. list of
+    tags, that are dynamically constructed outside Luigi), or you have a complex parameter containing logically related
+    values (like a database connection config).
+    """
+
+    class DictParamEncoder(JSONEncoder):
+        """
+        JSON encoder for :py:class:`~DictParameter`, which makes :py:class:`~FrozenOrderedDict` JSON serializable.
+        """
+        def default(self, obj):
+            if isinstance(obj, FrozenOrderedDict):
+                return obj.get_wrapped()
+            return json.JSONEncoder.default(self, obj)
+
+    def parse(self, s):
+        """
+        Parses an immutable and ordered ``dict`` from a JSON string using standard JSON library.
+
+        We need to use an immutable dictionary, to create a hashable parameter and also preserve the internal structure
+        of parsing. The traversal order of standard ``dict`` is undefined, which can result various string
+        representations of this parameter, and therefore a different task id for the task containing this parameter.
+        This is because task id contains the hash of parameters' JSON representation.
+
+        :param s: String to be parse
+        """
+        return json.loads(s, object_pairs_hook=FrozenOrderedDict)
+
+    def serialize(self, x):
+        return json.dumps(x, cls=DictParameter.DictParamEncoder)
+
+
+class ListParameter(Parameter):
+    """
+    Parameter whose value is a ``list``.
+
+    In the task definition, use
+
+    .. code-block:: python
+
+        class MyTask(luigi.Task):
+          grades = luigi.ListParameter()
+
+            def run(self):
+                sum = 0
+                for element in self.grades:
+                    sum += element
+                avg = sum / len(self.grades)
+
+
+    At the command line, use
+
+    .. code-block:: console
+
+        $ luigi --module my_tasks MyTask --grades <JSON string>
+
+    Simple example with two grades:
+
+    .. code-block:: console
+
+        $ luigi --module my_tasks MyTask --grades '[100,70]'
+    """
+    def parse(self, x):
+        """
+        Parse an individual value from the input.
+
+        :param str x: the value to parse.
+        :return: the parsed value.
+        """
+        return list(json.loads(x))
+
+    def serialize(self, x):
+        """
+        Opposite of :py:meth:`parse`.
+
+        Converts the value ``x`` to a string.
+
+        :param x: the value to serialize.
+        """
+        return json.dumps(x)
+
+
+class TupleParameter(Parameter):
+    """
+    Parameter whose value is a ``tuple`` or ``tuple`` of tuples.
+
+    In the task definition, use
+
+    .. code-block:: python
+
+        class MyTask(luigi.Task):
+          book_locations = luigi.TupleParameter()
+
+            def run(self):
+                for location in self.book_locations:
+                    print("Go to page %d, line %d" % (location[0], location[1]))
+
+
+    At the command line, use
+
+    .. code-block:: console
+
+        $ luigi --module my_tasks MyTask --book_locations <JSON string>
+
+    Simple example with two grades:
+
+    .. code-block:: console
+
+        $ luigi --module my_tasks MyTask --book_locations '((12,3),(4,15),(52,1))'
+    """
+
+    def parse(self, x):
+        """
+        Parse an individual value from the input.
+
+        :param str x: the value to parse.
+        :return: the parsed value.
+        """
+        # Since the result of json.dumps(tuple) differs from a tuple string, we must handle either case.
+        # A tuple string may come from a config file or from cli execution.
+
+        # t = ((1, 2), (3, 4))
+        # t_str = '((1,2),(3,4))'
+        # t_json_str = json.dumps(t)
+        # t_json_str == '[[1, 2], [3, 4]]'
+        # json.loads(t_json_str) == t
+        # json.loads(t_str) == ValueError: No JSON object could be decoded
+
+        # Therefore, if json.loads(x) returns a ValueError, try ast.literal_eval(x).
+        # ast.literal_eval(t_str) == t
+        try:
+            return tuple(tuple(x) for x in json.loads(x))  # loop required to parse tuple of tuples
+        except ValueError:
+            return literal_eval(x)  # if this causes an error, let that error be raised.
+
+    def serialize(self, x):
+        """
+        Opposite of :py:meth:`parse`.
+
+        Converts the value ``x`` to a string.
+
+        :param x: the value to serialize.
+        """
+        return json.dumps(x)

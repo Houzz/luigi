@@ -21,10 +21,10 @@ This needs some more documentation.
 See :doc:`/configuration` for configuration options.
 In particular using the config `error-email` should set up Luigi so that it will send emails when tasks fail.
 
-::
+.. code-block:: ini
 
     [core]
-    error-email: foo@bar.baz
+    error-email=foo@bar.baz
 
 TODO: Eventually, all email configuration should move into the [email] section.
 '''
@@ -50,7 +50,7 @@ class TestNotificationsTask(luigi.task.Task):
     You may invoke this task to quickly check if you correctly have setup your
     notifications Configuration.  You can run:
 
-    .. code:: console
+    .. code-block:: console
 
             $ luigi TestNotifications --local-scheduler
 
@@ -257,7 +257,7 @@ def send_email(subject, message, sender, recipients, image_png=None):
     # separated in luigi.cfg
     recipients_tmp = []
     for r in recipients:
-        recipients_tmp.extend(r.split(','))
+        recipients_tmp.extend([a.strip() for a in r.split(',') if a.strip()])
 
     # Replace original recipients with the clean list
     recipients = recipients_tmp
@@ -315,7 +315,7 @@ def _prefix(subject):
     return subject
 
 
-def format_task_error(headline, task, formatted_exception=None):
+def format_task_error(headline, task, command, formatted_exception=None):
     """
     Format a message body for an error email related to a luigi.task.Task
 
@@ -348,6 +348,11 @@ def format_task_error(headline, task, formatted_exception=None):
         </table>
         </pre>
 
+        <h2>Command line</h2>
+        <pre>
+        {command}
+        </pre>
+
         <h2>Traceback</h2>
         {traceback}
         </body>
@@ -357,7 +362,7 @@ def format_task_error(headline, task, formatted_exception=None):
         str_params = task.to_str_params()
         params = '\n'.join('<tr><th>{}</th><td>{}</td></tr>'.format(*items) for items in str_params.items())
         body = msg_template.format(headline=headline, name=task.task_family, param_rows=params,
-                                   traceback=formatted_exception)
+                                   command=command, traceback=formatted_exception)
     else:
         msg_template = textwrap.dedent('''\
         {headline}
@@ -367,6 +372,9 @@ def format_task_error(headline, task, formatted_exception=None):
         Parameters:
         {params}
 
+        Command line:
+          {command}
+
         {traceback}
         ''')
 
@@ -374,6 +382,6 @@ def format_task_error(headline, task, formatted_exception=None):
         max_width = max([0] + [len(x) for x in str_params.keys()])
         params = '\n'.join('  {:{width}}: {}'.format(*items, width=max_width) for items in str_params.items())
         body = msg_template.format(headline=headline, name=task.task_family, params=params,
-                                   traceback=formatted_exception)
+                                   command=command, traceback=formatted_exception)
 
     return body

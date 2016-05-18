@@ -22,15 +22,21 @@ system operations. The `boto` library is required to use S3 targets.
 
 from __future__ import division
 
+import datetime
 import itertools
 import logging
 import os
 import os.path
+
+import time
+from multiprocessing.pool import ThreadPool
+
 try:
     from urlparse import urlsplit
 except ImportError:
     from urllib.parse import urlsplit
 import warnings
+
 try:
     from ConfigParser import NoSectionError
 except ImportError:
@@ -71,21 +77,41 @@ class S3Client(FileSystem):
                  **kwargs):
         # only import boto when needed to allow top-lvl s3 module import
         import boto
+        import boto.s3.connection
         from boto.s3.key import Key
 
         options = self._get_s3_config()
         options.update(kwargs)
         # Removing key args would break backwards compability
-        if not aws_access_key_id:
-            aws_access_key_id = options.get('aws_access_key_id')
-        if not aws_secret_access_key:
-            aws_secret_access_key = options.get('aws_secret_access_key')
-        for key in ['aws_access_key_id', 'aws_secret_access_key']:
+        role_arn = options.get('aws_role_arn')
+        role_session_name = options.get('aws_role_session_name')
+
+        aws_session_token = None
+
+        if role_arn and role_session_name:
+            from boto import sts
+
+            sts_client = sts.STSConnection()
+            assumed_role = sts_client.assume_role(role_arn, role_session_name)
+            aws_secret_access_key = assumed_role.credentials.secret_key
+            aws_access_key_id = assumed_role.credentials.access_key
+            aws_session_token = assumed_role.credentials.session_token
+
+        else:
+            if not aws_access_key_id:
+                aws_access_key_id = options.get('aws_access_key_id')
+
+            if not aws_secret_access_key:
+                aws_secret_access_key = options.get('aws_secret_access_key')
+
+        for key in ['aws_access_key_id', 'aws_secret_access_key', 'aws_role_session_name', 'aws_role_arn']:
             if key in options:
                 options.pop(key)
-        self.s3 = boto.connect_s3(aws_access_key_id,
-                                  aws_secret_access_key,
-                                  **options)
+
+        self.s3 = boto.s3.connection.S3Connection(aws_access_key_id,
+                                                  aws_secret_access_key,
+                                                  security_token=aws_session_token,
+                                                  **options)
         self.Key = Key
 
     def exists(self, path):
@@ -124,8 +150,7 @@ class S3Client(FileSystem):
 
         # root
         if self._is_root(key):
-            raise InvalidDeleteException(
-                'Cannot delete root of bucket at path %s' % path)
+            raise InvalidDeleteException('Cannot delete root of bucket at path %s' % path)
 
         # grab and validate the bucket
         s3_bucket = self.s3.get_bucket(bucket, validate=True)
@@ -138,8 +163,7 @@ class S3Client(FileSystem):
             return True
 
         if self.isdir(path) and not recursive:
-            raise InvalidDeleteException(
-                'Path %s is a directory. Must use recursive delete' % path)
+            raise InvalidDeleteException('Path %s is a directory. Must use recursive delete' % path)
 
         delete_key_list = [
             k for k in s3_bucket.list(self._add_path_delimiter(key))]
@@ -226,10 +250,7 @@ class S3Client(FileSystem):
         # calculate the number of parts (int division).
         # use modulo to avoid float precision issues
         # for exactly-sized fits
-        num_parts = \
-            (source_size // part_size) \
-            if source_size % part_size == 0 \
-            else (source_size // part_size) + 1
+        num_parts = (source_size + part_size - 1) // part_size
 
         mp = None
         try:
@@ -285,32 +306,144 @@ class S3Client(FileSystem):
 
         return contents
 
-    def copy(self, source_path, destination_path, **kwargs):
+    def copy(self, source_path, destination_path, threads=100, start_time=None, end_time=None, part_size=67108864, **kwargs):
         """
-        Copy an object from one S3 location to another.
+        Copy object(s) from one S3 location to another. Works for individual keys or entire directories.
 
+        When files are larger than `part_size`, multipart uploading will be used.
+
+        :param source_path: The `s3://` path of the directory or key to copy from
+        :param destination_path: The `s3://` path of the directory or key to copy to
+        :param threads: Optional argument to define the number of threads to use when copying (min: 3 threads)
+        :param start_time: Optional argument to copy files with modified dates after start_time
+        :param end_time: Optional argument to copy files with modified dates before end_time
+        :param part_size: Part size in bytes. Default: 67108864 (64MB), must be >= 5MB and <= 5 GB.
         :param kwargs: Keyword arguments are passed to the boto function `copy_key`
         """
+        start = datetime.datetime.now()
+
         (src_bucket, src_key) = self._path_to_bucket_and_key(source_path)
         (dst_bucket, dst_key) = self._path_to_bucket_and_key(destination_path)
 
-        s3_bucket = self.s3.get_bucket(dst_bucket, validate=True)
+        # As the S3 copy command is completely server side, there is no issue with issuing a lot of threads
+        # to issue a single API call per copy, however, this may in theory cause issues on systems with low ulimits for
+        # number of threads when copying really large files (e.g. with a ~100GB file this will open ~1500
+        # threads), or large directories. Around 100 threads seems to work well.
+
+        threads = 3 if threads < 3 else threads  # don't allow threads to be less than 3
+        total_keys = 0
+
+        copy_pool = ThreadPool(processes=threads)
 
         if self.isdir(source_path):
+            # The management pool is to ensure that there's no deadlock between the s3 copying threads, and the
+            # multipart_copy threads that monitors each group of s3 copy threads and returns a success once the entire file
+            # is copied. Without this, we could potentially fill up the pool with threads waiting to check if the s3 copies
+            # have completed, leaving no available threads to actually perform any copying.
+            copy_jobs = []
+            management_pool = ThreadPool(processes=threads)
+
             src_prefix = self._add_path_delimiter(src_key)
             dst_prefix = self._add_path_delimiter(dst_key)
-            for key in self.list(source_path):
-                s3_bucket.copy_key(dst_prefix + key,
-                                   src_bucket,
-                                   src_prefix + key, **kwargs)
-        else:
-            s3_bucket.copy_key(dst_key, src_bucket, src_key, **kwargs)
+            for key in self.list(source_path, start_time=start_time, end_time=end_time):
+                # prevents copy attempt of empty key in folder
+                if key != '' and key != '/':
+                    total_keys += 1
+                    job = management_pool.apply_async(self.__copy_multipart,
+                                                      args=(copy_pool,
+                                                            src_bucket, src_prefix + key,
+                                                            dst_bucket, dst_prefix + key,
+                                                            part_size),
+                                                      kwds=kwargs)
+                    copy_jobs.append(job)
 
-    def rename(self, *args, **kwargs):
+            # Wait for the pools to finish scheduling all the copies
+            management_pool.close()
+            management_pool.join()
+            copy_pool.close()
+            copy_pool.join()
+
+            # Raise any errors encountered in any of the copy processes
+            for result in copy_jobs:
+                result.get()
+
+            end = datetime.datetime.now()
+            duration = end - start
+            logger.info('%s : Complete : %s total keys copied in %s' %
+                        (datetime.datetime.now(), total_keys, duration))
+
+        # If the file isn't a directory just perform a simple copy
+        else:
+            self.__copy_multipart(copy_pool, src_bucket, src_key, dst_bucket, dst_key, part_size, **kwargs)
+            # Close the pool
+            copy_pool.close()
+            copy_pool.join()
+
+    def __copy_multipart(self, pool, src_bucket, src_key, dst_bucket, dst_key, part_size, **kwargs):
         """
-        Alias for ``move()``
+        Copy a single S3 object to another S3 object, falling back to multipart copy where necessary
+
+        NOTE: This is a private method and should only be called from within the `luigi.s3.copy` method
+
+        :param pool: The threadpool to put the s3 copy processes onto
+        :param src_bucket: source bucket name
+        :param src_key: source key name
+        :param dst_bucket: destination bucket name
+        :param dst_key: destination key name
+        :param key_size: size of the key to copy in bytes
+        :param part_size: Part size in bytes. Must be >= 5MB and <= 5 GB.
+        :param kwargs: Keyword arguments are passed to the boto function `initiate_multipart_upload`
         """
-        self.move(*args, **kwargs)
+
+        source_bucket = self.s3.get_bucket(src_bucket, validate=True)
+        dest_bucket = self.s3.get_bucket(dst_bucket, validate=True)
+
+        key_size = source_bucket.lookup(src_key).size
+
+        # We can't do a multipart copy on an empty Key, so handle this specially.
+        # Also, don't bother using the multipart machinery if we're only dealing with a small non-multipart file
+        if key_size == 0 or key_size <= part_size:
+            result = pool.apply_async(dest_bucket.copy_key, args=(dst_key, src_bucket, src_key), kwds=kwargs)
+            # Bubble up any errors we may encounter
+            return result.get()
+
+        mp = None
+
+        try:
+            mp = dest_bucket.initiate_multipart_upload(dst_key, **kwargs)
+            cur_pos = 0
+
+            # Store the results from the apply_async in a list so we can check for failures
+            results = []
+
+            # Calculate the number of chunks the file will be
+            num_parts = (key_size + part_size - 1) // part_size
+
+            for i in range(num_parts):
+                # Issue an S3 copy request, one part at a time, from one S3 object to another
+                part_start = cur_pos
+                cur_pos += part_size
+                part_end = min(cur_pos - 1, key_size - 1)
+                part_num = i + 1
+                results.append(pool.apply_async(mp.copy_part_from_key, args=(src_bucket, src_key, part_num, part_start, part_end)))
+                logger.info('Requesting copy of %s/%s to %s/%s', part_num, num_parts, dst_bucket, dst_key)
+
+            logger.info('Waiting for multipart copy of %s/%s to finish', dst_bucket, dst_key)
+
+            # This will raise any exceptions in any of the copy threads
+            for result in results:
+                result.get()
+
+            # finish the copy, making the file available in S3
+            mp.complete_upload()
+            return mp.key_name
+
+        except:
+            logger.info('Error during multipart s3 copy for %s/%s to %s/%s...', src_bucket, src_key, dst_bucket, dst_key)
+            # cancel the copy so we don't get charged for storage consumed by copied parts
+            if mp:
+                mp.cancel_upload()
+            raise
 
     def move(self, source_path, destination_path, **kwargs):
         """
@@ -318,13 +451,16 @@ class S3Client(FileSystem):
 
         :param kwargs: Keyword arguments are passed to the boto function `copy_key`
         """
-        self.copy(source_path, destination_path)
+        self.copy(source_path, destination_path, **kwargs)
         self.remove(source_path)
 
-    def listdir(self, path):
+    def listdir(self, path, start_time=None, end_time=None):
         """
         Get an iterable with S3 folder contents.
         Iterable contains paths relative to queried path.
+
+        :param start_time: Optional argument to copy files with modified dates after start_time
+        :param end_time: Optional argument to copy files with modified dates before end_time
         """
         (bucket, key) = self._path_to_bucket_and_key(path)
 
@@ -334,11 +470,18 @@ class S3Client(FileSystem):
         key_path = self._add_path_delimiter(key)
         key_path_len = len(key_path)
         for item in s3_bucket.list(prefix=key_path):
-            yield self._add_path_delimiter(path) + item.key[key_path_len:]
+            last_modified_date = time.strptime(item.last_modified, "%Y-%m-%dT%H:%M:%S.%fZ")
+            if (
+                    (not start_time and not end_time) or  # neither are defined, list all
+                    (start_time and not end_time and start_time < last_modified_date) or  # start defined, after start
+                    (not start_time and end_time and last_modified_date < end_time) or  # end defined, prior to end
+                    (start_time and end_time and start_time < last_modified_date < end_time)  # both defined, between
+               ):
+                yield self._add_path_delimiter(path) + item.key[key_path_len:]
 
-    def list(self, path):  # backwards compat
+    def list(self, path, start_time=None, end_time=None):  # backwards compat
         key_path_len = len(self._add_path_delimiter(path))
-        for item in self.listdir(path):
+        for item in self.listdir(path, start_time=start_time, end_time=end_time):
             yield item[key_path_len:]
 
     def isdir(self, path):
@@ -362,14 +505,12 @@ class S3Client(FileSystem):
 
         # files with this prefix
         key_path = self._add_path_delimiter(key)
-        s3_bucket_list_result = \
-            list(itertools.islice(
-                 s3_bucket.list(prefix=key_path),
-                 1))
+        s3_bucket_list_result = list(itertools.islice(s3_bucket.list(prefix=key_path), 1))
         if s3_bucket_list_result:
             return True
 
         return False
+
     is_dir = isdir  # compatibility with old version.
 
     def mkdir(self, path, parents=True, raise_if_exists=False):
@@ -411,7 +552,7 @@ class S3Client(FileSystem):
         return (len(key) == 0) or (key == '/')
 
     def _add_path_delimiter(self, key):
-        return key if key[-1:] == '/' else key + '/'
+        return key if key[-1:] == '/' or key == '' else key + '/'
 
 
 class AtomicS3File(AtomicLocalFile):
@@ -431,7 +572,6 @@ class AtomicS3File(AtomicLocalFile):
 
 
 class ReadableS3File(object):
-
     def __init__(self, s3_key):
         self.s3_key = s3_key
         self.buffer = []
