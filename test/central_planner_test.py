@@ -937,6 +937,15 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(set('EFG'), set(sch.task_list('PENDING', '').keys()))
         self.assertEqual({'num_tasks': 4}, sch.task_list('DONE', ''))
 
+    def test_dynamic_shown_tasks_in_task_list(self):
+        sch = CentralPlannerScheduler(max_shown_tasks=3)
+        for c in 'ABCD':
+            sch.add_task(worker=WORKER, task_id=c, status=DONE)
+        for c in 'EFG':
+            sch.add_task(worker=WORKER, task_id=c)
+        self.assertEqual({'num_tasks': 3}, sch.task_list('PENDING', '', max_shown_tasks=2))
+        self.assertEqual(set('ABCD'), set(sch.task_list('DONE', '', max_shown_tasks=4).keys()))
+
     def add_task(self, family, **params):
         task_id = str(hash((family, str(params))))  # use an unhelpful task id
         self.sch.add_task(worker=WORKER, family=family, params=params, task_id=task_id)

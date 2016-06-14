@@ -208,8 +208,9 @@ class RemoteScheduler(Scheduler):
         return self._request('/api/inverse_dep_graph', {
             'task_id': task_id, 'include_done': include_done})
 
-    def task_list(self, status, upstream_status, search=None):
+    def task_list(self, status, upstream_status, search=None, max_shown_tasks=None):
         return self._request('/api/task_list', {
+            'max_shown_tasks': max_shown_tasks,
             'search': search,
             'status': status,
             'upstream_status': upstream_status,
