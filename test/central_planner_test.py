@@ -1007,6 +1007,12 @@ class CentralPlannerTest(unittest.TestCase):
 
         self.search_pending('ClassA 2016-02-01 num', {expected})
 
+    def test_task_list_include_deps(self):
+        self.sch.add_task(worker=WORKER, task_id='A', deps=['B', 'C'], status='PENDING')
+        pending = self.sch.task_list('PENDING', '', include_deps=True)
+        self.assertEqual({'A'}, set(pending.keys()))
+        self.assertEqual({'B', 'C'}, set(pending['A']['deps']))
+
     def test_search_results_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for i in range(4):

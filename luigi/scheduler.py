@@ -1131,7 +1131,7 @@ class CentralPlannerScheduler(Scheduler):
             task_id, dep_func=lambda t: inverse_graph[t.id], include_done=include_done)
 
     def task_list(self, status, upstream_status, limit=True, search=None, max_shown_tasks=None,
-                  **kwargs):
+                  include_deps=False, **kwargs):
         """
         Query for a subset of tasks by status.
         """
@@ -1149,7 +1149,7 @@ class CentralPlannerScheduler(Scheduler):
         for task in filter(filter_func, self._state.get_active_tasks(status)):
             if (task.status != PENDING or not upstream_status or
                     upstream_status == self._upstream_status(task.id, upstream_status_table)):
-                serialized = self._serialize_task(task.id, False)
+                serialized = self._serialize_task(task.id, include_deps)
                 result[task.id] = serialized
         if limit and len(result) > (max_shown_tasks or self._config.max_shown_tasks):
             return {'num_tasks': len(result)}
