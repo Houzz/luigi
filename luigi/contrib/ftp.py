@@ -137,7 +137,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
         exists = False
         if fn in files or path in files:
             if mtime:
-                mdtm = self.conn.sendcmd('MDTM ' + path.replace(' ', '\ '))
+                mdtm = self.conn.sendcmd('MDTM ' + path)
                 modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S")
                 exists = modified > mtime
             else:
