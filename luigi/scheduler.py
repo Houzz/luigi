@@ -632,7 +632,7 @@ class SimpleTaskState(object):
                 batch_task.tracking_url = tracking_url
 
 
-def _reachable_count(starting_position, dependencies):
+def _reachable_sum(starting_position, dependencies, weights):
     seen = {starting_position}
     queue = collections.deque([starting_position])
     while queue:
@@ -643,7 +643,8 @@ def _reachable_count(starting_position, dependencies):
                 continue
             seen.add(dep)
             queue.append(dep)
-    return len(seen) - 1
+    seen.discard(starting_position)
+    return sum(map(weights.get, seen))
 
 
 def _is_blockable(task):
@@ -1183,9 +1184,13 @@ class CentralPlannerScheduler(Scheduler):
         else:
             return task_id
 
-    def blockers(self, min_blocked=1, limit=None):
+    def blockers(self, min_blocked=1, limit=None, priority_sum=False):
         blockable = list(filter(_is_blockable, self._state.get_active_tasks('')))
         blockable_ids = {task.id for task in blockable}
+        if priority_sum:
+            weights = {task.id: task.priority for task in blockable}
+        else:
+            weights = {task.id: 1 for task in blockable}
 
         reverse_deps = collections.defaultdict(list)
         for task in blockable:
@@ -1195,7 +1200,7 @@ class CentralPlannerScheduler(Scheduler):
 
         reachables = list(filter(lambda (num_blocked, _1, _2): num_blocked >= min_blocked, (
             (
-                _reachable_count(task.id, reverse_deps),
+                _reachable_sum(task.id, reverse_deps, weights),
                 task.id,
                 task.pretty_id,
             )

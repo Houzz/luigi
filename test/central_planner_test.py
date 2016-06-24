@@ -1097,6 +1097,17 @@ class CentralPlannerTest(unittest.TestCase):
         ]
         self.assertEqual(expected, self.sch.blockers())
 
+    def test_blockers_priority_sum(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C'], status='PENDING', priority=0)
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B'], status='PENDING', priority=5)
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING', priority=50)
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING', priority=100)
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 55}
+        ]
+        self.assertEqual(expected, self.sch.blockers(priority_sum=True))
+
     def test_search_results_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for i in range(4):
