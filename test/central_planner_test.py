@@ -1013,6 +1013,90 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual({'A'}, set(pending.keys()))
         self.assertEqual({'B', 'C'}, set(pending['A']['deps']))
 
+    def test_blockers(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C', 'B'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B', 'Z'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING')
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 3},
+            {'task_id': 'Z', 'display_name': 'Z', 'blocked': 2},
+        ]
+        self.assertEqual(expected, self.sch.blockers())
+
+    def test_blockers_limit(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C', 'B'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B', 'Z'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING')
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 3},
+        ]
+        self.assertEqual(expected, self.sch.blockers(limit=1))
+
+    def test_blockers_min_blocked(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C', 'B'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B', 'Z'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING')
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 3},
+        ]
+        self.assertEqual(expected, self.sch.blockers(min_blocked=3))
+
+    def test_blockers_ignore_done(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C', 'B'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B', 'Z'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=['Z'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='Z', family='Z', status='DONE')
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 3},
+        ]
+        self.assertEqual(expected, self.sch.blockers())
+
+    def test_blockers_ignore_disabled(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B'], status='DISABLED')
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING')
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 1},
+        ]
+        self.assertEqual(expected, self.sch.blockers())
+
+    def test_blockers_do_not_ignore_scheduler_disabled(self):
+        self.sch.add_task(worker=WORKER, task_id='D', deps=['C', 'B'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING')
+
+        # cause 'C' to become disabled through repeated failures
+        for _ in range(10):
+            self.sch.add_task(worker=WORKER, task_id='C', status='FAILED')
+        self.assertEqual(['C'], list(self.sch.task_list('DISABLED', '').keys()))
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 3},
+        ]
+        self.assertEqual(expected, self.sch.blockers())
+
+    def test_blockers_diamond_dependency(self):
+        self.sch.add_task(worker=WORKER, task_id='C', deps=['B1', 'B2'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B1', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='B2', deps=['A'], status='PENDING')
+        self.sch.add_task(worker=WORKER, task_id='A', family='A', deps=[], status='PENDING')
+
+        expected = [
+            {'task_id': 'A', 'display_name': 'A()', 'blocked': 3},
+        ]
+        self.assertEqual(expected, self.sch.blockers())
+
     def test_search_results_beyond_limit(self):
         sch = CentralPlannerScheduler(max_shown_tasks=3)
         for i in range(4):

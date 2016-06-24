@@ -239,6 +239,8 @@ class Task(object):
 
     @property
     def pretty_id(self):
+        if not self.family:
+            return self.id
         param_str = ', '.join('{}={}'.format(key, value) for key, value in self.params.items())
         return '{}({})'.format(self.family, param_str)
 
@@ -628,6 +630,25 @@ class SimpleTaskState(object):
             batch_task = self.get_task(batch_task_id)
             if batch_task:
                 batch_task.tracking_url = tracking_url
+
+
+def _reachable_count(starting_position, dependencies):
+    seen = {starting_position}
+    queue = collections.deque([starting_position])
+    while queue:
+        task = queue.popleft()
+        deps = dependencies.get(task, [])
+        for dep in deps:
+            if dep in seen:
+                continue
+            seen.add(dep)
+            queue.append(dep)
+    return len(seen) - 1
+
+
+def _is_blockable(task):
+    return task.status != DONE and (
+        task.status != DISABLED or task.scheduler_disable_time is not None)
 
 
 class CentralPlannerScheduler(Scheduler):
@@ -1161,6 +1182,31 @@ class CentralPlannerScheduler(Scheduler):
             return self._state.get_task(task_id).pretty_id
         else:
             return task_id
+
+    def blockers(self, min_blocked=1, limit=None):
+        blockable = list(filter(_is_blockable, self._state.get_active_tasks('')))
+        blockable_ids = {task.id for task in blockable}
+
+        reverse_deps = collections.defaultdict(list)
+        for task in blockable:
+            for dep in task.deps:
+                if dep in blockable_ids:
+                    reverse_deps[dep].append(task.id)
+
+        reachables = list(filter(lambda (num_blocked, _1, _2): num_blocked >= min_blocked, (
+            (
+                _reachable_count(task.id, reverse_deps),
+                task.id,
+                task.pretty_id,
+            )
+            for task in blockable
+            if not any(dep in blockable_ids for dep in task.deps)
+        )))
+        reachables.sort(reverse=True)
+        return [
+            {'task_id': task_id, 'display_name': display_name, 'blocked': blocked}
+            for blocked, task_id, display_name in reachables[:limit]
+        ]
 
     def worker_list(self, include_running=True, **kwargs):
         self.prune()

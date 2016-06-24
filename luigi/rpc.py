@@ -218,6 +218,12 @@ class RemoteScheduler(Scheduler):
             'include_deps': include_deps,
         })
 
+    def blockers(self, min_blocked=1, limit=None):
+        return self._request('/api/blockers', {
+            'min_blocked': min_blocked,
+            'limit': limit,
+        })
+
     def worker_list(self):
         return self._request('/api/worker_list', {})
 

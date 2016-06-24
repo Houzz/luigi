@@ -72,6 +72,7 @@ class RPCHandler(tornado.web.RequestHandler):
             'add_task',
             'add_task_batcher',
             'add_worker',
+            'blockers',
             'dep_graph',
             'disable_worker',
             'fetch_error',
