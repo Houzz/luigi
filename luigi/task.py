@@ -182,12 +182,44 @@ class Task(object):
     #: Only works when using multiple workers.
     worker_timeout = None
 
-    #: Maximum number of jobs that can be batched together
-    max_batch_size = None
+    #: Maximum number of tasks to run together as a batch. Infinite by default
+    max_batch_size = float('inf')
 
     #: Owner of the task: it is used for sending out error email in addition to
     #: the one defined in luigi config
     owner = None
+
+    @property
+    def batchable(self):
+        """
+        True if this instance can be run as part of a batch. By default, True
+        if it has any batched parameters
+        """
+        return bool(self.batch_param_names())
+
+    @property
+    def retry_count(self):
+        """
+        Override this positive integer to have different ``retry_count`` at task level
+        Check :ref:`scheduler-config`
+        """
+        return None
+
+    @property
+    def disable_hard_timeout(self):
+        """
+        Override this positive integer to have different ``disable_hard_timeout`` at task level.
+        Check :ref:`scheduler-config`
+        """
+        return None
+
+    @property
+    def disable_window_seconds(self):
+        """
+        Override this positive integer to have different ``disable_window_seconds`` at task level.
+        Check :ref:`scheduler-config`
+        """
+        return None
 
     @property
     def owner_email(self):
@@ -262,6 +294,10 @@ class Task(object):
         # The order the parameters are created matters. See Parameter class
         params.sort(key=lambda t: t[1]._counter)
         return params
+
+    @classmethod
+    def batch_param_names(cls):
+        return [name for name, p in cls.get_params() if p._is_batchable()]
 
     @classmethod
     def get_param_names(cls, include_significant=False):
@@ -353,7 +389,11 @@ class Task(object):
         kwargs = {}
         for param_name, param in cls.get_params():
             if param_name in params_str:
-                kwargs[param_name] = param.parse(params_str[param_name])
+                param_str = params_str[param_name]
+                if isinstance(param_str, list):
+                    kwargs[param_name] = param._parse_list(param_str)
+                else:
+                    kwargs[param_name] = param.parse(param_str)
 
         return cls(**kwargs)
 

@@ -24,15 +24,17 @@ import signal
 import tempfile
 import threading
 import time
+
 import psutil
-from helpers import unittest, with_config, skipOnTravis, LuigiTestCase
+from helpers import (unittest, with_config, skipOnTravis, LuigiTestCase,
+                     temporary_unloaded_module)
 
 import luigi.notifications
 import luigi.worker
 import mock
-from luigi import ExternalTask, RemoteScheduler, Task
+from luigi import ExternalTask, RemoteScheduler, Task, Event
 from luigi.mock import MockTarget, MockFileSystem
-from luigi.scheduler import CentralPlannerScheduler
+from luigi.scheduler import Scheduler
 from luigi.worker import Worker
 from luigi.rpc import RPCError
 from luigi import six
@@ -108,10 +110,18 @@ class DynamicRequiresOtherModule(Task):
             f.write('Done!')
 
 
+class DummyErrorTask(Task):
+    retry_index = 0
+
+    def run(self):
+        self.retry_index += 1
+        raise Exception("Retry index is %s for %s" % (self.retry_index, self.task_family))
+
+
 class WorkerTest(unittest.TestCase):
 
     def run(self, result=None):
-        self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        self.sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         self.time = time.time
         with Worker(scheduler=self.sch, worker_id='X') as w, Worker(scheduler=self.sch, worker_id='Y') as w2:
             self.w = w
@@ -267,27 +277,6 @@ class WorkerTest(unittest.TestCase):
         self.assertFalse(a.has_run)
         self.assertFalse(b.has_run)
 
-    def test_tracking_url_deprecated(self):
-        tracking_url = 'http://test_url.com/'
-
-        class A(Task):
-            has_run = False
-
-            def complete(self):
-                return self.has_run
-
-            def run(self, tracking_url_callback=None):
-                if tracking_url_callback is not None:
-                    tracking_url_callback(tracking_url)
-                self.has_run = True
-
-        a = A()
-        self.assertTrue(self.w.add(a))
-        self.assertTrue(self.w.run())
-        tasks = self.sch.task_list('DONE', '')
-        self.assertEqual(1, len(tasks))
-        self.assertEqual(tracking_url, tasks[a.task_id]['tracking_url'])
-
     def test_type_error_in_tracking_run_deprecated(self):
         class A(Task):
             num_runs = 0
@@ -365,7 +354,7 @@ class WorkerTest(unittest.TestCase):
         self.assertFalse(b.has_run)
 
     def test_unknown_dep(self):
-        # see central_planner_test.CentralPlannerTest.test_remove_dep
+        # see related test_remove_dep test (grep for it)
         class A(ExternalTask):
 
             def complete(self):
@@ -531,7 +520,7 @@ class WorkerTest(unittest.TestCase):
         eb = ExternalB()
         self.assertEqual(str(eb), "B()")
 
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         with Worker(scheduler=sch, worker_id='X') as w, Worker(scheduler=sch, worker_id='Y') as w2:
             self.assertTrue(w.add(b))
             self.assertTrue(w2.add(eb))
@@ -560,7 +549,7 @@ class WorkerTest(unittest.TestCase):
 
         self.assertEqual(str(eb), "B()")
 
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         with Worker(scheduler=sch, worker_id='X') as w, Worker(scheduler=sch, worker_id='Y') as w2:
             self.assertTrue(w2.add(eb))
             self.assertTrue(w.add(b))
@@ -591,7 +580,7 @@ class WorkerTest(unittest.TestCase):
 
         b = B()
 
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
 
         with Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True) as w:
             with Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1) as w2:
@@ -625,7 +614,7 @@ class WorkerTest(unittest.TestCase):
 
         b = B()
 
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
 
         with Worker(scheduler=sch, worker_id='X', keep_alive=True, count_uniques=True) as w:
             with Worker(scheduler=sch, worker_id='Y', keep_alive=True, count_uniques=True, wait_interval=0.1) as w2:
@@ -658,7 +647,7 @@ class WorkerTest(unittest.TestCase):
                 return a, c
 
         b = B()
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         with Worker(scheduler=sch, worker_id="foo") as w:
             self.assertFalse(w.add(b))
             self.assertTrue(w.run())
@@ -691,7 +680,7 @@ class WorkerTest(unittest.TestCase):
                 return c, a
 
         b = B()
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         with Worker(scheduler=sch, worker_id="foo") as w:
             self.assertFalse(w.add(b))
             self.assertTrue(w.run())
@@ -700,123 +689,128 @@ class WorkerTest(unittest.TestCase):
             self.assertTrue(d.has_run)
             self.assertFalse(a.has_run)
 
-    def test_disable_bad_complete(self):
-        class BadCompleteTask(DummyTask):
-            disabled = True
+    def test_run_csv_batch_job(self):
+        completed = set()
+
+        class CsvBatchJob(luigi.Task):
+            values = luigi.parameter.Parameter(batch_method=','.join)
+            has_run = False
+
+            def run(self):
+                completed.update(self.values.split(','))
+                self.has_run = True
 
             def complete(self):
+                return all(value in completed for value in self.values.split(','))
+
+        tasks = [CsvBatchJob(str(i)) for i in range(10)]
+        for task in tasks:
+            self.assertTrue(self.w.add(task))
+        self.assertTrue(self.w.run())
+
+        for task in tasks:
+            self.assertTrue(task.complete())
+            self.assertFalse(task.has_run)
+
+    def test_run_max_batch_job(self):
+        completed = set()
+
+        class MaxBatchJob(luigi.Task):
+            value = luigi.IntParameter(batch_method=max)
+            has_run = False
+
+            def run(self):
+                completed.add(self.value)
+                self.has_run = True
+
+            def complete(self):
+                return any(self.value <= ran for ran in completed)
+
+        tasks = [MaxBatchJob(i) for i in range(10)]
+        for task in tasks:
+            self.assertTrue(self.w.add(task))
+        self.assertTrue(self.w.run())
+
+        for task in tasks:
+            self.assertTrue(task.complete())
+            # only task number 9 should run
+            self.assertFalse(task.has_run and task.value < 9)
+
+    def test_run_batch_job_unbatched(self):
+        completed = set()
+
+        class MaxNonBatchJob(luigi.Task):
+            value = luigi.IntParameter(batch_method=max)
+            has_run = False
+
+            batchable = False
+
+            def run(self):
+                completed.add(self.value)
+                self.has_run = True
+
+            def complete(self):
+                return self.value in completed
+
+        tasks = [MaxNonBatchJob((i,)) for i in range(10)]
+        for task in tasks:
+            self.assertTrue(self.w.add(task))
+        self.assertTrue(self.w.run())
+
+        for task in tasks:
+            self.assertTrue(task.complete())
+            self.assertTrue(task.has_run)
+
+    def test_run_batch_job_limit_batch_size(self):
+        completed = set()
+        runs = []
+
+        class CsvLimitedBatchJob(luigi.Task):
+            value = luigi.parameter.Parameter(batch_method=','.join)
+            has_run = False
+
+            max_batch_size = 4
+
+            def run(self):
+                completed.update(self.value.split(','))
+                runs.append(self)
+
+            def complete(self):
+                return all(value in completed for value in self.value.split(','))
+
+        tasks = [CsvLimitedBatchJob(str(i)) for i in range(11)]
+        for task in tasks:
+            self.assertTrue(self.w.add(task))
+        self.assertTrue(self.w.run())
+
+        for task in tasks:
+            self.assertTrue(task.complete())
+
+        self.assertEqual(3, len(runs))
+
+    def test_fail_max_batch_job(self):
+        class MaxBatchFailJob(luigi.Task):
+            value = luigi.IntParameter(batch_method=max)
+            has_run = False
+
+            def run(self):
+                self.has_run = True
                 assert False
 
-        self.assertTrue(self.w.add(BadCompleteTask()))
-
-    def test_run_jobs_in_batch(self):
-        complete_jobs = set()
-
-        class BatchRunner(DummyTask):
-            val = luigi.Parameter()
-
-            def vals(self):
-                return map(int, self.val.split(','))
-
-            def run(self):
-                complete_jobs.update(self.vals())
-
             def complete(self):
-                return complete_jobs.issuperset(self.vals())
+                return False
 
-        class BatchRunnableJob(DummyTask):
-            val = luigi.IntParameter()
+        tasks = [MaxBatchFailJob(i) for i in range(10)]
+        for task in tasks:
+            self.assertTrue(self.w.add(task))
+        self.assertFalse(self.w.run())
 
-            batch_class = BatchRunner
-            batcher_aggregate_args = {'val': 'csv'}
+        for task in tasks:
+            # only task number 9 should run
+            self.assertFalse(task.has_run and task.value < 9)
 
-            def run(self):
-                raise RuntimeError('this should be run as a batch')
+        self.assertEqual({task.task_id for task in tasks}, set(self.sch.task_list('FAILED', '')))
 
-            def complete(self):
-                return self.val in complete_jobs
-
-        jobs = list(map(BatchRunnableJob, range(5)))
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        with Worker(scheduler=sch, worker_id="foo") as worker:
-            self.assertFalse(any(job.complete() for job in jobs))
-            for job in jobs:
-                self.assertTrue(worker.add(job))
-            self.assertTrue(worker.run())
-            self.assertTrue(all(job.complete() for job in jobs))
-            self.assertItemsEqual([job.task_id for job in jobs], sch.task_list('DONE', ''))
-
-    def test_run_overwrite_job_as_max_batch(self):
-        complete_jobs = set()
-
-        class OverwriteWrapper(luigi.WrapperTask):
-            def requires(self):
-                return map(OverwriteJob, range(5))
-
-        class OverwriteJob(DummyTask):
-            val = luigi.IntParameter()
-
-            @classmethod
-            def get_batch_class(cls):
-                return cls
-            batcher_aggregate_args = {'val': 'max'}
-
-            def run(self):
-                assert self.val == 4
-                complete_jobs.add(self.val)
-
-            def complete(self):
-                return bool(complete_jobs) and self.val <= max(complete_jobs)
-
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        with Worker(scheduler=sch, worker_id="foo") as worker:
-            job = OverwriteWrapper()
-            worker.add(job)
-            self.assertTrue(worker.run())
-            self.assertEqual({4}, complete_jobs)
-            complete = [job.task_id]
-            complete.extend([subtask.task_id for subtask in job.requires()])
-            self.assertItemsEqual(complete, sch.task_list('DONE', ''))
-            self.assertTrue(job.complete())
-
-    def test_batch_size_limit(self):
-        complete_jobs = set()
-
-        class LimitedBatchRunner(DummyTask):
-            val = luigi.Parameter()
-
-            def vals(self):
-                return map(int, self.val.split(','))
-
-            def run(self):
-                assert len(self.vals()) <= 3
-                complete_jobs.update(self.vals())
-
-            def complete(self):
-                return complete_jobs.issuperset(self.vals())
-
-        class LimitedBatchRunnableJob(DummyTask):
-            val = luigi.IntParameter()
-
-            batch_class = LimitedBatchRunner
-            batcher_aggregate_args = {'val': 'csv'}
-            max_batch_size = 3
-
-            def run(self):
-                raise RuntimeError('this should be run as a batch')
-
-            def complete(self):
-                return self.val in complete_jobs
-
-        jobs = list(map(LimitedBatchRunnableJob, range(5)))
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
-        with Worker(scheduler=sch, worker_id="foo") as worker:
-            self.assertFalse(any(job.complete() for job in jobs))
-            for job in jobs:
-                self.assertTrue(worker.add(job))
-            self.assertTrue(worker.run())
-            self.assertTrue(all(job.complete() for job in jobs))
-            self.assertItemsEqual([job.task_id for job in jobs], sch.task_list('DONE', ''))
 
 class DynamicDependenciesTest(unittest.TestCase):
     n_workers = 1
@@ -862,7 +856,7 @@ class WorkerPingThreadTests(unittest.TestCase):
 
         Kind of ugly since it uses actual timing with sleep to test the thread
         """
-        sch = CentralPlannerScheduler(
+        sch = Scheduler(
             retry_delay=100,
             remove_delay=1000,
             worker_disconnect_delay=10,
@@ -922,7 +916,7 @@ class WorkerEmailTest(LuigiTestCase):
 
     def run(self, result=None):
         super(WorkerEmailTest, self).setUp()
-        sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         with Worker(scheduler=sch, worker_id="foo") as self.worker:
             super(WorkerEmailTest, self).run(result)
 
@@ -1018,7 +1012,7 @@ class WorkerEmailTest(LuigiTestCase):
     @email_patch
     def test_task_times_out(self, emails):
         class A(luigi.Task):
-            worker_timeout = 0.00001
+            worker_timeout = 0.0001
 
             def run(self):
                 time.sleep(5)
@@ -1026,7 +1020,7 @@ class WorkerEmailTest(LuigiTestCase):
         a = A()
         luigi.build([a], workers=2, local_scheduler=True)
         self.assertTrue(emails[0].find("Luigi: %s FAILED" % (a,)) != -1)
-        self.assertTrue(emails[0].find("timed out and was terminated.") != -1)
+        self.assertTrue(emails[0].find("timed out after 0.0001 seconds and was terminated.") != -1)
 
     @with_config(dict(worker=dict(retry_external_tasks='true')))
     @email_patch
@@ -1077,7 +1071,7 @@ class SuicidalWorker(luigi.Task):
         os.kill(os.getpid(), self.signal)
 
 
-class HungWorker(luigi.Task):
+class HangTheWorkerTask(luigi.Task):
     worker_timeout = luigi.IntParameter(default=None)
 
     def run(self):
@@ -1143,7 +1137,7 @@ class MultipleWorkersTest(unittest.TestCase):
 
     def test_stop_worker_kills_subprocesses(self):
         with Worker(worker_processes=2) as w:
-            hung_task = HungWorker()
+            hung_task = HangTheWorkerTask()
             w.add(hung_task)
 
             w._run_task(hung_task.task_id)
@@ -1158,14 +1152,14 @@ class MultipleWorkersTest(unittest.TestCase):
         self.assertFalse(is_running())
 
     def test_time_out_hung_worker(self):
-        luigi.build([HungWorker(0.1)], workers=2, local_scheduler=True)
+        luigi.build([HangTheWorkerTask(0.1)], workers=2, local_scheduler=True)
 
     @skipOnTravis('https://travis-ci.org/spotify/luigi/jobs/72953986')
     @mock.patch('luigi.worker.time')
     def test_purge_hung_worker_default_timeout_time(self, mock_time):
         w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
         mock_time.time.return_value = 0
-        task = HungWorker()
+        task = HangTheWorkerTask()
         w.add(task)
         w._run_task(task.task_id)
 
@@ -1182,7 +1176,7 @@ class MultipleWorkersTest(unittest.TestCase):
     def test_purge_hung_worker_override_timeout_time(self, mock_time):
         w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
         mock_time.time.return_value = 0
-        task = HungWorker(worker_timeout=10)
+        task = HangTheWorkerTask(worker_timeout=10)
         w.add(task)
         w._run_task(task.task_id)
 
@@ -1213,7 +1207,7 @@ class InsignificantParameterTask(Dummy2Task):
 
 class AssistantTest(unittest.TestCase):
     def run(self, result=None):
-        self.sch = CentralPlannerScheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
+        self.sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         self.assistant = Worker(scheduler=self.sch, worker_id='Y', assistant=True)
         with Worker(scheduler=self.sch, worker_id='X') as w:
             self.w = w
@@ -1243,6 +1237,15 @@ class AssistantTest(unittest.TestCase):
         self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [d.task_id])
 
     def test_unimported_job_type(self):
+        MODULE_CONTENTS = b'''
+import luigi
+
+
+class UnimportedTask(luigi.Task):
+    def complete(self):
+        return False
+'''
+
         class NotImportedTask(luigi.Task):
             task_family = 'UnimportedTask'
             task_module = None
@@ -1255,10 +1258,10 @@ class AssistantTest(unittest.TestCase):
         self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [task.task_id])
 
         # check that it can import with the right module
-        task.task_module = 'dummy_test_module.not_imported'
-        self.w.add(task)
-        self.assertTrue(self.assistant.run())
-        self.assertEqual(list(self.sch.task_list('DONE', '').keys()), [task.task_id])
+        with temporary_unloaded_module(MODULE_CONTENTS) as task.task_module:
+            self.w.add(task)
+            self.assertTrue(self.assistant.run())
+            self.assertEqual(list(self.sch.task_list('DONE', '').keys()), [task.task_id])
 
     def test_optional_parameter(self):
         task = InsignificantParameterTask()
@@ -1395,3 +1398,319 @@ class KeyboardInterruptBehaviorTest(LuigiTestCase):
                           ['KeyboardInterruptTask', '--local-scheduler', '--no-lock'])
         self.assertRaises(KeyboardInterrupt, luigi_run,
                           ['ExternalKeyboardInterruptTask', '--local-scheduler', '--no-lock'])
+
+
+class WorkerPurgeEventHandlerTest(unittest.TestCase):
+
+    @mock.patch('luigi.worker.TaskProcess')
+    def test_process_killed_handler(self, task_proc):
+        result = []
+
+        @HangTheWorkerTask.event_handler(Event.PROCESS_FAILURE)
+        def store_task(t, error_msg):
+            self.assertTrue(error_msg)
+            result.append(t)
+
+        w = Worker()
+        task = HangTheWorkerTask()
+        task_process = mock.MagicMock(is_alive=lambda: False, exitcode=-14, task=task)
+        task_proc.return_value = task_process
+
+        w.add(task)
+        w._run_task(task.task_id)
+        w._handle_next_task()
+
+        self.assertEqual(result, [task])
+
+    @mock.patch('luigi.worker.time')
+    def test_timeout_handler(self, mock_time):
+        result = []
+
+        @HangTheWorkerTask.event_handler(Event.TIMEOUT)
+        def store_task(t, error_msg):
+            self.assertTrue(error_msg)
+            result.append(t)
+
+        w = Worker(worker_processes=2, wait_interval=0.01, timeout=5)
+        mock_time.time.return_value = 0
+        task = HangTheWorkerTask(worker_timeout=1)
+        w.add(task)
+        w._run_task(task.task_id)
+
+        mock_time.time.return_value = 3
+        w._handle_next_task()
+
+        self.assertEqual(result, [task])
+
+
+class PerTaskRetryPolicyBehaviorTest(LuigiTestCase):
+    def setUp(self):
+        super(PerTaskRetryPolicyBehaviorTest, self).setUp()
+        self.per_task_retry_count = 2
+        self.default_retry_count = 1
+        self.sch = Scheduler(retry_delay=0.1, retry_count=self.default_retry_count, prune_on_get_work=True)
+
+    def test_with_all_disabled_with_single_worker(self):
+        """
+            With this test, a case which has a task (TestWrapperTask), requires two another tasks (TestErrorTask1,TestErrorTask1) which both is failed, is
+            tested.
+
+            Task TestErrorTask1 has default retry_count which is 1, but Task TestErrorTask2 has retry_count at task level as 2.
+
+            This test is running on single worker
+        """
+
+        class TestErrorTask1(DummyErrorTask):
+            pass
+
+        e1 = TestErrorTask1()
+
+        class TestErrorTask2(DummyErrorTask):
+            retry_count = self.per_task_retry_count
+
+        e2 = TestErrorTask2()
+
+        class TestWrapperTask(luigi.WrapperTask):
+            def requires(self):
+                return [e2, e1]
+
+        wt = TestWrapperTask()
+
+        with Worker(scheduler=self.sch, worker_id='X', keep_alive=True, wait_interval=0.1) as w1:
+            self.assertTrue(w1.add(wt))
+
+            self.assertFalse(w1.run())
+
+            self.assertEqual([wt.task_id], list(self.sch.task_list('PENDING', 'UPSTREAM_DISABLED').keys()))
+
+            self.assertEqual(sorted([e1.task_id, e2.task_id]), sorted(self.sch.task_list('DISABLED', '').keys()))
+
+            self.assertEqual(0, self.sch._state.get_task(wt.task_id).failures.num_failures())
+            self.assertEqual(self.per_task_retry_count, self.sch._state.get_task(e2.task_id).failures.num_failures())
+            self.assertEqual(self.default_retry_count, self.sch._state.get_task(e1.task_id).failures.num_failures())
+
+    def test_with_all_disabled_with_multiple_worker(self):
+        """
+            With this test, a case which has a task (TestWrapperTask), requires two another tasks (TestErrorTask1,TestErrorTask1) which both is failed, is
+            tested.
+
+            Task TestErrorTask1 has default retry_count which is 1, but Task TestErrorTask2 has retry_count at task level as 2.
+
+            This test is running on multiple worker
+        """
+
+        class TestErrorTask1(DummyErrorTask):
+            pass
+
+        e1 = TestErrorTask1()
+
+        class TestErrorTask2(DummyErrorTask):
+            retry_count = self.per_task_retry_count
+
+        e2 = TestErrorTask2()
+
+        class TestWrapperTask(luigi.WrapperTask):
+            def requires(self):
+                return [e2, e1]
+
+        wt = TestWrapperTask()
+
+        with Worker(scheduler=self.sch, worker_id='X', keep_alive=True, wait_interval=0.1) as w1:
+            with Worker(scheduler=self.sch, worker_id='Y', keep_alive=True, wait_interval=0.1) as w2:
+                with Worker(scheduler=self.sch, worker_id='Z', keep_alive=True, wait_interval=0.1) as w3:
+                    self.assertTrue(w1.add(wt))
+                    self.assertTrue(w2.add(e2))
+                    self.assertTrue(w3.add(e1))
+
+                    self.assertFalse(w3.run())
+                    self.assertFalse(w2.run())
+                    self.assertFalse(w1.run())
+
+                    self.assertEqual([wt.task_id], list(self.sch.task_list('PENDING', 'UPSTREAM_DISABLED').keys()))
+
+                    self.assertEqual(sorted([e1.task_id, e2.task_id]), sorted(self.sch.task_list('DISABLED', '').keys()))
+
+                    self.assertEqual(0, self.sch._state.get_task(wt.task_id).failures.num_failures())
+                    self.assertEqual(self.per_task_retry_count, self.sch._state.get_task(e2.task_id).failures.num_failures())
+                    self.assertEqual(self.default_retry_count, self.sch._state.get_task(e1.task_id).failures.num_failures())
+
+    def test_with_includes_success_with_single_worker(self):
+        """
+            With this test, a case which has a task (TestWrapperTask), requires one (TestErrorTask1) FAILED and one (TestSuccessTask1) SUCCESS, is tested.
+
+            Task TestSuccessTask1 will be DONE successfully, but Task TestErrorTask1 will be failed and it has retry_count at task level as 2.
+
+            This test is running on single worker
+        """
+
+        class TestSuccessTask1(DummyTask):
+            pass
+
+        s1 = TestSuccessTask1()
+
+        class TestErrorTask1(DummyErrorTask):
+            retry_count = self.per_task_retry_count
+
+        e1 = TestErrorTask1()
+
+        class TestWrapperTask(luigi.WrapperTask):
+            def requires(self):
+                return [e1, s1]
+
+        wt = TestWrapperTask()
+
+        with Worker(scheduler=self.sch, worker_id='X', keep_alive=True, wait_interval=0.1) as w1:
+            self.assertTrue(w1.add(wt))
+
+            self.assertFalse(w1.run())
+
+            self.assertEqual([wt.task_id], list(self.sch.task_list('PENDING', 'UPSTREAM_DISABLED').keys()))
+            self.assertEqual([e1.task_id], list(self.sch.task_list('DISABLED', '').keys()))
+            self.assertEqual([s1.task_id], list(self.sch.task_list('DONE', '').keys()))
+
+            self.assertEqual(0, self.sch._state.get_task(wt.task_id).failures.num_failures())
+            self.assertEqual(self.per_task_retry_count, self.sch._state.get_task(e1.task_id).failures.num_failures())
+            self.assertEqual(0, self.sch._state.get_task(s1.task_id).failures.num_failures())
+
+    def test_with_includes_success_with_multiple_worker(self):
+        """
+            With this test, a case which has a task (TestWrapperTask), requires one (TestErrorTask1) FAILED and one (TestSuccessTask1) SUCCESS, is tested.
+
+            Task TestSuccessTask1 will be DONE successfully, but Task TestErrorTask1 will be failed and it has retry_count at task level as 2.
+
+            This test is running on multiple worker
+        """
+
+        class TestSuccessTask1(DummyTask):
+            pass
+
+        s1 = TestSuccessTask1()
+
+        class TestErrorTask1(DummyErrorTask):
+            retry_count = self.per_task_retry_count
+
+        e1 = TestErrorTask1()
+
+        class TestWrapperTask(luigi.WrapperTask):
+            def requires(self):
+                return [e1, s1]
+
+        wt = TestWrapperTask()
+
+        with Worker(scheduler=self.sch, worker_id='X', keep_alive=True, wait_interval=0.1) as w1:
+            with Worker(scheduler=self.sch, worker_id='Y', keep_alive=True, wait_interval=0.1) as w2:
+                with Worker(scheduler=self.sch, worker_id='Z', keep_alive=True, wait_interval=0.1) as w3:
+                    self.assertTrue(w1.add(wt))
+                    self.assertTrue(w2.add(e1))
+                    self.assertTrue(w3.add(s1))
+
+                    self.assertTrue(w3.run())
+                    self.assertFalse(w2.run())
+                    self.assertFalse(w1.run())
+
+                    self.assertEqual([wt.task_id], list(self.sch.task_list('PENDING', 'UPSTREAM_DISABLED').keys()))
+                    self.assertEqual([e1.task_id], list(self.sch.task_list('DISABLED', '').keys()))
+                    self.assertEqual([s1.task_id], list(self.sch.task_list('DONE', '').keys()))
+
+                    self.assertEqual(0, self.sch._state.get_task(wt.task_id).failures.num_failures())
+                    self.assertEqual(self.per_task_retry_count, self.sch._state.get_task(e1.task_id).failures.num_failures())
+                    self.assertEqual(0, self.sch._state.get_task(s1.task_id).failures.num_failures())
+
+    def test_with_dynamic_dependencies_with_single_worker(self):
+        """
+            With this test, a case includes dependency tasks(TestErrorTask1,TestErrorTask2) which both are failed.
+
+            Task TestErrorTask1 has default retry_count which is 1, but Task TestErrorTask2 has retry_count at task level as 2.
+
+            This test is running on single worker
+        """
+
+        class TestErrorTask1(DummyErrorTask):
+            pass
+
+        e1 = TestErrorTask1()
+
+        class TestErrorTask2(DummyErrorTask):
+            retry_count = self.per_task_retry_count
+
+        e2 = TestErrorTask2()
+
+        class TestSuccessTask1(DummyTask):
+            pass
+
+        s1 = TestSuccessTask1()
+
+        class TestWrapperTask(DummyTask):
+            def requires(self):
+                return [s1]
+
+            def run(self):
+                super(TestWrapperTask, self).run()
+                yield e2, e1
+
+        wt = TestWrapperTask()
+
+        with Worker(scheduler=self.sch, worker_id='X', keep_alive=True, wait_interval=0.1) as w1:
+            self.assertTrue(w1.add(wt))
+
+            self.assertFalse(w1.run())
+
+            self.assertEqual([wt.task_id], list(self.sch.task_list('PENDING', 'UPSTREAM_DISABLED').keys()))
+
+            self.assertEqual(sorted([e1.task_id, e2.task_id]), sorted(self.sch.task_list('DISABLED', '').keys()))
+
+            self.assertEqual(0, self.sch._state.get_task(wt.task_id).failures.num_failures())
+            self.assertEqual(0, self.sch._state.get_task(s1.task_id).failures.num_failures())
+            self.assertEqual(self.per_task_retry_count, self.sch._state.get_task(e2.task_id).failures.num_failures())
+            self.assertEqual(self.default_retry_count, self.sch._state.get_task(e1.task_id).failures.num_failures())
+
+    def test_with_dynamic_dependencies_with_multiple_workers(self):
+        """
+            With this test, a case includes dependency tasks(TestErrorTask1,TestErrorTask2) which both are failed.
+
+            Task TestErrorTask1 has default retry_count which is 1, but Task TestErrorTask2 has retry_count at task level as 2.
+
+            This test is running on multiple worker
+        """
+
+        class TestErrorTask1(DummyErrorTask):
+            pass
+
+        e1 = TestErrorTask1()
+
+        class TestErrorTask2(DummyErrorTask):
+            retry_count = self.per_task_retry_count
+
+        e2 = TestErrorTask2()
+
+        class TestSuccessTask1(DummyTask):
+            pass
+
+        s1 = TestSuccessTask1()
+
+        class TestWrapperTask(DummyTask):
+            def requires(self):
+                return [s1]
+
+            def run(self):
+                super(TestWrapperTask, self).run()
+                yield e2, e1
+
+        wt = TestWrapperTask()
+
+        with Worker(scheduler=self.sch, worker_id='X', keep_alive=True, wait_interval=0.1) as w1:
+            with Worker(scheduler=self.sch, worker_id='Y', keep_alive=True, wait_interval=0.1) as w2:
+                self.assertTrue(w1.add(wt))
+                self.assertTrue(w2.add(s1))
+
+                self.assertTrue(w2.run())
+                self.assertFalse(w1.run())
+
+                self.assertEqual([wt.task_id], list(self.sch.task_list('PENDING', 'UPSTREAM_DISABLED').keys()))
+
+                self.assertEqual(sorted([e1.task_id, e2.task_id]), sorted(self.sch.task_list('DISABLED', '').keys()))
+
+                self.assertEqual(0, self.sch._state.get_task(wt.task_id).failures.num_failures())
+                self.assertEqual(0, self.sch._state.get_task(s1.task_id).failures.num_failures())
+                self.assertEqual(self.per_task_retry_count, self.sch._state.get_task(e2.task_id).failures.num_failures())
+                self.assertEqual(self.default_retry_count, self.sch._state.get_task(e1.task_id).failures.num_failures())

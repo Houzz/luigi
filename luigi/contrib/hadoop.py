@@ -447,7 +447,7 @@ class HadoopJobRunner(JobRunner):
         # build arguments
         config = configuration.get_config()
         python_executable = config.get('hadoop', 'python-executable', 'python')
-        runner_arg = 'mrrunner.pex' if job.package_binary else 'mrrunner.py'
+        runner_arg = 'mrrunner.pex' if job.package_binary is not None else 'mrrunner.py'
         command = '{0} {1} {{step}}'.format(python_executable, runner_arg)
         map_cmd = command.format(step='map')
         cmb_cmd = command.format(step='combiner')
@@ -513,9 +513,9 @@ class HadoopJobRunner(JobRunner):
             arglist += ['-combiner', cmb_cmd]
         if job.reducer != NotImplemented:
             arglist += ['-reducer', red_cmd]
-        packages_fn = 'mrrunner.pex' if job.package_binary else 'packages.tar'
+        packages_fn = 'mrrunner.pex' if job.package_binary is not None else 'packages.tar'
         files = [
-            mrrunner if not job.package_binary else None,
+            runner_path if job.package_binary is None else None,
             os.path.join(self.tmp_dir, packages_fn),
             os.path.join(self.tmp_dir, 'job-instance.pickle'),
         ]
@@ -548,7 +548,7 @@ class HadoopJobRunner(JobRunner):
         arglist += ['-output', output_hadoop]
 
         # submit job
-        if job.package_binary:
+        if job.package_binary is not None:
             shutil.copy(job.package_binary, os.path.join(self.tmp_dir, 'mrrunner.pex'))
         else:
             create_packages_archive(packages, os.path.join(self.tmp_dir, 'packages.tar'))

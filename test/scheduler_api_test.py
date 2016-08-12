@@ -16,27 +16,25 @@
 #
 
 import mock
+import itertools
 import time
 from helpers import unittest
-
 from nose.plugins.attrib import attr
-
 import luigi.notifications
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, \
-    UNKNOWN, BATCH_RUNNING, CentralPlannerScheduler
-from luigi.task import task_id_str
+    UNKNOWN, RUNNING, BATCH_RUNNING, Scheduler
 
 luigi.notifications.DEBUG = True
 WORKER = 'myworker'
 
 
 @attr('scheduler')
-class CentralPlannerTest(unittest.TestCase):
+class SchedulerApiTest(unittest.TestCase):
 
     def setUp(self):
-        super(CentralPlannerTest, self).setUp()
+        super(SchedulerApiTest, self).setUp()
         conf = self.get_scheduler_config()
-        self.sch = CentralPlannerScheduler(**conf)
+        self.sch = Scheduler(**conf)
         self.time = time.time
 
     def get_scheduler_config(self):
@@ -46,12 +44,12 @@ class CentralPlannerTest(unittest.TestCase):
             'worker_disconnect_delay': 10,
             'disable_persist': 10,
             'disable_window': 10,
-            'disable_failures': 3,
+            'retry_count': 3,
             'disable_hard_timeout': 60 * 60,
         }
 
     def tearDown(self):
-        super(CentralPlannerTest, self).tearDown()
+        super(SchedulerApiTest, self).tearDown()
         if time.time != self.time:
             time.time = self.time
 
@@ -158,6 +156,351 @@ class CentralPlannerTest(unittest.TestCase):
                 self.sch.prune()
 
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'A')
+
+    def test_get_work_single_batch_item(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True)
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertEqual('A_a_1', response['task_id'])
+
+        param_values = response['task_params'].values()
+        self.assertTrue(not any(isinstance(param, list)) for param in param_values)
+
+    def test_get_work_multiple_batch_items(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=True)
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response['task_id'])
+        self.assertEqual({'a': ['1', '2', '3']}, response['task_params'])
+        self.assertEqual('A', response['task_family'])
+
+    def test_get_work_with_batch_items_with_resources(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True,
+            resources={'r1': 1})
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True,
+            resources={'r1': 1})
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=True,
+            resources={'r1': 1})
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response['task_id'])
+        self.assertEqual({'a': ['1', '2', '3']}, response['task_params'])
+        self.assertEqual('A', response['task_family'])
+
+    def test_get_work_limited_batch_size(self):
+        self.sch.add_task_batcher(
+            worker=WORKER, task_family='A', batched_args=['a'], max_batch_size=2)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True,
+            priority=1)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=True,
+            priority=2)
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response['task_id'])
+        self.assertEqual({'a': ['3', '1']}, response['task_params'])
+        self.assertEqual('A', response['task_family'])
+
+        response2 = self.sch.get_work(worker=WORKER)
+        self.assertEqual('A_a_2', response2['task_id'])
+
+    def test_get_work_do_not_batch_non_batchable_item(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True,
+            priority=1)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=False,
+            priority=2)
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertEqual('A_a_3', response['task_id'])
+
+        response2 = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response2['task_id'])
+        self.assertEqual({'a': ['1', '2']}, response2['task_params'])
+        self.assertEqual('A', response2['task_family'])
+
+    def test_get_work_group_on_non_batch_params(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['b'])
+        for a, b, c in itertools.product((1, 2), repeat=3):
+            self.sch.add_task(
+                worker=WORKER, task_id='A_%i_%i_%i' % (a, b, c), family='A',
+                params={'a': str(a), 'b': str(b), 'c': str(c)}, batchable=True,
+                priority=9 * a + 3 * c + b)
+
+        for a, c in [('2', '2'), ('2', '1'), ('1', '2'), ('1', '1')]:
+            response = self.sch.get_work(worker=WORKER)
+            self.assertIsNone(response['task_id'])
+            self.assertEqual({'a': a, 'b': ['2', '1'], 'c': c}, response['task_params'])
+            self.assertEqual('A', response['task_family'])
+
+    def test_get_work_multiple_batched_params(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a', 'b'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_1_1', family='A', params={'a': '1', 'b': '1'}, priority=1,
+            batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_1_2', family='A', params={'a': '1', 'b': '2'}, priority=2,
+            batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_2_1', family='A', params={'a': '2', 'b': '1'}, priority=3,
+            batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_2_2', family='A', params={'a': '2', 'b': '2'}, priority=4,
+            batchable=True)
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response['task_id'])
+
+        expected_params = {
+            'a': ['2', '2', '1', '1'],
+            'b': ['2', '1', '2', '1'],
+        }
+        self.assertEqual(expected_params, response['task_params'])
+
+    def test_get_work_with_unbatched_worker_on_batched_task(self):
+        self.sch.add_task_batcher(worker='batcher', task_family='A', batched_args=['a'])
+        for i in range(5):
+            self.sch.add_task(
+                worker=WORKER, task_id='A_%i' % i, family='A', params={'a': str(i)}, priority=i,
+                batchable=False)
+            self.sch.add_task(
+                worker='batcher', task_id='A_%i' % i, family='A', params={'a': str(i)}, priority=i,
+                batchable=True)
+        self.assertEqual('A_4', self.sch.get_work(worker=WORKER)['task_id'])
+        batch_response = self.sch.get_work(worker='batcher')
+        self.assertIsNone(batch_response['task_id'])
+        self.assertEqual({'a': ['3', '2', '1', '0']}, batch_response['task_params'])
+
+    def test_batched_tasks_become_batch_running(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': 1}, batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': 2}, batchable=True)
+        self.sch.get_work(worker=WORKER)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list('BATCH_RUNNING', '').keys()))
+
+    def test_set_batch_runner_new_task(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        response = self.sch.get_work(worker=WORKER)
+        batch_id = response['batch_id']
+        self.sch.add_task(
+            worker=WORKER, task_id='A_1_2', task_family='A', params={'a': '1,2'},
+            batch_id=batch_id, status='RUNNING')
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list('BATCH_RUNNING', '').keys()))
+        self.assertEqual({'A_1_2'}, set(self.sch.task_list('RUNNING', '').keys()))
+
+        self.sch.add_task(worker=WORKER, task_id='A_1_2', status=DONE)
+        self.assertEqual({'A_1', 'A_2', 'A_1_2'}, set(self.sch.task_list(DONE, '').keys()))
+
+    def test_set_batch_runner_max(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        response = self.sch.get_work(worker=WORKER)
+        batch_id = response['batch_id']
+        self.sch.add_task(
+            worker=WORKER, task_id='A_2', task_family='A', params={'a': '2'},
+            batch_id=batch_id, status='RUNNING')
+        self.assertEqual({'A_1'}, set(self.sch.task_list('BATCH_RUNNING', '').keys()))
+        self.assertEqual({'A_2'}, set(self.sch.task_list('RUNNING', '').keys()))
+
+        self.sch.add_task(worker=WORKER, task_id='A_2', status=DONE)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(DONE, '').keys()))
+
+    def _start_simple_batch(self, use_max=False):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        response = self.sch.get_work(worker=WORKER)
+        batch_id = response['batch_id']
+        task_id, params = ('A_2', {'a': '2'}) if use_max else ('A_1_2', {'a': '1,2'})
+        self.sch.add_task(
+            worker=WORKER, task_id=task_id, task_family='A', params=params, batch_id=batch_id,
+            status='RUNNING')
+
+    def test_batch_fail(self):
+        self._start_simple_batch()
+        self.sch.add_task(worker=WORKER, task_id='A_1_2', status=FAILED, expl='bad failure')
+
+        task_ids = {'A_1', 'A_2'}
+        self.assertEqual(task_ids, set(self.sch.task_list(FAILED, '').keys()))
+        for task_id in task_ids:
+            expl = self.sch.fetch_error(task_id)['error']
+            self.assertEqual('bad failure', expl)
+
+    def test_batch_fail_max(self):
+        self._start_simple_batch(use_max=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', status=FAILED, expl='bad max failure')
+
+        task_ids = {'A_1', 'A_2'}
+        self.assertEqual(task_ids, set(self.sch.task_list(FAILED, '').keys()))
+        for task_id in task_ids:
+            response = self.sch.fetch_error(task_id)
+            self.assertEqual('bad max failure', response['error'])
+
+    def test_batch_fail_from_dead_worker(self):
+        self.setTime(1)
+        self._start_simple_batch()
+        self.setTime(10000)
+        self.sch.prune()
+        self.setTime(10001)
+        self.sch.prune()
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(FAILED, '').keys()))
+
+    def test_batch_fail_max_from_dead_worker(self):
+        self.setTime(1)
+        self._start_simple_batch(use_max=True)
+        self.setTime(601)
+        self.sch.prune()
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(FAILED, '').keys()))
+
+    def test_batch_update_status(self):
+        self._start_simple_batch()
+        self.sch.set_task_status_message('A_1_2', 'test message')
+        for task_id in ('A_1', 'A_2', 'A_1_2'):
+            self.assertEqual('test message', self.sch.get_task_status_message(task_id)['statusMessage'])
+
+    def test_batch_tracking_url(self):
+        self._start_simple_batch()
+        self.sch.add_task(worker=WORKER, task_id='A_1_2', tracking_url='http://test.tracking.url/')
+
+        tasks = self.sch.task_list('', '')
+        for task_id in ('A_1', 'A_2', 'A_1_2'):
+            self.assertEqual('http://test.tracking.url/', tasks[task_id]['tracking_url'])
+
+    def test_finish_batch(self):
+        self._start_simple_batch()
+        self.sch.add_task(worker=WORKER, task_id='A_1_2', status=DONE)
+        self.assertEqual({'A_1', 'A_2', 'A_1_2'}, set(self.sch.task_list(DONE, '').keys()))
+
+    def test_reschedule_max_batch(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_1', family='A', params={'a': '1'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_2', family='A', params={'a': '2'}, batchable=True)
+        response = self.sch.get_work(worker=WORKER)
+        batch_id = response['batch_id']
+        self.sch.add_task(
+            worker=WORKER, task_id='A_2', task_family='A', params={'a': '2'}, batch_id=batch_id,
+            status='RUNNING')
+        self.sch.add_task(worker=WORKER, task_id='A_2', status=DONE)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_2', task_family='A', params={'a': '2'}, batchable=True)
+
+        self.assertEqual({'A_2'}, set(self.sch.task_list(PENDING, '').keys()))
+        self.assertEqual({'A_1'}, set(self.sch.task_list(DONE, '').keys()))
+
+    def test_resend_batch_on_get_work_retry(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        response = self.sch.get_work(worker=WORKER)
+        response2 = self.sch.get_work(worker=WORKER, current_tasks=())
+        self.assertEqual(response['task_id'], response2['task_id'])
+        self.assertEqual(response['task_family'], response2.get('task_family'))
+        self.assertEqual(response['task_params'], response2.get('task_params'))
+
+    def test_resend_batch_runner_on_get_work_retry(self):
+        self._start_simple_batch()
+        get_work = self.sch.get_work(worker=WORKER, current_tasks=())
+        self.assertEqual('A_1_2', get_work['task_id'])
+
+    def test_resend_max_batch_runner_on_get_work_retry(self):
+        self._start_simple_batch(use_max=True)
+        get_work = self.sch.get_work(worker=WORKER, current_tasks=())
+        self.assertEqual('A_2', get_work['task_id'])
+
+    def test_do_not_resend_batch_runner_on_get_work(self):
+        self._start_simple_batch()
+        get_work = self.sch.get_work(worker=WORKER, current_tasks=('A_1_2',))
+        self.assertIsNone(get_work['task_id'])
+
+    def test_do_not_resend_max_batch_runner_on_get_work(self):
+        self._start_simple_batch(use_max=True)
+        get_work = self.sch.get_work(worker=WORKER, current_tasks=('A_2',))
+        self.assertIsNone(get_work['task_id'])
+
+    def test_rescheduled_batch_running_tasks_stay_batch_running_before_runner(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        self.sch.get_work(worker=WORKER)
+
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(BATCH_RUNNING, '').keys()))
+
+    def test_rescheduled_batch_running_tasks_stay_batch_running_after_runner(self):
+        self._start_simple_batch()
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(BATCH_RUNNING, '').keys()))
+
+    def test_disabled_batch_running_tasks_stay_batch_running_before_runner(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        self.sch.get_work(worker=WORKER)
+
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True, status=DISABLED)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True, status=DISABLED)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(BATCH_RUNNING, '').keys()))
+
+    def test_get_work_returns_batch_task_id_list(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True)
+        response = self.sch.get_work(worker=WORKER)
+        self.assertEqual({'A_1', 'A_2'}, set(response['batch_task_ids']))
+
+    def test_disabled_batch_running_tasks_stay_batch_running_after_runner(self):
+        self._start_simple_batch()
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
+                          batchable=True, status=DISABLED)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
+                          batchable=True, status=DISABLED)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(BATCH_RUNNING, '').keys()))
 
     def test_do_not_overwrite_tracking_url_while_running(self):
         self.sch.add_task(task_id='A', worker='X', status='RUNNING', tracking_url='trackme')
@@ -345,19 +688,28 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.ping(worker='X')  # worker still alive
         self.assertEqual('PENDING', self.sch.task_list('', '')['A']['status'])
 
-    def test_fail_job_from_dead_worker_with_live_assistant(self):
+    def test_assistant_doesnt_keep_alive_task(self):
         self.setTime(0)
         self.sch.add_task(worker='X', task_id='A')
         self.assertEqual('A', self.sch.get_work(worker='X')['task_id'])
-        self.sch.add_worker('Y', [('assistant', True)])
+        self.sch.add_worker('Y', {'assistant': True})
 
-        self.setTime(600)
+        remove_delay = self.get_scheduler_config()['remove_delay'] + 1.0
+        self.setTime(remove_delay)
         self.sch.ping(worker='Y')
         self.sch.prune()
+        self.assertEqual(['A'], list(self.sch.task_list(status='FAILED', upstream_status='').keys()))
+        self.assertEqual(['A'], list(self.sch.task_list(status='', upstream_status='').keys()))
 
-        self.assertEqual(['A'], list(self.sch.task_list('FAILED', '').keys()))
+        self.setTime(2*remove_delay)
+        self.sch.ping(worker='Y')
+        self.sch.prune()
+        self.assertEqual([], list(self.sch.task_list(status='', upstream_status='').keys()))
 
     def test_assistant_request_runnable_task(self):
+        """
+        Test that an assistant gets a task despite it havent registered for it
+        """
         self.setTime(0)
         self.sch.add_task(worker='X', task_id='A', runnable=True)
         self.setTime(600)
@@ -369,27 +721,31 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='A', runnable=False)
         self.assertIsNone(self.sch.get_work(worker='Y', assistant=True)['task_id'])
 
-    def test_prune_done_tasks(self, expected=None):
+    def _test_prune_done_tasks(self, expected=None):
         self.setTime(0)
         self.sch.add_task(worker=WORKER, task_id='A', status=DONE)
         self.sch.add_task(worker=WORKER, task_id='B', deps=['A'], status=DONE)
         self.sch.add_task(worker=WORKER, task_id='C', deps=['B'])
 
         self.setTime(600)
-        self.sch.ping(worker='ASSISTANT')
+        self.sch.ping(worker='MAYBE_ASSITANT')
         self.sch.prune()
         self.setTime(2000)
-        self.sch.ping(worker='ASSISTANT')
+        self.sch.ping(worker='MAYBE_ASSITANT')
         self.sch.prune()
 
-        self.assertEqual(set(expected or ()), set(self.sch.task_list('', '').keys()))
+        self.assertEqual(set(expected), set(self.sch.task_list('', '').keys()))
+
+    def test_prune_done_tasks_not_assistant(self, expected=None):
+        # Here, MAYBE_ASSISTANT isnt an assistant
+        self._test_prune_done_tasks(expected=[])
 
     def test_keep_tasks_for_assistant(self):
-        self.sch.get_work(worker='ASSISTANT', assistant=True)  # tell the scheduler this is an assistant
-        self.test_prune_done_tasks(['B', 'C'])
+        self.sch.get_work(worker='MAYBE_ASSITANT', assistant=True)  # tell the scheduler this is an assistant
+        self._test_prune_done_tasks([])
 
     def test_keep_scheduler_disabled_tasks_for_assistant(self):
-        self.sch.get_work(worker='ASSISTANT', assistant=True)  # tell the scheduler this is an assistant
+        self.sch.get_work(worker='MAYBE_ASSITANT', assistant=True)  # tell the scheduler this is an assistant
 
         # create a scheduler disabled task and a worker disabled task
         for i in range(10):
@@ -398,12 +754,12 @@ class CentralPlannerTest(unittest.TestCase):
 
         # scheduler prunes the worker disabled task
         self.assertEqual(set(['D', 'E']), set(self.sch.task_list(DISABLED, '')))
-        self.test_prune_done_tasks(['B', 'C', 'D'])
+        self._test_prune_done_tasks([])
 
     def test_keep_failed_tasks_for_assistant(self):
-        self.sch.get_work(worker='ASSISTANT', assistant=True)  # tell the scheduler this is an assistant
-        self.sch.add_task(worker=WORKER, task_id='D', status=FAILED, deps='A')
-        self.test_prune_done_tasks(['A', 'B', 'C', 'D'])
+        self.sch.get_work(worker='MAYBE_ASSITANT', assistant=True)  # tell the scheduler this is an assistant
+        self.sch.add_task(worker=WORKER, task_id='D', status=FAILED, deps=['A'])
+        self._test_prune_done_tasks([])
 
     def test_scheduler_resources_none_allow_one(self):
         self.sch.add_task(worker='X', task_id='A', resources={'R1': 1})
@@ -415,12 +771,12 @@ class CentralPlannerTest(unittest.TestCase):
 
     def test_scheduler_with_insufficient_resources(self):
         self.sch.add_task(worker='X', task_id='A', resources={'R1': 3})
-        self.sch.update_resources({'R1': 2})
+        self.sch.update_resources(R1=2)
         self.assertFalse(self.sch.get_work(worker='X')['task_id'])
 
     def test_scheduler_with_sufficient_resources(self):
         self.sch.add_task(worker='X', task_id='A', resources={'R1': 3})
-        self.sch.update_resources({'R1': 3})
+        self.sch.update_resources(R1=3)
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 
     def test_scheduler_with_resources_used(self):
@@ -428,16 +784,16 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 
         self.sch.add_task(worker='Y', task_id='B', resources={'R1': 1})
-        self.sch.update_resources({'R1': 1})
+        self.sch.update_resources(R1=1)
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
     def test_scheduler_overprovisioned_on_other_resource(self):
         self.sch.add_task(worker='X', task_id='A', resources={'R1': 2})
-        self.sch.update_resources({'R1': 2})
+        self.sch.update_resources(R1=2)
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
 
         self.sch.add_task(worker='Y', task_id='B', resources={'R2': 2})
-        self.sch.update_resources({'R1': 1, 'R2': 2})
+        self.sch.update_resources(R1=1, R2=2)
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'B')
 
     def test_scheduler_with_priority_and_competing_resources(self):
@@ -446,7 +802,7 @@ class CentralPlannerTest(unittest.TestCase):
 
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=10)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
-        self.sch.update_resources({'R': 1})
+        self.sch.update_resources(R=1)
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
         self.sch.add_task(worker='Y', task_id='D', priority=0)
@@ -458,7 +814,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=5)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
 
-        self.sch.update_resources({'R': 1})
+        self.sch.update_resources(R=1)
         self.sch.add_worker('X', [('workers', 1)])
         self.assertEqual('C', self.sch.get_work(worker='Y')['task_id'])
 
@@ -468,7 +824,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=5)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
 
-        self.sch.update_resources({'R': 1})
+        self.sch.update_resources(R=1)
         self.sch.add_worker('X', [('workers', 2)])
         self.sch.add_worker('Y', [])
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
@@ -479,7 +835,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=5)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
 
-        self.sch.update_resources({'R': 1})
+        self.sch.update_resources(R=1)
         self.sch.add_worker('X', [('workers', 1)])
         self.assertEqual('A', self.sch.get_work(worker='X')['task_id'])
         self.assertEqual('C', self.sch.get_work(worker='Y')['task_id'])
@@ -491,7 +847,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=5)
         self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
 
-        self.sch.update_resources({'R': 1})
+        self.sch.update_resources(R=1)
         self.sch.add_worker('X', [('workers', 1)])
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
@@ -503,7 +859,7 @@ class CentralPlannerTest(unittest.TestCase):
 
         self.sch.add_worker('X', {'workers': 2})
         self.sch.add_worker('Y', {'workers': 1})
-        self.sch.update_resources({'R': 2})
+        self.sch.update_resources(R=2)
 
         self.assertEqual('A', self.sch.get_work(worker='X')['task_id'])
         self.assertFalse(self.sch.get_work(worker='X')['task_id'])
@@ -514,7 +870,7 @@ class CentralPlannerTest(unittest.TestCase):
 
         self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=10)
         self.sch.add_task(worker='Y', task_id='C', priority=0)
-        self.sch.update_resources({'R': 1})
+        self.sch.update_resources(R=1)
 
         self.assertEqual('C', self.sch.get_work(worker='Y')['task_id'])
 
@@ -563,7 +919,7 @@ class CentralPlannerTest(unittest.TestCase):
     def test_update_resources(self):
         self.sch.add_task(worker=WORKER, task_id='A', deps=['B'])
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r': 2})
-        self.sch.update_resources({'r': 1})
+        self.sch.update_resources(r=1)
 
         # B requires too many resources, we can't schedule
         self.check_task_order([])
@@ -577,7 +933,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1, 'r2': 1})
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1, 'r2': 1})
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1})
-        self.sch.update_resources({'r1': 2, 'r2': 1})
+        self.sch.update_resources(r1=2, r2=1)
 
         self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
         self.check_task_order('C')
@@ -588,7 +944,7 @@ class CentralPlannerTest(unittest.TestCase):
 
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r': 2}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r': 1})
-        self.sch.update_resources({'r': 2})
+        self.sch.update_resources(r=2)
 
         # Should wait for 2 units of r to be available for B before scheduling C
         self.check_task_order([])
@@ -596,7 +952,7 @@ class CentralPlannerTest(unittest.TestCase):
     def test_no_lock_if_too_many_resources_required(self):
         self.sch.add_task(worker=WORKER, task_id='A', resources={'r': 2}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r': 1})
-        self.sch.update_resources({'r': 1})
+        self.sch.update_resources(r=1)
         self.check_task_order('B')
 
     def test_multiple_resources_lock(self):
@@ -604,7 +960,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='A', resources={'r1': 1, 'r2': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r2': 1})
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1})
-        self.sch.update_resources({'r1': 1, 'r2': 1})
+        self.sch.update_resources(r1=1, r2=1)
 
         # should preserve both resources for worker 'X'
         self.check_task_order([])
@@ -613,7 +969,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1, 'r2': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r2': 1})
-        self.sch.update_resources({'r1': 1, 'r2': 2})
+        self.sch.update_resources(r1=1, r2=2)
 
         self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
         # C doesn't block B, so it can go first
@@ -625,18 +981,18 @@ class CentralPlannerTest(unittest.TestCase):
 
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1, 'r2': 1}, priority=20)
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r1': 1}, priority=0)
-        self.sch.update_resources({'r1': 2, 'r2': 1})
+        self.sch.update_resources(r1=2, r2=1)
         self.assertEqual('C', self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_allow_resource_use_while_scheduling(self):
-        self.sch.update_resources({'r1': 1})
+        self.sch.update_resources(r1=1)
         self.sch.add_task(worker='SCHEDULING', task_id='A', resources={'r1': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1}, priority=1)
         self.assertEqual('B', self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_stop_locking_resource_for_uninterested_worker(self):
         self.setTime(0)
-        self.sch.update_resources({'r1': 1})
+        self.sch.update_resources(r1=1)
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
         self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1}, priority=10)
         self.sch.add_task(worker='LOW_PRIO', task_id='B', resources={'r1': 1}, priority=1)
@@ -683,13 +1039,13 @@ class CentralPlannerTest(unittest.TestCase):
         self.check_task_order(['A', 'B', 'C', 'D'])
 
     def test_ranking_prefer_newer(self):
-        sch = CentralPlannerScheduler(prefer_newer_tasks=True)
+        sch = Scheduler(prefer_newer_tasks=True)
         sch.add_task(task_id='A', worker=WORKER)
         sch.add_task(task_id='B', worker=WORKER)
         self.check_task_order(['B', 'A'], sch)
 
     def test_ranking_prefer_older(self):
-        sch = CentralPlannerScheduler(prefer_newer_tasks=False)
+        sch = Scheduler(prefer_newer_tasks=False)
         sch.add_task(task_id='A', worker=WORKER)
         sch.add_task(task_id='B', worker=WORKER)
         self.check_task_order(['A', 'B'], sch)
@@ -778,7 +1134,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], 'A')
 
     def test_automatic_re_enable(self):
-        self.sch = CentralPlannerScheduler(disable_failures=2, disable_persist=100)
+        self.sch = Scheduler(retry_count=2, disable_persist=100)
         self.setTime(0)
         self.sch.add_task(worker=WORKER, task_id='A', status=FAILED)
         self.sch.add_task(worker=WORKER, task_id='A', status=FAILED)
@@ -791,7 +1147,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(FAILED, self.sch.task_list('', '')['A']['status'])
 
     def test_automatic_re_enable_with_one_failure_allowed(self):
-        self.sch = CentralPlannerScheduler(disable_failures=1, disable_persist=100)
+        self.sch = Scheduler(retry_count=1, disable_persist=100)
         self.setTime(0)
         self.sch.add_task(worker=WORKER, task_id='A', status=FAILED)
 
@@ -803,7 +1159,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(FAILED, self.sch.task_list('', '')['A']['status'])
 
     def test_no_automatic_re_enable_after_manual_disable(self):
-        self.sch = CentralPlannerScheduler(disable_persist=100)
+        self.sch = Scheduler(disable_persist=100)
         self.setTime(0)
         self.sch.add_task(worker=WORKER, task_id='A', status=DISABLED)
 
@@ -815,7 +1171,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(DISABLED, self.sch.task_list('', '')['A']['status'])
 
     def test_no_automatic_re_enable_after_auto_then_manual_disable(self):
-        self.sch = CentralPlannerScheduler(disable_failures=2, disable_persist=100)
+        self.sch = Scheduler(retry_count=2, disable_persist=100)
         self.setTime(0)
         self.sch.add_task(worker=WORKER, task_id='A', status=FAILED)
         self.sch.add_task(worker=WORKER, task_id='A', status=FAILED)
@@ -916,20 +1272,20 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertFalse(self.sch.worker_list())
 
     def test_task_list_beyond_limit(self):
-        sch = CentralPlannerScheduler(max_shown_tasks=3)
+        sch = Scheduler(max_shown_tasks=3)
         for c in 'ABCD':
             sch.add_task(worker=WORKER, task_id=c)
         self.assertEqual(set('ABCD'), set(sch.task_list('PENDING', '', False).keys()))
         self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', ''))
 
     def test_task_list_within_limit(self):
-        sch = CentralPlannerScheduler(max_shown_tasks=4)
+        sch = Scheduler(max_shown_tasks=4)
         for c in 'ABCD':
             sch.add_task(worker=WORKER, task_id=c)
         self.assertEqual(set('ABCD'), set(sch.task_list('PENDING', '').keys()))
 
     def test_task_lists_some_beyond_limit(self):
-        sch = CentralPlannerScheduler(max_shown_tasks=3)
+        sch = Scheduler(max_shown_tasks=3)
         for c in 'ABCD':
             sch.add_task(worker=WORKER, task_id=c, status=DONE)
         for c in 'EFG':
@@ -938,7 +1294,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual({'num_tasks': 4}, sch.task_list('DONE', ''))
 
     def test_dynamic_shown_tasks_in_task_list(self):
-        sch = CentralPlannerScheduler(max_shown_tasks=3)
+        sch = Scheduler(max_shown_tasks=3)
         for c in 'ABCD':
             sch.add_task(worker=WORKER, task_id=c, status=DONE)
         for c in 'EFG':
@@ -1109,7 +1465,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertEqual(expected, self.sch.blockers(priority_sum=True))
 
     def test_search_results_beyond_limit(self):
-        sch = CentralPlannerScheduler(max_shown_tasks=3)
+        sch = Scheduler(max_shown_tasks=3)
         for i in range(4):
             sch.add_task(worker=WORKER, family='Test', params={'p': str(i)}, task_id='Test_%i' % i)
         self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', '', search='Test'))
@@ -1293,7 +1649,7 @@ class CentralPlannerTest(unittest.TestCase):
         self.assertItemsEqual(failed_tasks, self.sch.task_list(FAILED, ''))
 
     def test_daily_overwrite_task_auto_disable(self):
-        sch = CentralPlannerScheduler(disable_failures=2, disable_persist=10**8, disable_window=10**8)
+        sch = Scheduler(disable_failures=2, disable_persist=10**8, disable_window=10**8)
         sch.add_task_batcher(
             worker=WORKER, family='A', batcher_family='A', batcher_args=[('i', 'i')],
             batcher_aggregate_args={'i': 'max'},
@@ -1415,7 +1771,7 @@ class CentralPlannerTest(unittest.TestCase):
             worker=WORKER, family='A', batcher_family='As', batcher_args=[('a', 'a')],
             batcher_aggregate_args={'a': 'csv'},
         )
-        self.sch.update_resources({'a': 2})
+        self.sch.update_resources(a=2)
         self.assertEqual(task_id_str('As', {'a': '1,2'}), self.sch.get_work(worker=WORKER)['task_id'])
         self.assertEqual({'a': {'total': 2, 'used': 2}}, self.sch.resources())
 
@@ -1427,7 +1783,7 @@ class CentralPlannerTest(unittest.TestCase):
             worker=WORKER, family='A', batcher_family='As', batcher_args=[('a', 'a')],
             batcher_aggregate_args={'a': 'csv'},
         )
-        self.sch.update_resources({'a': 1})
+        self.sch.update_resources(a=1)
         self.assertEqual(task_id_str('As', {'a': '1,3'}), self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_batch_task_not_used_for_single_task(self):
@@ -1565,11 +1921,12 @@ class CentralPlannerTest(unittest.TestCase):
 
     def test_assistants_dont_nurture_finished_statuses(self):
         """
-        Assistants should not affect longevity of DONE tasks
+        Test how assistants affect longevity of tasks
 
-        Also check for statuses DISABLED and UNKNOWN.
+        Assistants should not affect longevity expect for the tasks that it is
+        running, par the one it's actually running.
         """
-        self.sch = CentralPlannerScheduler(retry_delay=100000000000)  # Never pendify failed tasks
+        self.sch = Scheduler(retry_delay=100000000000)  # Never pendify failed tasks
         self.setTime(1)
         self.sch.add_worker('assistant', [('assistant', True)])
         self.sch.ping(worker='assistant')
@@ -1590,8 +1947,8 @@ class CentralPlannerTest(unittest.TestCase):
         self.setTime(200000)
         self.sch.ping(worker='assistant')
         self.sch.prune()
-        nurtured_statuses = ['PENDING', 'FAILED', 'RUNNING']
-        not_nurtured_statuses = ['DONE', 'UNKNOWN', 'DISABLED']
+        nurtured_statuses = [RUNNING]
+        not_nurtured_statuses = [DONE, UNKNOWN, DISABLED, PENDING, FAILED]
 
         for status in nurtured_statuses:
             print(status)
@@ -1601,7 +1958,7 @@ class CentralPlannerTest(unittest.TestCase):
             print(status)
             self.assertEqual(set([]), set(self.sch.task_list(status, '')))
 
-        self.assertEqual(3, len(self.sch.task_list(None, '')))  # None == All statuses
+        self.assertEqual(1, len(self.sch.task_list(None, '')))  # None == All statuses
 
     def test_no_crash_on_only_disable_hard_timeout(self):
         """
@@ -1610,8 +1967,8 @@ class CentralPlannerTest(unittest.TestCase):
         There was some failure happening when disable_hard_timeout was set but
         disable_failures was not.
         """
-        self.sch = CentralPlannerScheduler(retry_delay=5,
-                                           disable_hard_timeout=100)
+        self.sch = Scheduler(retry_delay=5,
+                             disable_hard_timeout=100)
         self.setTime(1)
         self.sch.add_worker(WORKER, [])
         self.sch.ping(worker=WORKER)
@@ -1624,3 +1981,30 @@ class CentralPlannerTest(unittest.TestCase):
         self.setTime(10)
         self.sch.prune()
         self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], 'A')
+
+    def test_assistant_running_task_dont_disappear(self):
+        """
+        Tasks run by an assistant shouldn't be pruned
+        """
+        self.setTime(1)
+        self.sch.add_worker(WORKER, [])
+        self.sch.ping(worker=WORKER)
+
+        self.setTime(2)
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], 'A')
+        self.sch.add_task(worker=WORKER, task_id='B')
+        self.sch.add_worker('assistant', [('assistant', True)])
+        self.sch.ping(worker='assistant')
+        self.assertEqual(self.sch.get_work(worker='assistant', assistant=True)['task_id'], 'B')
+
+        self.setTime(100000)
+        # Here, lets say WORKER disconnects (doesnt ping)
+        self.sch.ping(worker='assistant')
+        self.sch.prune()
+
+        self.setTime(200000)
+        self.sch.ping(worker='assistant')
+        self.sch.prune()
+        self.assertEqual({'B'}, set(self.sch.task_list(RUNNING, '')))
+        self.assertEqual({'B'}, set(self.sch.task_list('', '')))

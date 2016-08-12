@@ -20,7 +20,7 @@ The worker communicates with the scheduler and does two things:
 1. Sends all tasks that has to be run
 2. Gets tasks from the scheduler that should be run
 
-When running in local mode, the worker talks directly to a :py:class:`~luigi.scheduler.CentralPlannerScheduler` instance.
+When running in local mode, the worker talks directly to a :py:class:`~luigi.scheduler.Scheduler` instance.
 When you run a central server, the worker will talk to the scheduler using a :py:class:`~luigi.rpc.RemoteScheduler` instance.
 
 Everything in this module is private to luigi and may change in incompatible
@@ -47,14 +47,13 @@ import threading
 import time
 import traceback
 import types
-import warnings
 
 from luigi import six
 
 from luigi import notifications
 from luigi.event import Event
 from luigi.task_register import load_task
-from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, UNKNOWN, CentralPlannerScheduler
+from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, UNKNOWN, Scheduler, RetryPolicy
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config
 from luigi.task_register import TaskClassException
@@ -86,6 +85,10 @@ def _is_external(task):
     return task.run is None or task.run == NotImplemented
 
 
+def _get_retry_policy_dict(task):
+    return RetryPolicy(task.retry_count, task.disable_hard_timeout, task.disable_window_seconds)._asdict()
+
+
 class TaskException(Exception):
     pass
 
@@ -113,20 +116,7 @@ class TaskProcess(multiprocessing.Process):
         self.task.set_tracking_url = self.tracking_url_callback
         self.task.set_status_message = self.status_message_callback
 
-        def deprecated_tracking_url_callback(*args, **kwargs):
-            warnings.warn("tracking_url_callback in run() args is deprecated, use "
-                          "set_tracking_url instead.", DeprecationWarning)
-            self.tracking_url_callback(*args, **kwargs)
-
-        run_again = False
-        try:
-            task_gen = self.task.run(tracking_url_callback=deprecated_tracking_url_callback)
-        except TypeError as ex:
-            if 'unexpected keyword argument' not in str(ex):
-                raise
-            run_again = True
-        if run_again:
-            task_gen = self.task.run()
+        task_gen = self.task.run()
 
         self.task.set_tracking_url = None
         self.task.set_status_message = None
@@ -382,7 +372,7 @@ class Worker(object):
 
     def __init__(self, scheduler=None, worker_id=None, worker_processes=1, assistant=False, **kwargs):
         if scheduler is None:
-            scheduler = CentralPlannerScheduler()
+            scheduler = Scheduler()
 
         self.worker_processes = int(worker_processes)
         self._worker_info = self._generate_worker_info()
@@ -403,12 +393,14 @@ class Worker(object):
         self.host = socket.gethostname()
         self._scheduled_tasks = {}
         self._suspended_tasks = {}
-        self._scheduled_batches = set()
+        self._batch_running_tasks = {}
+        self._batch_families_sent = set()
 
         self._first_task = None
 
         self.add_succeeded = True
         self.run_succeeded = True
+
         self.unfulfilled_counts = collections.defaultdict(int)
 
         # note that ``signal.signal(signal.SIGUSR1, fn)`` only works inside the main execution thread, which is why we
@@ -443,6 +435,11 @@ class Worker(object):
         if task:
             msg = (task, status, runnable)
             self._add_task_history.append(msg)
+
+        if task_id in self._batch_running_tasks:
+            for batch_task in self._batch_running_tasks.pop(task_id):
+                self._add_task_history.append((batch_task, status, True))
+
         self._scheduler.add_task(*args, **kwargs)
 
         logger.info('Informed scheduler that task   %s   has status   %s', task_id, status)
@@ -587,96 +584,105 @@ class Worker(object):
             pool.join()
         return self.add_succeeded
 
+    def _add_task_batcher(self, task):
+        family = task.task_family
+        if family not in self._batch_families_sent:
+            task_class = type(task)
+            batch_param_names = task_class.batch_param_names()
+            if batch_param_names:
+                self._scheduler.add_task_batcher(
+                    worker=self._id,
+                    task_family=family,
+                    batched_args=batch_param_names,
+                    max_batch_size=task.max_batch_size,
+                )
+            self._batch_families_sent.add(family)
+
     def _add(self, task, is_complete):
         if self._config.task_limit is not None and len(self._scheduled_tasks) >= self._config.task_limit:
-            logger.warning('Will not schedule %s or any dependencies due to exceeded task-limit of %d', task, self._config.task_limit)
-            return
-
-        formatted_traceback = None
-        try:
-            self._check_complete_value(is_complete)
-        except KeyboardInterrupt:
-            raise
-        except AsyncCompletionException as ex:
-            formatted_traceback = ex.trace
-        except BaseException:
-            formatted_traceback = traceback.format_exc()
-
-        if formatted_traceback is not None:
-            self.add_succeeded = False
-            self._log_complete_error(task, formatted_traceback)
-            task.trigger_event(Event.DEPENDENCY_MISSING, task)
-            self._email_complete_error(task, formatted_traceback)
+            logger.warning('Will not run %s or any dependencies due to exceeded task-limit of %d', task, self._config.task_limit)
             deps = None
             status = UNKNOWN
             runnable = False
 
-        elif is_complete:
-            deps = None
-            status = DONE
-            runnable = False
-
-            task.trigger_event(Event.DEPENDENCY_PRESENT, task)
-        elif _is_external(task):
-            deps = None
-            status = PENDING
-            runnable = worker().retry_external_tasks
-
-            task.trigger_event(Event.DEPENDENCY_MISSING, task)
-            logger.warning('Data for %s does not exist (yet?). The task is an '
-                           'external data depedency, so it can not be run from'
-                           ' this luigi process.', task)
-
         else:
+            formatted_traceback = None
             try:
-                deps = task.deps()
-            except Exception as ex:
+                self._check_complete_value(is_complete)
+            except KeyboardInterrupt:
+                raise
+            except AsyncCompletionException as ex:
+                formatted_traceback = ex.trace
+            except BaseException:
                 formatted_traceback = traceback.format_exc()
+
+            if formatted_traceback is not None:
                 self.add_succeeded = False
-                self._log_dependency_error(task, formatted_traceback)
-                task.trigger_event(Event.BROKEN_TASK, task, ex)
-                self._email_dependency_error(task, formatted_traceback)
+                self._log_complete_error(task, formatted_traceback)
+                task.trigger_event(Event.DEPENDENCY_MISSING, task)
+                self._email_complete_error(task, formatted_traceback)
                 deps = None
                 status = UNKNOWN
                 runnable = False
-            else:
+
+            elif is_complete:
+                deps = None
+                status = DONE
+                runnable = False
+                task.trigger_event(Event.DEPENDENCY_PRESENT, task)
+
+            elif _is_external(task):
+                deps = None
                 status = PENDING
-                runnable = True
+                runnable = worker().retry_external_tasks
+                task.trigger_event(Event.DEPENDENCY_MISSING, task)
+                logger.warning('Data for %s does not exist (yet?). The task is an '
+                               'external data depedency, so it can not be run from'
+                               ' this luigi process.', task)
 
-        if task.disabled:
-            status = DISABLED
+            else:
+                try:
+                    deps = task.deps()
+                    self._add_task_batcher(task)
+                except Exception as ex:
+                    formatted_traceback = traceback.format_exc()
+                    self.add_succeeded = False
+                    self._log_dependency_error(task, formatted_traceback)
+                    task.trigger_event(Event.BROKEN_TASK, task, ex)
+                    self._email_dependency_error(task, formatted_traceback)
+                    deps = None
+                    status = UNKNOWN
+                    runnable = False
+                else:
+                    status = PENDING
+                    runnable = True
 
-        if deps:
-            dep_ids = []
-            for d in deps:
-                self._validate_dependency(d)
-                task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
-                yield d  # return additional tasks to add
-                dep_ids.append(d.task_id)
+            if task.disabled:
+                status = DISABLED
 
-            deps = dep_ids
+            if deps:
+                for d in deps:
+                    self._validate_dependency(d)
+                    task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
+                    yield d  # return additional tasks to add
 
-        batch_class = task.get_batch_class()
-        if batch_class is not None and task.task_family not in self._scheduled_batches:
-            self._scheduler.add_task_batcher(
-                worker=self._id,
-                family=task.task_family,
-                batcher_family=batch_class.task_family,
-                batcher_args=task.get_batcher_args(),
-                batcher_aggregate_args=task.get_batcher_aggregate_args(),
-                max_batch_size=task.max_batch_size,
-            )
-            self._scheduled_batches.add(task.task_family)
+                deps = [d.task_id for d in deps]
 
         self._scheduled_tasks[task.task_id] = task
-        self._add_task(worker=self._id, task_id=task.task_id, status=status,
-                       deps=deps, runnable=runnable, priority=task.priority,
-                       resources=task.process_resources(),
-                       params=task.to_str_params(),
-                       family=task.task_family,
-                       module=task.task_module,
-                       batchable=task.is_batchable(),
-                       )
+        self._add_task(
+            worker=self._id,
+            task_id=task.task_id,
+            status=status,
+            deps=deps,
+            runnable=runnable,
+            priority=task.priority,
+            resources=task.process_resources(),
+            params=task.to_str_params(),
+            family=task.task_family,
+            module=task.task_module,
+            batchable=task.batchable,
+            retry_policy_dict=_get_retry_policy_dict(task),
+        )
 
     def _validate_dependency(self, dependency):
         if isinstance(dependency, Target):
@@ -705,6 +711,26 @@ class Worker(object):
             if n_unique_pending:
                 logger.debug("There are %i pending tasks unique to this worker", n_unique_pending)
 
+    def _get_work_task_id(self, get_work_response):
+        if get_work_response['task_id'] is not None:
+            return get_work_response['task_id']
+        elif 'batch_id' in get_work_response:
+            task = load_task(
+                module=get_work_response.get('task_module'),
+                task_name=get_work_response['task_family'],
+                params_str=get_work_response['task_params'],
+            )
+            self._scheduler.add_task(
+                worker=self._id,
+                task_id=task.task_id,
+                module=get_work_response.get('task_module'),
+                family=get_work_response['task_family'],
+                params=task.to_str_params(),
+                status=RUNNING,
+                batch_id=get_work_response['batch_id'],
+            )
+            return task.task_id
+
     def _get_work(self):
         if self._stop_requesting_work:
             return None, 0, 0, 0
@@ -716,14 +742,14 @@ class Worker(object):
             current_tasks=list(self._running_tasks.keys()),
         )
         n_pending_tasks = r['n_pending_tasks']
-        task_id = r['task_id']
         running_tasks = r['running_tasks']
         n_unique_pending = r['n_unique_pending']
+        task_id = self._get_work_task_id(r)
 
-        self._get_work_response_history.append(dict(
-            task_id=task_id,
-            running_tasks=running_tasks,
-        ))
+        self._get_work_response_history.append({
+            'task_id': task_id,
+            'running_tasks': running_tasks,
+        })
 
         if task_id is not None and task_id not in self._scheduled_tasks:
             logger.info('Did not schedule %s, will load it dynamically', task_id)
@@ -744,6 +770,11 @@ class Worker(object):
                                assistant=self._assistant)
                 task_id = None
                 self.run_succeeded = False
+
+        if task_id is not None and 'batch_task_ids' in r:
+            batch_tasks = filter(None, [
+                self._scheduled_tasks.get(batch_id) for batch_id in r['batch_task_ids']])
+            self._batch_running_tasks[task_id] = batch_tasks
 
         return task_id, running_tasks, n_pending_tasks, n_unique_pending
 
@@ -787,10 +818,12 @@ class Worker(object):
         """
         for task_id, p in six.iteritems(self._running_tasks):
             if not p.is_alive() and p.exitcode:
-                error_msg = 'Task %s died unexpectedly with exit code %s' % (task_id, p.exitcode)
+                error_msg = 'Task {} died unexpectedly with exit code {}'.format(task_id, p.exitcode)
+                p.task.trigger_event(Event.PROCESS_FAILURE, p.task, error_msg)
             elif p.timeout_time is not None and time.time() > float(p.timeout_time) and p.is_alive():
                 p.terminate()
-                error_msg = 'Task %s timed out and was terminated.' % task_id
+                error_msg = 'Task {} timed out after {} seconds and was terminated.'.format(task_id, p.task.worker_timeout)
+                p.task.trigger_event(Event.TIMEOUT, p.task, error_msg)
             else:
                 continue
 
