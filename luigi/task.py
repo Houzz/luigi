@@ -143,35 +143,6 @@ class Task(object):
     priority = 0
     disabled = False
 
-    #: Specifies the class used to run this job in larger batches
-    batch_class = None
-
-    @classmethod
-    def get_batch_class(cls):
-        return cls.batch_class
-
-    def is_batchable(self):
-        return self.get_batch_class() is not None
-
-    batcher_args = None
-
-    @classmethod
-    def get_batcher_args(cls):
-        batch_class = cls.get_batch_class()
-        if batch_class is None:
-            return None
-        elif cls.batcher_args is not None:
-            return cls.batcher_args
-        else:
-            return list(zip(cls.get_param_names(), batch_class.get_param_names()))
-
-    #: When running in batches, this dict will specify which parameters are aggregated and how
-    batcher_aggregate_args = None
-
-    @classmethod
-    def get_batcher_aggregate_args(cls):
-        return cls.batcher_aggregate_args or {}
-
     #: Resources used by the task. Should be formatted like {"scp": 1} to indicate that the
     #: task requires 1 unit of the scp resource.
     resources = {}
