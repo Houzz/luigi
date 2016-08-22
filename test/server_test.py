@@ -103,7 +103,7 @@ class _ServerTest(unittest.TestCase):
     """
     Test to start and stop the server in a more "standard" way
     """
-    #server_client_class = "To be defined by subclasses"
+    server_client_class = "To be defined by subclasses"
 
     def start_server(self):
         self._process = multiprocessing.Process(

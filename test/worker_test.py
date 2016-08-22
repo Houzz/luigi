@@ -1201,10 +1201,6 @@ class Dummy2Task(Task):
         f.close()
 
 
-class InsignificantParameterTask(Dummy2Task):
-    p = luigi.Parameter(default='default', significant=False)
-
-
 class AssistantTest(unittest.TestCase):
     def run(self, result=None):
         self.sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
@@ -1213,11 +1209,8 @@ class AssistantTest(unittest.TestCase):
             self.w = w
             super(AssistantTest, self).run(result)
 
-    def tearDown(self):
-        luigi.task.Register.clear_instance_cache()
-
     def test_get_work(self):
-        d = DummyTask()
+        d = Dummy2Task('123')
         self.w.add(d)
 
         self.assertFalse(d.complete())
@@ -1225,10 +1218,10 @@ class AssistantTest(unittest.TestCase):
         self.assertTrue(d.complete())
 
     def test_bad_job_type(self):
-        class DummyUnknownTask(DummyTask):
+        class Dummy3Task(Dummy2Task):
             task_family = 'UnknownTaskFamily'
 
-        d = DummyUnknownTask()
+        d = Dummy3Task('123')
         self.w.add(d)
 
         self.assertFalse(d.complete())
@@ -1262,13 +1255,6 @@ class UnimportedTask(luigi.Task):
             self.w.add(task)
             self.assertTrue(self.assistant.run())
             self.assertEqual(list(self.sch.task_list('DONE', '').keys()), [task.task_id])
-
-    def test_optional_parameter(self):
-        task = InsignificantParameterTask()
-
-        self.w.add(task)
-        self.assertTrue(self.assistant.run())
-        self.assertTrue(task.complete())
 
 
 class ForkBombTask(luigi.Task):
