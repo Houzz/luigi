@@ -346,8 +346,6 @@ class SimpleTaskState(object):
     def __init__(self, state_path):
         self._state_path = state_path
         self._tasks = {}  # map from id to a Task object
-        self._batch_tasks = {}  # map from family to TaskBatch object
-        self._running_batches = {}  # map from id to list of batched task ids
         self._status_tasks = collections.defaultdict(dict)
         self._active_workers = {}  # map from id to a Worker object
         self._task_batchers = {}
