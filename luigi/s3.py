@@ -168,11 +168,6 @@ class S3Client(FileSystem):
         delete_key_list = [
             k for k in s3_bucket.list(self._add_path_delimiter(key))]
 
-        # Hadoop API would create _$folder$ on S3 for folders sometimes
-        if key[-1] == '/':
-            key = key[:-1]
-        delete_key_list.append("%s_$folder$" % key)
-
         # delete the directory marker file if it exists
         s3_dir_with_suffix_key = s3_bucket.get_key(key + S3_DIRECTORY_MARKER_SUFFIX_0)
         if s3_dir_with_suffix_key:
