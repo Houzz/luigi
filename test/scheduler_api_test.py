@@ -369,9 +369,7 @@ class SchedulerApiTest(unittest.TestCase):
     def test_batch_fail_from_dead_worker(self):
         self.setTime(1)
         self._start_simple_batch()
-        self.setTime(10000)
-        self.sch.prune()
-        self.setTime(10001)
+        self.setTime(601)
         self.sch.prune()
         self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(FAILED, '').keys()))
 
