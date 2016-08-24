@@ -734,22 +734,34 @@ class Worker(object):
     def _get_work(self):
         if self._stop_requesting_work:
             return None, 0, 0, 0
-        logger.debug("Asking scheduler for work...")
-        r = self._scheduler.get_work(
-            worker=self._id,
-            host=self.host,
-            assistant=self._assistant,
-            current_tasks=list(self._running_tasks.keys()),
-        )
-        n_pending_tasks = r['n_pending_tasks']
-        running_tasks = r['running_tasks']
-        n_unique_pending = r['n_unique_pending']
-        task_id = self._get_work_task_id(r)
 
-        self._get_work_response_history.append({
-            'task_id': task_id,
-            'running_tasks': running_tasks,
-        })
+        if self.worker_processes > 0:
+            logger.debug("Asking scheduler for work...")
+            r = self._scheduler.get_work(
+                worker=self._id,
+                host=self.host,
+                assistant=self._assistant,
+                current_tasks=list(self._running_tasks.keys()),
+            )
+            n_pending_tasks = r['n_pending_tasks']
+            running_tasks = r['running_tasks']
+            n_unique_pending = r['n_unique_pending']
+            task_id = self._get_work_task_id(r)
+
+            self._get_work_response_history.append({
+                'task_id': task_id,
+                'running_tasks': running_tasks,
+            })
+
+        # Just keeping tasks alive for assistants
+        else:
+            logger.debug("Checking if tasks are still pending")
+            r = self._scheduler.count_pending(worker=self._id)
+            n_pending_tasks = r['n_pending_tasks']
+            running_tasks = 0
+            n_unique_pending = r['n_pending_last_scheduled']
+            task_id = None
+
 
         if task_id is not None and task_id not in self._scheduled_tasks:
             logger.info('Did not schedule %s, will load it dynamically', task_id)
@@ -945,7 +957,7 @@ class Worker(object):
         self._add_worker()
 
         while True:
-            while len(self._running_tasks) >= self.worker_processes:
+            while len(self._running_tasks) >= self.worker_processes > 0:
                 logger.debug('%d running tasks, waiting for next task to finish', len(self._running_tasks))
                 self._handle_next_task()
 
