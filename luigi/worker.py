@@ -762,7 +762,6 @@ class Worker(object):
             n_unique_pending = r['n_pending_last_scheduled']
             task_id = None
 
-
         if task_id is not None and task_id not in self._scheduled_tasks:
             logger.info('Did not schedule %s, will load it dynamically', task_id)
 

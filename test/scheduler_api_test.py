@@ -778,6 +778,20 @@ class SchedulerApiTest(unittest.TestCase):
             }
             self.assertEqual(expected, self.sch.count_pending(WORKER))
 
+    def test_count_pending_many_done(self):
+        # with Worker.get_pending_tasks optimizations, this uses a different code path
+        for i in range(100):
+            self.sch.add_task(worker=WORKER, task_id='DONE_{}'.format(i), status=DONE)
+        self.sch.add_task(worker='other_worker', task_id='A', status=PENDING)
+        for num_tasks in range(1, 20):
+            self.sch.add_task(worker=WORKER, task_id=str(num_tasks), status=PENDING)
+            expected = {
+                'n_pending_tasks': num_tasks,
+                'n_unique_pending': num_tasks,
+                'n_pending_last_scheduled': num_tasks,
+            }
+            self.assertEqual(expected, self.sch.count_pending(WORKER))
+
     def test_count_pending_missing_worker(self):
         self.sch.add_task(worker=WORKER, task_id='A', status=PENDING)
         expected = {
