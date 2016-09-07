@@ -944,7 +944,9 @@ class Scheduler(object):
                     if len(task.workers) == 1 and not assistant:
                         n_unique_pending += 1
 
-            if (best_task and batched_params and task.family == best_task.family and
+            schedulable = self._schedulable(task)
+
+            if (best_task and schedulable and batched_params and task.family == best_task.family and
                     len(batched_tasks) < max_batch_size and task.is_batchable() and all(
                     task.params.get(name) == value for name, value in unbatched_params.items())):
                 for name, params in batched_params.items():
@@ -953,13 +955,15 @@ class Scheduler(object):
             if best_task:
                 continue
 
-            greedy_schedulable = self._has_resources(task.resources, greedy_resources)
-            if task.status == RUNNING and task.worker_running in greedy_workers and greedy_schedulable:
+            if not self._has_resources(task.resources, greedy_resources):
+                continue
+
+            if task.status == RUNNING and task.worker_running in greedy_workers:
                 greedy_workers[task.worker_running] -= 1
                 for resource, amount in six.iteritems((task.resources or {})):
                     greedy_resources[resource] += amount
 
-            if self._schedulable(task) and greedy_schedulable:
+            if schedulable:
                 if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                     batch_param_names, max_batch_size = self._state.get_batcher(
