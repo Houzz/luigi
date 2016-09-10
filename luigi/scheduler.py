@@ -1295,6 +1295,7 @@ class Scheduler(object):
                 resource['running'] = tasks
         return resources
 
+    @rpc_method()
     def resources(self):
         ''' get total resources and available ones '''
         used_resources = self._used_resources()
