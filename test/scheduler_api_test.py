@@ -22,7 +22,7 @@ from helpers import unittest
 from nose.plugins.attrib import attr
 import luigi.notifications
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, \
-    UNKNOWN, RUNNING, BATCH_RUNNING, Scheduler
+    UNKNOWN, RUNNING, BATCH_RUNNING, UPSTREAM_RUNNING, Scheduler
 
 luigi.notifications.DEBUG = True
 WORKER = 'myworker'
@@ -181,6 +181,20 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertIsNone(response['task_id'])
         self.assertEqual({'a': ['1', '2', '3']}, response['task_params'])
         self.assertEqual('A', response['task_family'])
+
+    def test_batch_time_running(self):
+        self.setTime(1234)
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=True)
+
+        self.sch.get_work(worker=WORKER)
+        for task in self.sch.task_list().values():
+            self.assertEqual(1234, task['time_running'])
 
     def test_batch_ignore_items_not_ready(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
@@ -341,6 +355,16 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': 2}, batchable=True)
         self.sch.get_work(worker=WORKER)
         self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list('BATCH_RUNNING', '').keys()))
+
+    def test_downstream_jobs_from_batch_running_have_upstream_running_status(self):
+        self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': 1}, batchable=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': 2}, batchable=True)
+        self.sch.get_work(worker=WORKER)
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list('BATCH_RUNNING', '').keys()))
+
+        self.sch.add_task(worker=WORKER, task_id='B', deps=['A_1'])
+        self.assertEqual({'B'}, set(self.sch.task_list(PENDING, UPSTREAM_RUNNING).keys()))
 
     def test_set_batch_runner_new_task(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
@@ -1364,7 +1388,17 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='A')
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
 
-    def test_disable_worker_can_finish_task(self, new_status=DONE, new_deps=[]):
+    def test_disable_worker_cannot_add_tasks(self):
+        """
+        Verify that a disabled worker cannot add tasks
+        """
+        self.sch.disable_worker(worker=WORKER)
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.assertIsNone(self.sch.get_work(worker='assistant', assistant=True)['task_id'])
+        self.sch.add_task(worker='third_enabled_worker', task_id='A')
+        self.assertIsNotNone(self.sch.get_work(worker='assistant', assistant=True)['task_id'])
+
+    def _test_disable_worker_helper(self, new_status, new_deps):
         self.sch.add_task(worker=WORKER, task_id='A')
         self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
 
@@ -1381,11 +1415,14 @@ class SchedulerApiTest(unittest.TestCase):
         for task in self.sch.task_list('', '').values():
             self.assertFalse(task['workers'])
 
+    def test_disable_worker_can_finish_task(self):
+        self._test_disable_worker_helper(new_status=DONE, new_deps=[])
+
     def test_disable_worker_can_fail_task(self):
-        self.test_disable_worker_can_finish_task(new_status=FAILED)
+        self._test_disable_worker_helper(new_status=FAILED, new_deps=[])
 
     def test_disable_worker_stays_disabled_on_new_deps(self):
-        self.test_disable_worker_can_finish_task(new_status='PENDING', new_deps=['B', 'C'])
+        self._test_disable_worker_helper(new_status='PENDING', new_deps=['B', 'C'])
 
     def test_prune_worker(self):
         self.setTime(1)
@@ -1420,11 +1457,15 @@ class SchedulerApiTest(unittest.TestCase):
 
     def test_dynamic_shown_tasks_in_task_list(self):
         sch = Scheduler(max_shown_tasks=3)
-        for c in 'ABCD':
-            sch.add_task(worker=WORKER, task_id=c, status=DONE)
-        for c in 'EFG':
-            sch.add_task(worker=WORKER, task_id=c)
+        for task_id in 'ABCD':
+            sch.add_task(worker=WORKER, task_id=task_id, status=DONE)
+        for task_id in 'EFG':
+            sch.add_task(worker=WORKER, task_id=task_id)
+
+        self.assertEqual(set('EFG'), set(sch.task_list('PENDING', '').keys()))
         self.assertEqual({'num_tasks': 3}, sch.task_list('PENDING', '', max_shown_tasks=2))
+
+        self.assertEqual({'num_tasks': 4}, sch.task_list('DONE', ''))
         self.assertEqual(set('ABCD'), set(sch.task_list('DONE', '', max_shown_tasks=4).keys()))
 
     def add_task(self, family, **params):

@@ -497,7 +497,7 @@ class SimpleTaskState(object):
 
     def fail_dead_worker_task(self, task, config, assistants):
         # If a running worker disconnects, tag all its jobs as FAILED and subject it to the same retry logic
-        if task.status in (RUNNING, BATCH_RUNNING) and task.worker_running and task.worker_running not in task.stakeholders | assistants:
+        if task.status in (BATCH_RUNNING, RUNNING) and task.worker_running and task.worker_running not in task.stakeholders | assistants:
             logger.info("Task %r is marked as running by disconnected worker %r -> marking as "
                         "FAILED with retry delay of %rs", task.id, task.worker_running,
                         config.retry_delay)
@@ -944,26 +944,22 @@ class Scheduler(object):
                     if len(task.workers) == 1 and not assistant:
                         n_unique_pending += 1
 
-            schedulable = self._schedulable(task)
-
-            if (best_task and schedulable and batched_params and task.family == best_task.family and
+            if (best_task and batched_params and task.family == best_task.family and
                     len(batched_tasks) < max_batch_size and task.is_batchable() and all(
-                    task.params.get(name) == value for name, value in unbatched_params.items())):
+                    task.params.get(name) == value for name, value in unbatched_params.items()) and
+                    self._schedulable(task)):
                 for name, params in batched_params.items():
                     params.append(task.params.get(name))
                 batched_tasks.append(task)
             if best_task:
                 continue
 
-            if not self._has_resources(task.resources, greedy_resources):
-                continue
-
-            if task.status == RUNNING and task.worker_running in greedy_workers:
+            if task.status == RUNNING and (task.worker_running in greedy_workers):
                 greedy_workers[task.worker_running] -= 1
                 for resource, amount in six.iteritems((task.resources or {})):
                     greedy_resources[resource] += amount
 
-            if schedulable:
+            if self._schedulable(task) and self._has_resources(task.resources, greedy_resources):
                 if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                     batch_param_names, max_batch_size = self._state.get_batcher(
@@ -1178,7 +1174,7 @@ class Scheduler(object):
             task_id, dep_func=lambda t: inverse_graph[t.id], include_done=include_done)
 
     @rpc_method()
-    def task_list(self, status, upstream_status, limit=True, search=None, max_shown_tasks=None,
+    def task_list(self, status='', upstream_status='', limit=True, search=None, max_shown_tasks=None,
                   include_deps=False, **kwargs):
         """
         Query for a subset of tasks by status.
