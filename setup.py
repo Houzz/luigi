@@ -50,7 +50,7 @@ if os.environ.get('READTHEDOCS', None) == 'True':
     install_requires.append('sphinx>=1.4.4')  # Value mirrored in doc/conf.py
 
 setup(
-    name='luigi',
+    name='houzz_luigi',
     version='2.3.1',
     description='Workflow mgmgt + task scheduling + dependency resolution',
     long_description=long_description,
