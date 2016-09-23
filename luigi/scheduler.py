@@ -300,6 +300,7 @@ class Task(object):
         self.family = family
         self.module = module
         self.params = _get_default(params, {})
+        self.assistant_groups = []
 
         self.retry_policy = retry_policy
         self.failures = Failures(self.retry_policy.disable_window)
@@ -765,8 +766,9 @@ class Scheduler(object):
     def add_task(self, task_id=None, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
                  priority=0, family='', module=None, params=None,
-                 assistant=False, tracking_url=None, worker=None, batchable=None,
-                 batch_id=None, retry_policy_dict={}, **kwargs):
+                 assistant=False, assistant_groups=None, tracking_url=None,
+                 worker=None, batchable=None, batch_id=None,
+                 retry_policy_dict={}, **kwargs):
         """
         * add task identified by task_id if it doesn't exist
         * if deps is not None, update dependency list
@@ -813,6 +815,8 @@ class Scheduler(object):
 
         if batchable is not None:
             task.batchable = batchable
+        if assistant_groups is not None:
+            task.assistant_groups = assistant_groups
 
         if task.remove is not None:
             task.remove = None  # unmark task for removal so it isn't removed after being added
@@ -923,6 +927,14 @@ class Scheduler(object):
         for task in orphaned_tasks:
             self._state.set_status(task, PENDING)
 
+    def _in_workers(self, worker_id, assistant_groups, task):
+        if assistant_groups is None or not task.runnable:
+            return worker_id in task.workers
+        elif assistant_groups:
+            return any(group in assistant_groups for group in task.assistant_groups)
+        else:
+            return not task.assistant_groups
+
     @rpc_method()
     def count_pending(self, worker):
         worker_id, worker = worker, self._state.get_worker(worker)
@@ -955,7 +967,7 @@ class Scheduler(object):
         }
 
     @rpc_method(allow_null=False)
-    def get_work(self, host=None, assistant=False, current_tasks=None, worker=None, **kwargs):
+    def get_work(self, host=None, assistant_groups=None, current_tasks=None, worker=None, **kwargs):
         # TODO: remove any expired nodes
 
         # Algo: iterate over all nodes, find the highest priority node no dependencies and available
@@ -987,8 +999,13 @@ class Scheduler(object):
                      }
             return reply
 
-        if assistant:
-            self.add_worker(worker_id, [('assistant', assistant)])
+        # TODO: allow backward compatibility with old assistants temporarily (Sep 2016)
+        if assistant_groups is None and kwargs.get('assistant', False):
+            assistant_groups = []
+
+        if assistant_groups is not None:
+            self.add_worker(worker_id, [
+                ('assistant_groups', assistant_groups), ('assistant', True)])
 
         batched_params, unbatched_params, batched_tasks, max_batch_size = None, None, [], 1
         best_task = None
@@ -1036,7 +1053,7 @@ class Scheduler(object):
                     greedy_resources[resource] += amount
 
             if self._schedulable(task) and self._has_resources(task.resources, greedy_resources):
-                in_workers = (assistant and task.runnable) or worker_id in task.workers
+                in_workers = self._in_workers(worker_id, assistant_groups, task)
                 if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
                     batch_param_names, max_batch_size = self._state.get_batcher(
@@ -1054,7 +1071,7 @@ class Scheduler(object):
                         except KeyError:
                             batched_params, unbatched_params = None, None
                 else:
-                    workers = itertools.chain(task.workers, [worker_id]) if assistant else task.workers
+                    workers = itertools.chain(task.workers, [worker_id]) if in_workers else task.workers
                     for task_worker in workers:
                         if greedy_workers.get(task_worker, 0) > 0:
                             # use up a worker

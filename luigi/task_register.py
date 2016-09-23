@@ -20,6 +20,7 @@ Define the centralized register of all :class:`~luigi.task.Task` classes.
 
 import abc
 from collections import OrderedDict
+from contextlib import contextmanager
 
 from luigi import six
 import logging
@@ -116,6 +117,16 @@ class Register(abc.ABCMeta):
         Disables the instance cache.
         """
         cls.__instance_cache = None
+
+    @classmethod
+    @contextmanager
+    def _pause_instance_cache(cls):
+        cache_backup = cls.__instance_cache
+        cls.disable_instance_cache()
+        try:
+            yield
+        finally:
+            cls.__instance_cache = cache_backup
 
     @property
     def task_family(cls):

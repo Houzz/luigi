@@ -161,6 +161,8 @@ class Task(object):
     #: the one defined in luigi config
     owner = None
 
+    assistant_groups = None
+
     @property
     def batchable(self):
         """

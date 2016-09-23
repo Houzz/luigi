@@ -731,7 +731,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='A')
         self.sch.add_worker('Y', [])
 
-        self.assertEqual(self.sch.get_work(worker='Y', assistant=True)['task_id'], 'A')
+        self.assertEqual(self.sch.get_work(worker='Y', assistant_groups=[])['task_id'], 'A')
 
         # check that the scheduler recognizes tasks as running
         running_tasks = self.sch.task_list('RUNNING', '')
@@ -741,14 +741,14 @@ class SchedulerApiTest(unittest.TestCase):
 
     def test_assistant_get_work_external_task(self):
         self.sch.add_task(worker='X', task_id='A', runnable=False)
-        self.assertTrue(self.sch.get_work(worker='Y', assistant=True)['task_id'] is None)
+        self.assertIsNone(self.sch.get_work(worker='Y', assistant_groups=[])['task_id'])
 
     def test_task_fails_when_assistant_dies(self):
         self.setTime(0)
         self.sch.add_task(worker='X', task_id='A')
         self.sch.add_worker('Y', [])
 
-        self.assertEqual(self.sch.get_work(worker='Y', assistant=True)['task_id'], 'A')
+        self.assertEqual(self.sch.get_work(worker='Y', assistant_groups=[])['task_id'], 'A')
         self.assertEqual(list(self.sch.task_list('RUNNING', '').keys()), ['A'])
 
         # Y dies for 50 seconds, X stays alive
@@ -759,7 +759,7 @@ class SchedulerApiTest(unittest.TestCase):
     def test_prune_with_live_assistant(self):
         self.setTime(0)
         self.sch.add_task(worker='X', task_id='A')
-        self.sch.get_work(worker='Y', assistant=True)
+        self.sch.get_work(worker='Y', assistant_groups=[])
         self.sch.add_task(worker='Y', task_id='A', status=DONE, assistant=True)
 
         # worker X stops communicating, A should be marked for removal
@@ -812,11 +812,11 @@ class SchedulerApiTest(unittest.TestCase):
         self.setTime(600)
         self.sch.prune()
 
-        self.assertEqual('A', self.sch.get_work(worker='Y', assistant=True)['task_id'])
+        self.assertEqual('A', self.sch.get_work(worker='Y', assistant_groups=[])['task_id'])
 
     def test_assistant_request_external_task(self):
         self.sch.add_task(worker='X', task_id='A', runnable=False)
-        self.assertIsNone(self.sch.get_work(worker='Y', assistant=True)['task_id'])
+        self.assertIsNone(self.sch.get_work(worker='Y', assistant_groups=[])['task_id'])
 
     def _test_prune_done_tasks(self, expected=None):
         self.setTime(0)
@@ -838,11 +838,11 @@ class SchedulerApiTest(unittest.TestCase):
         self._test_prune_done_tasks(expected=[])
 
     def test_keep_tasks_for_assistant(self):
-        self.sch.get_work(worker='MAYBE_ASSITANT', assistant=True)  # tell the scheduler this is an assistant
+        self.sch.get_work(worker='MAYBE_ASSITANT', assistant_groups=[])  # tell the scheduler this is an assistant
         self._test_prune_done_tasks([])
 
     def test_keep_scheduler_disabled_tasks_for_assistant(self):
-        self.sch.get_work(worker='MAYBE_ASSITANT', assistant=True)  # tell the scheduler this is an assistant
+        self.sch.get_work(worker='MAYBE_ASSITANT', assistant_groups=[])  # tell the scheduler this is an assistant
 
         # create a scheduler disabled task and a worker disabled task
         for i in range(10):
@@ -854,7 +854,7 @@ class SchedulerApiTest(unittest.TestCase):
         self._test_prune_done_tasks([])
 
     def test_keep_failed_tasks_for_assistant(self):
-        self.sch.get_work(worker='MAYBE_ASSITANT', assistant=True)  # tell the scheduler this is an assistant
+        self.sch.get_work(worker='MAYBE_ASSITANT', assistant_groups=[])  # tell the scheduler this is an assistant
         self.sch.add_task(worker=WORKER, task_id='D', status=FAILED, deps=['A'])
         self._test_prune_done_tasks([])
 
@@ -1463,9 +1463,9 @@ class SchedulerApiTest(unittest.TestCase):
         """
         self.sch.disable_worker(worker=WORKER)
         self.sch.add_task(worker=WORKER, task_id='A')
-        self.assertIsNone(self.sch.get_work(worker='assistant', assistant=True)['task_id'])
+        self.assertIsNone(self.sch.get_work(worker='assistant', assistant_groups=[])['task_id'])
         self.sch.add_task(worker='third_enabled_worker', task_id='A')
-        self.assertIsNotNone(self.sch.get_work(worker='assistant', assistant=True)['task_id'])
+        self.assertIsNotNone(self.sch.get_work(worker='assistant', assistant_groups=[])['task_id'])
 
     def _test_disable_worker_helper(self, new_status, new_deps):
         self.sch.add_task(worker=WORKER, task_id='A')
@@ -1499,7 +1499,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_worker('assistant', [('assistant', True)])
         self.sch.ping(worker='assistant')
         self.sch.disable_worker('assistant')
-        self.assertIsNone(self.sch.get_work(worker='assistant', assistant=True)['task_id'])
+        self.assertIsNone(self.sch.get_work(worker='assistant', assistant_groups=[])['task_id'])
         self.assertIsNotNone(self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_prune_worker(self):
@@ -1856,7 +1856,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_worker('assistant', [('assistant', True)])
         self.sch.ping(worker='assistant')
         self.sch.add_task(worker='uploader', task_id='running', status=PENDING)
-        self.assertEqual(self.sch.get_work(worker='assistant', assistant=True)['task_id'], 'running')
+        self.assertEqual(self.sch.get_work(worker='assistant', assistant_groups=[])['task_id'], 'running')
 
         self.setTime(2)
         self.sch.add_task(worker='uploader', task_id='done', status=DONE)
@@ -1882,6 +1882,51 @@ class SchedulerApiTest(unittest.TestCase):
             self.assertEqual(set([]), set(self.sch.task_list(status, '')))
 
         self.assertEqual(1, len(self.sch.task_list(None, '')))  # None == All statuses
+
+    def test_assistant_group_get_work_from_group(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=['group_a'])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=['group_a'])['task_id']
+        self.assertEqual('A', task_id)
+
+    def test_assistant_group_do_not_get_work_outside_group(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=['group_a'])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=['group_b'])['task_id']
+        self.assertIsNone(task_id)
+
+    def test_assistant_without_groups_get_ungrouped_tasks(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=[])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=[])['task_id']
+        self.assertEqual('A', task_id)
+
+    def test_assistant_without_groups_cannot_get_grouped_tasks(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=['group_a'])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=[])['task_id']
+        self.assertIsNone(task_id)
+
+    def test_assistant_with_groups_cannot_get_ungrouped_tasks(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=[])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=['group_a'])['task_id']
+        self.assertIsNone(task_id)
+
+    def test_assistant_and_task_groups_with_partial_overlap(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=['a', 'b', 'c'])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=['c', 'd', 'e'])['task_id']
+        self.assertEqual('A', task_id)
+
+    def test_assistant_and_task_groups_no_overlap(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=['a', 'b', 'c'])
+        task_id = self.sch.get_work(worker='ASSISTANT', assistant_groups=['d', 'e', 'f'])['task_id']
+        self.assertIsNone(task_id)
+
+    def test_change_assistant_groups(self):
+        self.sch.add_task(worker=WORKER, task_id='A', assistant_groups=['a'])
+        self.sch.add_task(worker='WORKER2', task_id='A', assistant_groups=['b'])
+
+        a_task = self.sch.get_work(worker='ASSISTANT', assistant_groups=['a'])['task_id']
+        self.assertIsNone(a_task)
+
+        b_task = self.sch.get_work(worker='ASSISTANT2', assistant_groups=['b'])['task_id']
+        self.assertEquals('A', b_task)
 
     def test_no_crash_on_only_disable_hard_timeout(self):
         """
@@ -1919,7 +1964,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='B')
         self.sch.add_worker('assistant', [('assistant', True)])
         self.sch.ping(worker='assistant')
-        self.assertEqual(self.sch.get_work(worker='assistant', assistant=True)['task_id'], 'B')
+        self.assertEqual(self.sch.get_work(worker='assistant', assistant_groups=[])['task_id'], 'B')
 
         self.setTime(100000)
         # Here, lets say WORKER disconnects (doesnt ping)

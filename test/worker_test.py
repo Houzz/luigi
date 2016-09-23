@@ -1372,7 +1372,7 @@ class Dummy2Task(Task):
         f.close()
 
 
-class AssistantTest(unittest.TestCase):
+class AssistantTest(LuigiTestCase):
     def run(self, result=None):
         self.sch = Scheduler(retry_delay=100, remove_delay=1000, worker_disconnect_delay=10)
         self.assistant = Worker(scheduler=self.sch, worker_id='Y', assistant=True)
@@ -1456,6 +1456,105 @@ class UnimportedTask(luigi.Task):
         for task in tasks[:-1]:
             self.assertFalse(task.has_run)
         self.assertTrue(tasks[-1].has_run)
+
+    def test_groupless_assistant_only_does_groupless_tasks(self):
+        class AssistantGroupTask(DummyTask):
+            assistant_groups = ['group1']
+
+        ag_task = AssistantGroupTask()
+        dummy_task = DummyTask()
+
+        self.w.add(ag_task)
+        self.w.add(dummy_task)
+
+        self.assistant.run()
+        self.assertTrue(dummy_task.complete())
+        self.assertFalse(ag_task.complete())
+
+    @with_config({'worker': {'assistant_groups': '["group1"]'}})
+    def test_grouped_assistant_only_does_group_tasks(self):
+        class AssistantGroup1Task(DummyTask):
+            assistant_groups = ['group1']
+
+        class AssistantGroup2Task(DummyTask):
+            assistant_groups = ['group2']
+
+        class EmptyAssistantGroupTask(DummyTask):
+            assistant_groups = []
+
+        ag1_task = AssistantGroup1Task()
+        ag2_task = AssistantGroup2Task()
+        eag_task = EmptyAssistantGroupTask()
+        dummy_task = DummyTask()
+
+        with Worker(scheduler=self.sch, worker_id='X') as w:
+            w.add(ag1_task)
+            w.add(ag2_task)
+            w.add(eag_task)
+            w.add(dummy_task)
+
+        with Worker(scheduler=self.sch, worker_id='Y', assistant=True) as assistant:
+            assistant.run()
+
+        self.assertTrue(ag1_task.complete())
+        self.assertFalse(ag2_task.complete())
+        self.assertFalse(eag_task.complete())
+        self.assertTrue(dummy_task.complete())
+
+    @with_config({'worker': {'assistant_groups': '["group1", "group2"]'}})
+    def test_multiple_assistant_groups(self):
+        class AssistantGroup1Task(DummyTask):
+            assistant_groups = ['group1']
+
+        class AssistantGroup2Task(DummyTask):
+            assistant_groups = ['group2']
+
+        class AssistantGroup3Task(DummyTask):
+            assistant_groups = ['group3']
+
+        class EmptyAssistantGroupTask(DummyTask):
+            assistant_groups = []
+
+        ag1_task = AssistantGroup1Task()
+        ag2_task = AssistantGroup2Task()
+        ag3_task = AssistantGroup3Task()
+        eag_task = EmptyAssistantGroupTask()
+        dummy_task = DummyTask()
+
+        with Worker(scheduler=self.sch, worker_id='X') as w:
+            w.add(ag1_task)
+            w.add(ag2_task)
+            w.add(ag3_task)
+            w.add(eag_task)
+            w.add(dummy_task)
+
+        with Worker(scheduler=self.sch, worker_id='Y', assistant=True) as assistant:
+            assistant.run()
+
+        self.assertTrue(ag1_task.complete())
+        self.assertTrue(ag2_task.complete())
+        self.assertFalse(ag3_task.complete())
+        self.assertFalse(eag_task.complete())
+        self.assertTrue(dummy_task.complete())
+
+    def test_external_tasks_do_not_overwrite_assistant_groups(self):
+        class AssistantGroupTask(DummyTask):
+            assistant_groups = ['group1']
+
+        task = AssistantGroupTask()
+        self.w.add(task)
+
+        # schedule an externalized version of this task without assistant groups
+        with luigi.task_register.Register._pause_instance_cache():
+            task2 = AssistantGroupTask()
+            task2.run = None
+            task2.assistant_groups = []
+            self.w.add(task2)
+
+        with Worker(scheduler=self.sch, worker_id='Y', assistant=True, assistant_groups=['group1']) as assistant:
+            self.assertTrue(assistant.run())
+
+        self.assertTrue(task.complete())
 
 
 class ForkBombTask(luigi.Task):

@@ -59,7 +59,7 @@ from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config
 from luigi.task_register import TaskClassException
 from luigi.task_status import RUNNING
-from luigi.parameter import FloatParameter, IntParameter, BoolParameter
+from luigi.parameter import FloatParameter, IntParameter, BoolParameter, ListParameter
 
 try:
     import simplejson as json
@@ -345,6 +345,9 @@ class worker(Config):
     no_install_shutdown_handler = BoolParameter(default=False,
                                                 description='If true, the SIGUSR1 shutdown handler will'
                                                 'NOT be install on the worker')
+    assistant_groups = ListParameter(default=(),
+                                     description='Default assistant group for task and assistant '
+                                                 'workers')
 
 
 class KeepAliveThread(threading.Thread):
@@ -695,6 +698,7 @@ class Worker(object):
             task_id=task.task_id,
             status=status,
             deps=deps,
+            assistant_groups=self._assistant_groups(task, runnable),
             runnable=runnable,
             priority=task.priority,
             resources=task.process_resources(),
@@ -704,6 +708,14 @@ class Worker(object):
             batchable=task.batchable,
             retry_policy_dict=_get_retry_policy_dict(task),
         )
+
+    def _assistant_groups(self, task, runnable):
+        if not runnable:
+            return None
+        elif task.assistant_groups is None:
+            return self._config.assistant_groups
+        else:
+            return task.assistant_groups
 
     def _validate_dependency(self, dependency):
         if isinstance(dependency, Target):
@@ -778,7 +790,7 @@ class Worker(object):
             r = self._scheduler.get_work(
                 worker=self._id,
                 host=self.host,
-                assistant=self._assistant,
+                assistant_groups=self._config.assistant_groups if self._assistant else None,
                 current_tasks=list(self._running_tasks.keys()),
             )
         else:
