@@ -1279,6 +1279,25 @@ class UnimportedTask(luigi.Task):
             self.assertTrue(self.assistant.run())
             self.assertEqual(list(self.sch.task_list('DONE', '').keys()), [task.task_id])
 
+    def test_run_batch_jobs_in_assistant(self):
+        class BatchJob(luigi.Task):
+            param = luigi.IntParameter(batch_method=max)
+            has_run = False
+
+            def run(self):
+                self.has_run = True
+
+            def complete(self):
+                return False
+
+        tasks = [BatchJob(i) for i in range(10)]
+        for task in tasks:
+            self.w.add(task)
+        self.assertTrue(self.assistant.run())
+        for task in tasks[:-1]:
+            self.assertFalse(task.has_run)
+        self.assertTrue(tasks[-1].has_run)
+
 
 class ForkBombTask(luigi.Task):
     depth = luigi.IntParameter()

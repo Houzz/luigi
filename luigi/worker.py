@@ -52,7 +52,7 @@ from luigi import six
 
 from luigi import notifications
 from luigi.event import Event
-from luigi.task_register import load_task
+from luigi.task_register import load_task, Register
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, UNKNOWN, Scheduler, RetryPolicy
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config
@@ -394,7 +394,6 @@ class Worker(object):
         self._scheduled_tasks = {}
         self._suspended_tasks = {}
         self._batch_running_tasks = {}
-        self._batch_families_sent = set()
 
         self._first_task = None
 
@@ -581,19 +580,17 @@ class Worker(object):
             pool.join()
         return self.add_succeeded
 
-    def _add_task_batcher(self, task):
-        family = task.task_family
-        if family not in self._batch_families_sent:
-            task_class = type(task)
+    def _add_task_batchers(self):
+        for family in Register.task_names():
+            task_class = Register.get_task_cls(family)
             batch_param_names = task_class.batch_param_names()
             if batch_param_names:
                 self._scheduler.add_task_batcher(
                     worker=self._id,
                     task_family=family,
                     batched_args=batch_param_names,
-                    max_batch_size=task.max_batch_size,
+                    max_batch_size=task_class.max_batch_size,
                 )
-            self._batch_families_sent.add(family)
 
     def _add(self, task, is_complete):
         if self._config.task_limit is not None and len(self._scheduled_tasks) >= self._config.task_limit:
@@ -640,7 +637,6 @@ class Worker(object):
             else:
                 try:
                     deps = task.deps()
-                    self._add_task_batcher(task)
                 except Exception as ex:
                     formatted_traceback = traceback.format_exc()
                     self.add_succeeded = False
@@ -696,6 +692,7 @@ class Worker(object):
     def _add_worker(self):
         self._worker_info.append(('first_task', self._first_task))
         self._scheduler.add_worker(self._id, self._worker_info)
+        self._add_task_batchers()
 
     def _log_remote_tasks(self, running_tasks, n_pending_tasks, n_unique_pending):
         logger.debug("Done")
