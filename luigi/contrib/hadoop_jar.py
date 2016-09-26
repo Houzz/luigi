@@ -53,8 +53,10 @@ def fix_paths(job):
                 args.append(y.path)
         else:
             try:
+                # hopefully the target has a path to use
                 args.append(x.path)
             except AttributeError:
+                # if there's no path then hope converting it to a string will work
                 args.append(str(x))
 
     return (tmp_files, args)
