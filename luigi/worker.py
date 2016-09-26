@@ -611,9 +611,7 @@ class Worker(object):
         return self.add_succeeded
 
     def _add_task_batchers(self):
-        for family in Register.task_names():
-            task_class = Register.get_task_cls(family)
-            batch_param_names = task_class.batch_param_names()
+        for family, task_class, batch_param_names in Register._batchable_tasks():
             if batch_param_names:
                 self._scheduler.add_task_batcher(
                     worker=self._id,

@@ -168,6 +168,15 @@ class Register(abc.ABCMeta):
         return sorted(cls._get_reg().keys())
 
     @classmethod
+    def _batchable_tasks(cls):
+        for family, task_class in six.iteritems(cls._get_reg()):
+            if task_class == cls.AMBIGUOUS_CLASS:
+                continue
+            batch_param_names = task_class.batch_param_names()
+            if batch_param_names:
+                yield family, task_class, batch_param_names
+
+    @classmethod
     def tasks_str(cls):
         """
         Human-readable register contents dump.
