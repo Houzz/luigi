@@ -774,6 +774,7 @@ class Worker(object):
                 module=get_work_response.get('task_module'),
                 family=get_work_response['task_family'],
                 params=task.to_str_params(),
+                resources=task.process_resources(),
                 status=RUNNING,
                 batch_id=get_work_response['batch_id'],
             )
