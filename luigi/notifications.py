@@ -148,7 +148,7 @@ def send_email_smtp(config, sender, subject, message, recipients, image_png):
         msg_root = generate_email(sender, subject, message, recipients, image_png)
 
         smtp.sendmail(sender, recipients, msg_root.as_string())
-    except socket.error:
+    except (socket.error, smtplib.SMTPException):
         logger.error("Not able to connect to smtp server")
 
 
