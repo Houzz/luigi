@@ -806,6 +806,7 @@ class Scheduler(object):
             task.batch_id = batch_id
         if status == RUNNING and not task.worker_running:
             task.worker_running = worker_id
+            task.time_running = time.time()
 
         if tracking_url is not None or task.status != RUNNING:
             task.tracking_url = tracking_url
