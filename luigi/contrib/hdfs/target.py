@@ -118,6 +118,9 @@ class HdfsTarget(FileSystemTarget):
     def remove(self, skip_trash=False):
         self.fs.remove(self.path, skip_trash=skip_trash)
 
+    def get(self, local_destination):
+        self.fs.get(self.path, local_destination)
+
     def rename(self, path, raise_if_exists=False):
         """
         Does not change self.path.
