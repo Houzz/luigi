@@ -121,6 +121,9 @@ class HdfsTarget(FileSystemTarget):
     def get(self, local_destination):
         self.fs.get(self.path, local_destination)
 
+    def getmerge(self, path, local_destination, new_line=False):
+        self.fs.getmerge(self.path, local_destination, new_line)
+
     def rename(self, path, raise_if_exists=False):
         """
         Does not change self.path.
