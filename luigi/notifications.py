@@ -19,14 +19,12 @@
 
 This needs some more documentation.
 See :doc:`/configuration` for configuration options.
-In particular using the config `error-email` should set up Luigi so that it will send emails when tasks fail.
+In particular using the config `receiver` should set up Luigi so that it will send emails when tasks fail.
 
 .. code-block:: ini
 
-    [core]
-    error-email=foo@bar.baz
-
-TODO: Eventually, all email configuration should move into the [email] section.
+    [email]
+    receiver=foo@bar.baz
 '''
 
 import logging
@@ -34,7 +32,6 @@ import socket
 import sys
 import textwrap
 
-from luigi import configuration
 import luigi.task
 import luigi.parameter
 
@@ -69,54 +66,58 @@ class TestNotificationsTask(luigi.task.Task):
 
 
 class email(luigi.Config):
-    method = luigi.parameter.ChoiceParameter(
-        default='smtp',
-        config_path=dict(section='email', name='type'),
-        choices=('smtp', 'sendgrid', 'ses', 'sns'),
-        description='Method for sending e-mail')
+    force_send = luigi.parameter.BoolParameter(
+        default=False,
+        description='Send e-mail even from a tty or with DEBUG set')
     format = luigi.parameter.ChoiceParameter(
         default='plain',
         config_path=dict(section='core', name='email-type'),
         choices=('plain', 'html', 'none'),
         description='Format type for sent e-mails')
-    sender = luigi.parameter.Parameter(
-        default=DEFAULT_CLIENT_EMAIL,
-        config_path=dict(section='core', name='email-sender'),
-        description='Address to send e-mails from')
-    receiver = luigi.parameter.Parameter(
-        default=None,
-        config_path=dict(section='core', name='error-email'),
-        description='Address to send error e-mails to')
+    method = luigi.parameter.ChoiceParameter(
+        default='smtp',
+        config_path=dict(section='email', name='type'),
+        choices=('smtp', 'sendgrid', 'ses', 'sns'),
+        description='Method for sending e-mail')
     prefix = luigi.parameter.Parameter(
         default=None,
         config_path=dict(section='core', name='email-prefix'),
         description='Prefix for subject lines of all e-mails')
-    force_send = luigi.parameter.BoolParameter(
-        default=False,
-        description='Send e-mail even from a tty or with DEBUG set')
+    receiver = luigi.parameter.Parameter(
+        default=None,
+        config_path=dict(section='core', name='error-email'),
+        description='Address to send error e-mails to')
+    sender = luigi.parameter.Parameter(
+        default=DEFAULT_CLIENT_EMAIL,
+        config_path=dict(section='core', name='email-sender'),
+        description='Address to send e-mails from')
 
 
 class smtp(luigi.Config):
-    ssl = luigi.parameter.BoolParameter(
-        default=False,
-        config_path=dict(section='core', name='smtp_ssl'),
-        description='Use SSL for the SMTP connection.')
-    no_tls = luigi.parameter.BoolParameter(
-        default=False,
-        config_path=dict(section='core', name='smtp_without_tls'),
-        description='Do not use TLS in SMTP connections')
     host = luigi.parameter.Parameter(
         default='localhost',
         config_path=dict(section='core', name='smtp_host'),
         description='Hostname of smtp server')
-    port = luigi.parameter.IntParameter(
-        default=0,
-        config_path=dict(section='core', name='smtp_port'),
-        description='Port number for smtp server')
     local_hostname = luigi.parameter.Parameter(
         default=None,
         config_path=dict(section='core', name='smtp_local_hostname'),
         description='If specified, local_hostname is used as the FQDN of the local host in the HELO/EHLO command')
+    no_tls = luigi.parameter.BoolParameter(
+        default=False,
+        config_path=dict(section='core', name='smtp_without_tls'),
+        description='Do not use TLS in SMTP connections')
+    password = luigi.parameter.Parameter(
+        default=None,
+        config_path=dict(section='core', name='smtp_password'),
+        description='Password for the SMTP server login')
+    port = luigi.parameter.IntParameter(
+        default=0,
+        config_path=dict(section='core', name='smtp_port'),
+        description='Port number for smtp server')
+    ssl = luigi.parameter.BoolParameter(
+        default=False,
+        config_path=dict(section='core', name='smtp_ssl'),
+        description='Use SSL for the SMTP connection.')
     timeout = luigi.parameter.FloatParameter(
         default=10.0,
         config_path=dict(section='core', name='smtp_timeout'),
@@ -125,10 +126,6 @@ class smtp(luigi.Config):
         default=None,
         config_path=dict(section='core', name='smtp_login'),
         description='Username used to log in to the SMTP host')
-    password = luigi.parameter.Parameter(
-        default=None,
-        config_path=dict(section='core', name='smtp_password'),
-        description='Password for the SMTP server login')
 
 
 class sendgrid(luigi.Config):
@@ -210,7 +207,7 @@ def send_email_smtp(sender, subject, message, recipients, image_png):
         msg_root = generate_email(sender, subject, message, recipients, image_png)
 
         smtp_conn.sendmail(sender, recipients, msg_root.as_string())
-    except (socket.error, smtplib.SMTPException):
+    except socket.error:
         logger.error("Not able to connect to smtp server")
 
 

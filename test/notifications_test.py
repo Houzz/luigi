@@ -22,7 +22,6 @@ import socket
 
 from helpers import with_config
 from luigi import notifications
-from luigi import configuration
 from luigi.scheduler import Scheduler
 from luigi.worker import Worker
 from luigi import six
