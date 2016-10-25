@@ -904,8 +904,8 @@ class Scheduler(object):
         used_resources = collections.defaultdict(int)
         if self._resources is not None:
             for task in self._state.get_active_tasks(status=RUNNING):
-                if task.resources_running:
-                    for resource, amount in six.iteritems(task.resources_running):
+                if getattr(task, 'resources_running', task.resources):
+                    for resource, amount in six.iteritems(getattr(task, 'resources_running', task.resources)):
                         used_resources[resource] += amount
         return used_resources
 
@@ -1053,7 +1053,7 @@ class Scheduler(object):
 
             if task.status == RUNNING and (task.worker_running in greedy_workers):
                 greedy_workers[task.worker_running] -= 1
-                for resource, amount in six.iteritems((task.resources_running or {})):
+                for resource, amount in six.iteritems((getattr(task, 'resources_running', task.resources) or {})):
                     greedy_resources[resource] += amount
 
             if self._schedulable(task) and self._has_resources(task.resources, greedy_resources):
