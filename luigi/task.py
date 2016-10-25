@@ -630,7 +630,7 @@ class Task(object):
 
         with self._dirty_jobs_db_cursor() as cursor:
             cursor.execute(DIRTY_QUERY % table, (
-                self.task_id, self.task_family, self.dirty_params_str))
+                self.task_id, self.task_family, self.dirty_params_str()))
 
     def on_failure(self, exception):
         """
