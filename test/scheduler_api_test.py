@@ -2072,3 +2072,94 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.prune()
         self.assertEqual({'B'}, set(self.sch.task_list(RUNNING, '')))
         self.assertEqual({'B'}, set(self.sch.task_list('', '')))
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_batch_failure_emails(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=True)
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing')
+        BatchNotifier().add_failure.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'a': '5', 'b': '6'},
+            'bad thing',
+        )
+        BatchNotifier().add_disable.assert_not_called()
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_batch_failure_emails_with_task_batcher(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=True)
+        scheduler.add_task_batcher(worker=WORKER, task_family='T', batched_args=['a'])
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing')
+        BatchNotifier().add_failure.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'b': '6'},
+            'bad thing',
+        )
+        BatchNotifier().add_disable.assert_not_called()
+
+    @mock.patch('luigi.scheduler.notifications')
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_batch_disable_emails(self, BatchNotifier, notifications):
+        scheduler = Scheduler(batch_emails=True, retry_count=1)
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing')
+        BatchNotifier().add_failure.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'a': '5', 'b': '6'},
+            'bad thing',
+        )
+        BatchNotifier().add_disable.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'a': '5', 'b': '6'},
+        )
+        notifications.send_error_email.assert_not_called()
+
+    @mock.patch('luigi.scheduler.notifications')
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_batch_disable_emails_with_task_batcher(self, BatchNotifier, notifications):
+        scheduler = Scheduler(batch_emails=True, retry_count=1)
+        scheduler.add_task_batcher(worker=WORKER, task_family='T', batched_args=['a'])
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing')
+        BatchNotifier().add_failure.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'b': '6'},
+            'bad thing',
+        )
+        BatchNotifier().add_disable.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'b': '6'},
+        )
+        notifications.send_error_email.assert_not_called()
+
+    @mock.patch('luigi.scheduler.notifications')
+    def test_send_normal_disable_email(self, notifications):
+        scheduler = Scheduler(batch_emails=False, retry_count=1)
+        notifications.send_error_email.assert_not_called()
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing')
+        self.assertEqual(1, notifications.send_error_email.call_count)
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_no_batch_notifier_without_batch_emails(self, BatchNotifier):
+        Scheduler(batch_emails=False)
+        BatchNotifier.assert_not_called()
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_update_batcher_on_prune(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=True)
+        BatchNotifier().update.assert_not_called()
+        scheduler.prune()
+        BatchNotifier().update.assert_called_once_with()

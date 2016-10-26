@@ -4,12 +4,13 @@ import time
 import luigi
 from luigi import six
 from luigi.notifications import send_error_email
+import luigi.parameter
 
 
 class batch_email(luigi.Config):
-    email_interval = luigi.IntParameter(
+    email_interval = luigi.parameter.IntParameter(
         default=60, description='Number of minutes between e-mail sends (default: 60)')
-    batch_mode = luigi.ChoiceParameter(
+    batch_mode = luigi.parameter.ChoiceParameter(
         default='unbatched_params', choices=('family', 'all', 'unbatched_params'),
         description='Method used for batching failures in e-mail. If "family" all failures for '
                     'tasks with the same family will be batched. If "unbatched_params", all '

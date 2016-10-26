@@ -24,6 +24,8 @@ See :doc:`/central_scheduler` for more info.
 import collections
 import inspect
 
+from luigi.batch_notifier import BatchNotifier
+
 try:
     import cPickle as pickle
 except ImportError:
@@ -124,6 +126,8 @@ class scheduler(Config):
     remove_delay = parameter.FloatParameter(default=600.0)
     worker_disconnect_delay = parameter.FloatParameter(default=60.0)
     state_path = parameter.Parameter(default='/var/lib/luigi-server/state.pickle')
+
+    batch_emails = parameter.BoolParameter(default=False, description="Send e-mails in batches rather than immediately")
 
     # Jobs are disabled if we see more than retry_count failures in disable_window seconds.
     # These disables last for disable_persist seconds.
@@ -556,15 +560,16 @@ class SimpleTaskState(object):
             if task.has_excessive_failures():
                 task.scheduler_disable_time = time.time()
                 new_status = DISABLED
-                notifications.send_error_email(
-                    'Luigi Scheduler: DISABLED {task} due to excessive failures'.format(task=task.id),
-                    '{task} failed {failures} times in the last {window} seconds, so it is being '
-                    'disabled for {persist} seconds'.format(
-                        failures=task.retry_policy.retry_count,
-                        task=task.id,
-                        window=config.disable_window,
-                        persist=config.disable_persist,
-                    ))
+                if not config.batch_emails:
+                    notifications.send_error_email(
+                        'Luigi Scheduler: DISABLED {task} due to excessive failures'.format(task=task.id),
+                        '{task} failed {failures} times in the last {window} seconds, so it is being '
+                        'disabled for {persist} seconds'.format(
+                            failures=task.retry_policy.retry_count,
+                            task=task.id,
+                            window=config.disable_window,
+                            persist=config.disable_persist,
+                        ))
         elif new_status == DISABLED:
             task.scheduler_disable_time = None
 
@@ -704,6 +709,9 @@ class Scheduler(object):
         self._worker_requests = {}
         self._rank = rank_prefer_newer if self._config.prefer_newer_tasks else rank_prefer_older
 
+        if self._config.batch_emails:
+            self._email_batcher = BatchNotifier()
+
     def load(self):
         self._state.load()
 
@@ -715,6 +723,7 @@ class Scheduler(object):
         logger.info("Starting pruning of task graph")
         self._prune_workers()
         self._prune_tasks()
+        self._prune_emails()
         logger.info("Done pruning task graph")
 
     def _prune_workers(self):
@@ -738,6 +747,10 @@ class Scheduler(object):
                 remove_tasks.append(task.id)
 
         self._state.inactivate_tasks(remove_tasks)
+
+    def _prune_emails(self):
+        if self._config.batch_emails:
+            self._email_batcher.update()
 
     def _update_worker(self, worker_id, worker_reference=None, get_work=False):
         # Keep track of whenever the worker was last active.
@@ -839,6 +852,20 @@ class Scheduler(object):
                 # (so checking for status != task.status woule lie)
                 self._update_task_history(task, status)
             self._state.set_status(task, PENDING if status == SUSPENDED else status, self._config)
+
+        if status == FAILED and self._config.batch_emails:
+            batched_params, _ = self._state.get_batcher(worker_id, family)
+            if batched_params:
+                unbatched_params = {
+                    param: value
+                    for param, value in six.iteritems(task.params)
+                    if param not in batched_params
+                }
+            else:
+                unbatched_params = task.params
+            self._email_batcher.add_failure(task.pretty_id, task.family, unbatched_params, expl)
+            if task.status == DISABLED:
+                self._email_batcher.add_disable(task.pretty_id, task.family, unbatched_params)
 
         if deps is not None:
             task.deps = set(deps)
