@@ -950,14 +950,11 @@ class Scheduler(object):
         for task in worker.get_pending_tasks(self._state):
             if self._upstream_status(task.id, upstream_status_table) == UPSTREAM_DISABLED:
                 continue
-            if task.status == RUNNING:
-                # Return a list of currently running tasks to the client,
-                # makes it easier to troubleshoot
+            if task.status == RUNNING and task.worker_running:
                 other_worker = self._state.get_worker(task.worker_running)
-                if other_worker is not None:
-                    more_info = {'task_id': task.id, 'worker': str(other_worker)}
-                    more_info.update(other_worker.info)
-                    running_tasks.append(more_info)
+                more_info = {'task_id': task.id, 'worker': str(other_worker)}
+                more_info.update(other_worker.info)
+                running_tasks.append(more_info)
             elif task.status == PENDING:
                 num_pending += 1
                 num_unique_pending += int(len(task.workers) == 1)
