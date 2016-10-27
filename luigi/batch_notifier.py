@@ -61,7 +61,7 @@ class BatchNotifier(object):
             plural_s = '' if failure_count == 1 else 's'
             body_line = '{} ({} failure{}{})'.format(name, failure_count, plural_s, disabled_line)
             body_lines.append(body_line)
-        if email.format == 'html':
+        if email().format == 'html':
             return '<br>'.join(body_lines)
         else:
             return '\n'.join(body_lines)
