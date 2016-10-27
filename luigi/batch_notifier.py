@@ -3,7 +3,7 @@ import time
 
 import luigi
 from luigi import six
-from luigi.notifications import send_error_email
+from luigi.notifications import send_error_email, email
 import luigi.parameter
 
 
@@ -61,13 +61,16 @@ class BatchNotifier(object):
             plural_s = '' if failure_count == 1 else 's'
             body_line = '{} ({} failure{}{})'.format(name, failure_count, plural_s, disabled_line)
             body_lines.append(body_line)
-        return '\n'.join(body_lines)
+        if email.format == 'html':
+            return '<br>'.join(body_lines)
+        else:
+            return '\n'.join(body_lines)
 
     def send_email(self):
         num_failures = sum(six.itervalues(self._fail_counts))
         if num_failures > 0 or self._disabled_counts:
             plural_s = 's' if num_failures != 1 else ''
-            subject = '{} failure{} in the last {} minutes'.format(
+            subject = 'Luigi: {} failure{} in the last {} minutes'.format(
                 num_failures, plural_s, self._config.email_interval)
             send_error_email(subject, self._email_body())
         self._update_next_send()
