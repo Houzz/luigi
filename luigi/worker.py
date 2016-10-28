@@ -452,6 +452,8 @@ class Worker(object):
         if task:
             msg = (task, status, runnable)
             self._add_task_history.append(msg)
+            if task.owner:
+                kwargs['owners'] = task.owner.split(',')
 
         if task_id in self._batch_running_tasks:
             for batch_task in self._batch_running_tasks.pop(task_id):

@@ -1169,6 +1169,23 @@ class WorkerEmailTest(LuigiTestCase):
         self.assertEqual(1, len(emails))
         self.assertTrue(emails[0].find("Luigi: %s FAILED" % (a,)) != -1)
 
+    @with_config({'batch_email': {'email_interval': 0}, 'worker': {'send_failure_email': False}})
+    @email_patch
+    def test_run_error_batch_email(self, emails):
+        class A(luigi.Task):
+            owner = 'a@test.com,b@test.com'
+
+            def run(self):
+                raise Exception("b0rk")
+        scheduler = Scheduler(batch_emails=True)
+        worker = Worker(scheduler)
+        worker.add(A())
+        worker.run()
+        scheduler.prune()
+        self.assertEqual(3, len(emails))
+        self.assertTrue(any('a@test.com' in email for email in emails))
+        self.assertTrue(any('b@test.com' in email for email in emails))
+
     @with_config({'worker': {'send_failure_email': False}})
     @email_patch
     def test_run_error_no_email(self, emails):
