@@ -2084,6 +2084,7 @@ class SchedulerApiTest(unittest.TestCase):
             'T',
             {'a': '5', 'b': '6'},
             'bad thing',
+            None,
         )
         BatchNotifier().add_disable.assert_not_called()
 
@@ -2099,6 +2100,22 @@ class SchedulerApiTest(unittest.TestCase):
             'T',
             {'b': '6'},
             'bad thing',
+            None,
+        )
+        BatchNotifier().add_disable.assert_not_called()
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_batch_failure_email_with_owner(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=True)
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing', owners=['a@test.com', 'b@test.com'])
+        BatchNotifier().add_failure.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'a': '5', 'b': '6'},
+            'bad thing',
+            ['a@test.com', 'b@test.com'],
         )
         BatchNotifier().add_disable.assert_not_called()
 
@@ -2114,11 +2131,35 @@ class SchedulerApiTest(unittest.TestCase):
             'T',
             {'a': '5', 'b': '6'},
             'bad thing',
+            None,
         )
         BatchNotifier().add_disable.assert_called_once_with(
             'T(a=5, b=6)',
             'T',
             {'a': '5', 'b': '6'},
+            None,
+        )
+        notifications.send_error_email.assert_not_called()
+
+    @mock.patch('luigi.scheduler.notifications')
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_batch_disable_email_with_owner(self, BatchNotifier, notifications):
+        scheduler = Scheduler(batch_emails=True, retry_count=1)
+        scheduler.add_task(
+            worker=WORKER, status=FAILED, task_id='T(a=5, b=6)', family='T',
+            params={'a': '5', 'b': '6'}, expl='bad thing', owners=['a@test.com'])
+        BatchNotifier().add_failure.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'a': '5', 'b': '6'},
+            'bad thing',
+            ['a@test.com'],
+        )
+        BatchNotifier().add_disable.assert_called_once_with(
+            'T(a=5, b=6)',
+            'T',
+            {'a': '5', 'b': '6'},
+            ['a@test.com'],
         )
         notifications.send_error_email.assert_not_called()
 
@@ -2135,11 +2176,13 @@ class SchedulerApiTest(unittest.TestCase):
             'T',
             {'b': '6'},
             'bad thing',
+            None,
         )
         BatchNotifier().add_disable.assert_called_once_with(
             'T(a=5, b=6)',
             'T',
             {'b': '6'},
+            None,
         )
         notifications.send_error_email.assert_not_called()
 

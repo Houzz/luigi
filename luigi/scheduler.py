@@ -782,7 +782,7 @@ class Scheduler(object):
                  priority=0, family='', module=None, params=None,
                  assistant=False, assistant_groups=None, tracking_url=None,
                  worker=None, batchable=None, batch_id=None,
-                 retry_policy_dict={}, **kwargs):
+                 retry_policy_dict={}, owners=None, **kwargs):
         """
         * add task identified by task_id if it doesn't exist
         * if deps is not None, update dependency list
@@ -863,9 +863,9 @@ class Scheduler(object):
                 }
             else:
                 unbatched_params = task.params
-            self._email_batcher.add_failure(task.pretty_id, task.family, unbatched_params, expl)
+            self._email_batcher.add_failure(task.pretty_id, task.family, unbatched_params, expl, owners)
             if task.status == DISABLED:
-                self._email_batcher.add_disable(task.pretty_id, task.family, unbatched_params)
+                self._email_batcher.add_disable(task.pretty_id, task.family, unbatched_params, owners)
 
         if deps is not None:
             task.deps = set(deps)
