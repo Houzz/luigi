@@ -41,14 +41,16 @@ class ExplQueue(collections.OrderedDict):
 class BatchNotifier(object):
     def __init__(self, **kwargs):
         self._config = batch_email(**kwargs)
-        self._fail_counts = collections.Counter()
-        self._disabled_counts = collections.Counter()
         self._owner_fail_counts = collections.defaultdict(collections.Counter)
         self._owner_disabled_counts = collections.defaultdict(collections.Counter)
         self._fail_expls = collections.defaultdict(lambda: ExplQueue(self._config.error_messages))
         self._update_next_send()
 
         self._email_format = email().format
+        if email().receiver:
+            self._default_owner = set(filter(None, email().receiver.split(',')))
+        else:
+            self._default_owner = set()
 
     def _update_next_send(self):
         self._next_send = time.time() + 60 * self._config.email_interval
@@ -97,16 +99,13 @@ class BatchNotifier(object):
 
     def add_failure(self, task_name, family, unbatched_args, expl, owners=None):
         key = self._key(task_name, family, unbatched_args)
-        self._fail_counts[key] += 1
-        for owner in owners or ():
+        for owner in self._default_owner | set(owners or ()):
             self._owner_fail_counts[owner][key] += 1
         self._fail_expls[key].enqueue(expl)
 
     def add_disable(self, task_name, family, unbatched_args, owners=None):
         key = self._key(task_name, family, unbatched_args)
-        self._disabled_counts[key] += 1
-        self._fail_counts.setdefault(key, 0)
-        for owner in owners or ():
+        for owner in self._default_owner | set(owners or ()):
             self._owner_disabled_counts[owner][key] += 1
             self._owner_fail_counts[owner].setdefault(key, 0)
 
@@ -141,26 +140,20 @@ class BatchNotifier(object):
         else:
             return body
 
-    def _send_email(self, fail_counts, disable_counts, owners=None):
+    def _send_email(self, fail_counts, disable_counts, owners):
         num_failures = sum(six.itervalues(fail_counts))
         if num_failures > 0 or disable_counts:
             plural_s = 's' if num_failures != 1 else ''
-            prefix = 'Your tasks have ' if owners else ''
+            prefix = '' if set(owners) <= self._default_owner else 'Your tasks have '
             subject = 'Luigi: {}{} failure{} in the last {} minutes'.format(
                 prefix, num_failures, plural_s, self._config.email_interval)
             email_body = self._email_body(fail_counts, disable_counts)
-            if owners:
-                send_email(subject, email_body, email().sender, owners)
-            else:
-                send_error_email(subject, email_body)
+            send_email(subject, email_body, email().sender, owners)
 
     def send_email(self):
-        self._send_email(self._fail_counts, self._disabled_counts)
         for owner, failures in six.iteritems(self._owner_fail_counts):
             self._send_email(failures, self._owner_disabled_counts[owner], (owner,))
         self._update_next_send()
-        self._fail_counts.clear()
-        self._disabled_counts.clear()
         self._owner_fail_counts.clear()
         self._owner_disabled_counts.clear()
         self._fail_expls.clear()
