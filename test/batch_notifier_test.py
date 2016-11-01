@@ -177,7 +177,7 @@ class BatchNotifierTest(unittest.TestCase):
 
     def test_limit_expl_length(self):
         bn = BatchNotifier(batch_mode='family', error_messages=1, error_lines=2)
-        bn.add_failure('Task(a=1)', 'Task', {'a': 1}, 'line 1\nline 2\nline 3\nline 4\n')
+        bn.add_failure('Task(a=1)', 'Task', {'a': '1'}, 'line 1\nline 2\nline 3\nline 4\n')
         bn.send_email()
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
@@ -186,6 +186,39 @@ class BatchNotifierTest(unittest.TestCase):
             '      line 3\n'
             '      line 4'
         )
+
+    def test_expl_varies_by_owner(self):
+        bn = BatchNotifier(batch_mode='family', error_messages=1)
+        bn.add_failure('Task(a=1)', 'Task', {'a': '1'}, 'msg1', owners=('a@test.com',))
+        bn.add_failure('Task(a=2)', 'Task', {'a': '2'}, 'msg2', owners=('b@test.com',))
+        bn.send_email()
+        send_calls = [
+            mock.call(
+                'Luigi: Your tasks have 1 failure in the last 60 minutes',
+                '- Task (1 failure)\n'
+                '\n'
+                '      msg1',
+                'sender@test.com',
+                ('a@test.com',),
+            ),
+            mock.call(
+                'Luigi: Your tasks have 1 failure in the last 60 minutes',
+                '- Task (1 failure)\n'
+                '\n'
+                '      msg2',
+                'sender@test.com',
+                ('b@test.com',),
+            ),
+            mock.call(
+                'Luigi: 2 failures in the last 60 minutes',
+                '- Task (2 failures)\n'
+                '\n'
+                '      msg2',
+                'sender@test.com',
+                ('r@test.com',),
+            ),
+        ]
+        self.send_email.assert_has_calls(send_calls, any_order=True)
 
     def test_include_two_expls_html_format(self):
         self.email().format = 'html'

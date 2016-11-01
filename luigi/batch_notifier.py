@@ -38,12 +38,16 @@ class ExplQueue(collections.OrderedDict):
             self.popitem(last=False)  # pop first item if past length
 
 
+def _fail_queue(num_messages):
+    return lambda: collections.defaultdict(lambda: ExplQueue(num_messages))
+
+
 class BatchNotifier(object):
     def __init__(self, **kwargs):
         self._config = batch_email(**kwargs)
-        self._owner_fail_counts = collections.defaultdict(collections.Counter)
-        self._owner_disabled_counts = collections.defaultdict(collections.Counter)
-        self._fail_expls = collections.defaultdict(lambda: ExplQueue(self._config.error_messages))
+        self._fail_counts = collections.defaultdict(collections.Counter)
+        self._disabled_counts = collections.defaultdict(collections.Counter)
+        self._fail_expls = collections.defaultdict(_fail_queue(self._config.error_messages))
         self._update_next_send()
 
         self._email_format = email().format
@@ -100,14 +104,14 @@ class BatchNotifier(object):
     def add_failure(self, task_name, family, unbatched_args, expl, owners=None):
         key = self._key(task_name, family, unbatched_args)
         for owner in self._default_owner | set(owners or ()):
-            self._owner_fail_counts[owner][key] += 1
-        self._fail_expls[key].enqueue(expl)
+            self._fail_counts[owner][key] += 1
+            self._fail_expls[owner][key].enqueue(expl)
 
     def add_disable(self, task_name, family, unbatched_args, owners=None):
         key = self._key(task_name, family, unbatched_args)
         for owner in self._default_owner | set(owners or ()):
-            self._owner_disabled_counts[owner][key] += 1
-            self._owner_fail_counts[owner].setdefault(key, 0)
+            self._disabled_counts[owner][key] += 1
+            self._fail_counts[owner].setdefault(key, 0)
 
     def _task_expl_groups(self, expls):
         if not self._config.group_by_error_messages:
@@ -124,9 +128,9 @@ class BatchNotifier(object):
         max_name = max(expls)[0]
         return -num_failures, -num_disables, max_name
 
-    def _email_body(self, fail_counts, disable_counts):
+    def _email_body(self, fail_counts, disable_counts, fail_expls):
         expls = {
-            (name, fail_count, disable_counts[name]): self._expl_body(self._fail_expls[name])
+            (name, fail_count, disable_counts[name]): self._expl_body(fail_expls[name])
             for name, fail_count in six.iteritems(fail_counts)
         }
         expl_groups = sorted(self._task_expl_groups(expls), key=self._expls_key)
@@ -140,22 +144,22 @@ class BatchNotifier(object):
         else:
             return body
 
-    def _send_email(self, fail_counts, disable_counts, owners):
+    def _send_email(self, fail_counts, disable_counts, fail_expls, owner):
         num_failures = sum(six.itervalues(fail_counts))
         if num_failures > 0 or disable_counts:
             plural_s = 's' if num_failures != 1 else ''
-            prefix = '' if set(owners) <= self._default_owner else 'Your tasks have '
+            prefix = '' if owner in self._default_owner else 'Your tasks have '
             subject = 'Luigi: {}{} failure{} in the last {} minutes'.format(
                 prefix, num_failures, plural_s, self._config.email_interval)
-            email_body = self._email_body(fail_counts, disable_counts)
-            send_email(subject, email_body, email().sender, owners)
+            email_body = self._email_body(fail_counts, disable_counts, fail_expls)
+            send_email(subject, email_body, email().sender, (owner,))
 
     def send_email(self):
-        for owner, failures in six.iteritems(self._owner_fail_counts):
-            self._send_email(failures, self._owner_disabled_counts[owner], (owner,))
+        for owner, failures in six.iteritems(self._fail_counts):
+            self._send_email(failures, self._disabled_counts[owner], self._fail_expls[owner], owner)
         self._update_next_send()
-        self._owner_fail_counts.clear()
-        self._owner_disabled_counts.clear()
+        self._fail_counts.clear()
+        self._disabled_counts.clear()
         self._fail_expls.clear()
 
     def update(self):
