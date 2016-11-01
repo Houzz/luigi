@@ -1,4 +1,5 @@
 import collections
+from datetime import datetime
 import time
 
 import luigi
@@ -17,6 +18,22 @@ class batch_email(luigi.Config):
                     'failures for tasks with the same family and non-batched parameters will be '
                     'batched. If "all", tasks will only be batched if they have identical names. '
                     '(default: unbatched_params)')
+    error_lines = luigi.parameter.IntParameter(
+        default=0, description='Number of lines to show from each error message. Default: all')
+    error_messages = luigi.parameter.IntParameter(
+        default=0, description='Number of error messages to show for each group')
+
+
+class ExplQueue(collections.OrderedDict):
+    def __init__(self, num_items):
+        self.num_items = num_items
+        super(ExplQueue, self).__init__()
+
+    def enqueue(self, item):
+        self.pop(item, None)
+        self[item] = datetime.now()
+        if len(self) > self.num_items:
+            self.popitem(last=False)  # pop first item if past length
 
 
 class BatchNotifier(object):
@@ -26,7 +43,10 @@ class BatchNotifier(object):
         self._disabled_counts = collections.Counter()
         self._owner_fail_counts = collections.defaultdict(collections.Counter)
         self._owner_disabled_counts = collections.defaultdict(collections.Counter)
+        self._fail_expls = collections.defaultdict(lambda: ExplQueue(self._config.error_messages))
         self._update_next_send()
+
+        self._email_format = email().format
 
     def _update_next_send(self):
         self._next_send = time.time() + 60 * self._config.email_interval
@@ -43,11 +63,33 @@ class BatchNotifier(object):
             raise ValueError('Unknown batch mode for batch notifier: {}'.format(
                 self._config.batch_mode))
 
+    def _format_expl(self, expl):
+        lines = expl.rstrip().split('\n')[-self._config.error_lines:]
+        if self._email_format == 'html':
+            return '<pre>{}</pre>'.format('\n'.join(lines))
+        else:
+            return '\n{}'.format('\n'.join(map('    {}'.format, lines)))
+
+    def _format_task(self, task, failure_count, disable_count):
+        if disable_count == 1:
+            disabled_line = ', 1 disable'
+        elif disable_count:
+            disabled_line = ', {} disables'.format(disable_count)
+        else:
+            disabled_line = ''
+        plural_failure = '' if failure_count == 1 else 's'
+        line = '{} ({} failure{}{})'.format(task, failure_count, plural_failure, disabled_line)
+        if self._email_format == 'html':
+            return '<li>{}'.format(line)
+        else:
+            return line
+
     def add_failure(self, task_name, family, unbatched_args, expl, owners=None):
         key = self._key(task_name, family, unbatched_args)
         self._fail_counts[key] += 1
         for owner in owners or ():
             self._owner_fail_counts[owner][key] += 1
+        self._fail_expls[key].enqueue(expl)
 
     def add_disable(self, task_name, family, unbatched_args, owners=None):
         key = self._key(task_name, family, unbatched_args)
@@ -60,19 +102,16 @@ class BatchNotifier(object):
     def _email_body(self, fail_counts, disable_counts):
         body_lines = []
         for name, failure_count in fail_counts.most_common():
-            if disable_counts.get(name):
-                disables = disable_counts[name]
-                disabled_line = ', 1 disable' if disables == 1 else ', {} disables'.format(disables)
-            else:
-                disabled_line = ''
-
-            plural_s = '' if failure_count == 1 else 's'
-            body_line = '{} ({} failure{}{})'.format(name, failure_count, plural_s, disabled_line)
-            body_lines.append(body_line)
-        if email().format == 'html':
-            return '<br>'.join(body_lines)
+            body_lines.append(self._format_task(name, failure_count, disable_counts[name]))
+            for expl in self._fail_expls[name].keys():
+                body_lines.append(self._format_expl(expl))
+            if self._fail_expls[name] and self._email_format != 'html':
+                body_lines.append('')
+        body = '\n'.join(body_lines).rstrip()
+        if self._email_format == 'html':
+            return '<ul>\n{}</ul>'.format(body)
         else:
-            return '\n'.join(body_lines)
+            return body
 
     def _send_email(self, fail_counts, disable_counts, owners=None):
         num_failures = sum(six.itervalues(fail_counts))
@@ -96,6 +135,7 @@ class BatchNotifier(object):
         self._disabled_counts.clear()
         self._owner_fail_counts.clear()
         self._owner_disabled_counts.clear()
+        self._fail_expls.clear()
 
     def update(self):
         if time.time() >= self._next_send:

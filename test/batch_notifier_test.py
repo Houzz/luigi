@@ -119,6 +119,89 @@ class BatchNotifierTest(unittest.TestCase):
             'OtherTask(a=5) (1 failure)'
         )
 
+    def test_include_one_expl(self):
+        bn = BatchNotifier(batch_mode='family', error_messages=1)
+        bn.add_failure('Task(a=1)', 'Task', {'a': 1}, 'error 1')
+        bn.add_failure('Task(a=2)', 'Task', {'a': 2}, 'error 2')
+        bn.add_failure('TaskB(a=1)', 'TaskB', {'a': 1}, 'error')
+
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 3 failures in the last 60 minutes',
+            'Task (2 failures)\n'
+            '\n'
+            '    error 2\n'
+            '\n'
+            'TaskB (1 failure)\n'
+            '\n'
+            '    error'
+        )
+
+    def test_include_two_expls(self):
+        bn = BatchNotifier(batch_mode='family', error_messages=2)
+        bn.add_failure('Task(a=1)', 'Task', {'a': 1}, 'error 1')
+        bn.add_failure('Task(a=2)', 'Task', {'a': 2}, 'error 2')
+        bn.add_failure('TaskB(a=1)', 'TaskB', {'a': 1}, 'error')
+
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 3 failures in the last 60 minutes',
+            'Task (2 failures)\n'
+            '\n'
+            '    error 1\n'
+            '\n'
+            '    error 2\n'
+            '\n'
+            'TaskB (1 failure)\n'
+            '\n'
+            '    error'
+        )
+
+    def test_limit_expl_length(self):
+        bn = BatchNotifier(batch_mode='family', error_messages=1, error_lines=2)
+        bn.add_failure('Task(a=1)', 'Task', {'a': 1}, 'line 1\nline 2\nline 3\nline 4\n')
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 1 failure in the last 60 minutes',
+            'Task (1 failure)\n'
+            '\n'
+            '    line 3\n'
+            '    line 4'
+        )
+
+    def test_include_two_expls_html_format(self):
+        self.email().format = 'html'
+        bn = BatchNotifier(batch_mode='family', error_messages=2)
+        bn.add_failure('Task(a=1)', 'Task', {'a': 1}, 'error 1')
+        bn.add_failure('Task(a=2)', 'Task', {'a': 2}, 'error 2')
+        bn.add_failure('TaskB(a=1)', 'TaskB', {'a': 1}, 'error')
+
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 3 failures in the last 60 minutes',
+            '<ul>\n'
+            '<li>Task (2 failures)\n'
+            '<pre>error 1</pre>\n'
+            '<pre>error 2</pre>\n'
+            '<li>TaskB (1 failure)\n'
+            '<pre>error</pre>'
+            '</ul>'
+        )
+
+    def test_limit_expl_length_html_format(self):
+        self.email().format = 'html'
+        bn = BatchNotifier(batch_mode='family', error_messages=1, error_lines=2)
+        bn.add_failure('Task(a=1)', 'Task', {'a': 1}, 'line 1\nline 2\nline 3\nline 4\n')
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 1 failure in the last 60 minutes',
+            '<ul>\n'
+            '<li>Task (1 failure)\n'
+            '<pre>line 3\n'
+            'line 4</pre>'
+            '</ul>'
+        )
+
     def test_send_clears_backlog(self):
         bn = BatchNotifier(batch_mode='all')
         bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error')
