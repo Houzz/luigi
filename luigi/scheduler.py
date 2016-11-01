@@ -23,6 +23,7 @@ See :doc:`/central_scheduler` for more info.
 
 import collections
 import inspect
+import json
 
 from luigi.batch_notifier import BatchNotifier
 
@@ -863,9 +864,15 @@ class Scheduler(object):
                 }
             else:
                 unbatched_params = task.params
-            self._email_batcher.add_failure(task.pretty_id, task.family, unbatched_params, expl, owners)
+            try:
+                expl_raw = json.loads(expl)
+            except ValueError:
+                expl_raw = expl
+            self._email_batcher.add_failure(
+                task.pretty_id, task.family, unbatched_params, expl_raw, owners)
             if task.status == DISABLED:
-                self._email_batcher.add_disable(task.pretty_id, task.family, unbatched_params, owners)
+                self._email_batcher.add_disable(
+                    task.pretty_id, task.family, unbatched_params, owners)
 
         if deps is not None:
             task.deps = set(deps)
