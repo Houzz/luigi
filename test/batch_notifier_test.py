@@ -35,7 +35,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 1 failure in the last 60 minutes',
-            'Task(a=5) (1 failure)'
+            '- Task(a=5) (1 failure)'
         )
 
     def test_send_single_disable(self):
@@ -46,7 +46,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 10 failures in the last 60 minutes',
-            'Task(a=5) (10 failures, 1 disable)'
+            '- Task(a=5) (10 failures, 1 disable)'
         )
 
     def test_send_multiple_disables(self):
@@ -59,7 +59,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 20 failures in the last 60 minutes',
-            'Task (20 failures, 2 disables)'
+            '- Task (20 failures, 2 disables)'
         )
 
     def test_multiple_failures_of_same_job(self):
@@ -70,7 +70,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 3 failures in the last 60 minutes',
-            'Task(a=5) (3 failures)'
+            '- Task(a=5) (3 failures)'
         )
 
     def test_multiple_failures_of_multiple_jobs(self):
@@ -81,8 +81,8 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 3 failures in the last 60 minutes',
-            'Task(a=6) (2 failures)\n'
-            'Task(a=5) (1 failure)'
+            '- Task(a=6) (2 failures)\n'
+            '- Task(a=5) (1 failure)'
         )
 
     def test_group_on_family(self):
@@ -94,8 +94,8 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 4 failures in the last 60 minutes',
-            'Task (3 failures)\n'
-            'OtherTask (1 failure)'
+            '- Task (3 failures)\n'
+            '- OtherTask (1 failure)'
         )
 
     def test_group_on_unbatched_params(self):
@@ -113,10 +113,10 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 10 failures in the last 60 minutes',
-            'Task(a=6) (4 failures)\n'
-            'OtherTask(a=6) (3 failures)\n'
-            'Task(a=5) (2 failures)\n'
-            'OtherTask(a=5) (1 failure)'
+            '- Task(a=6) (4 failures)\n'
+            '- OtherTask(a=6) (3 failures)\n'
+            '- Task(a=5) (2 failures)\n'
+            '- OtherTask(a=5) (1 failure)'
         )
 
     def test_include_one_expl(self):
@@ -128,13 +128,13 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 3 failures in the last 60 minutes',
-            'Task (2 failures)\n'
+            '- Task (2 failures)\n'
             '\n'
-            '    error 2\n'
+            '      error 2\n'
             '\n'
-            'TaskB (1 failure)\n'
+            '- TaskB (1 failure)\n'
             '\n'
-            '    error'
+            '      error'
         )
 
     def test_include_two_expls(self):
@@ -146,15 +146,15 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 3 failures in the last 60 minutes',
-            'Task (2 failures)\n'
+            '- Task (2 failures)\n'
             '\n'
-            '    error 1\n'
+            '      error 1\n'
             '\n'
-            '    error 2\n'
+            '      error 2\n'
             '\n'
-            'TaskB (1 failure)\n'
+            '- TaskB (1 failure)\n'
             '\n'
-            '    error'
+            '      error'
         )
 
     def test_limit_expl_length(self):
@@ -163,10 +163,10 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.send_error_email.assert_called_once_with(
             'Luigi: 1 failure in the last 60 minutes',
-            'Task (1 failure)\n'
+            '- Task (1 failure)\n'
             '\n'
-            '    line 3\n'
-            '    line 4'
+            '      line 3\n'
+            '      line 4'
         )
 
     def test_include_two_expls_html_format(self):
@@ -184,7 +184,7 @@ class BatchNotifierTest(unittest.TestCase):
             '<pre>error 1</pre>\n'
             '<pre>error 2</pre>\n'
             '<li>TaskB (1 failure)\n'
-            '<pre>error</pre>'
+            '<pre>error</pre>\n'
             '</ul>'
         )
 
@@ -198,7 +198,7 @@ class BatchNotifierTest(unittest.TestCase):
             '<ul>\n'
             '<li>Task (1 failure)\n'
             '<pre>line 3\n'
-            'line 4</pre>'
+            'line 4</pre>\n'
             '</ul>'
         )
 
@@ -224,7 +224,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.update()
         self.send_error_email.assert_called_once_with(
             'Luigi: 1 failure in the last 60 minutes',
-            'Task(a=5) (1 failure)'
+            '- Task(a=5) (1 failure)'
         )
 
     def test_auto_send_on_update_after_time_period_with_disable_only(self):
@@ -239,7 +239,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.update()
         self.send_error_email.assert_called_once_with(
             'Luigi: 0 failures in the last 60 minutes',
-            'Task(a=5) (0 failures, 1 disable)'
+            '- Task(a=5) (0 failures, 1 disable)'
         )
 
     def test_no_auto_send_until_end_of_interval_with_error(self):
@@ -259,7 +259,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.update()
         self.send_error_email.assert_called_once_with(
             'Luigi: 1 failure in the last 60 minutes',
-            'Task(a=5) (1 failure)'
+            '- Task(a=5) (1 failure)'
         )
 
     def test_send_batch_failure_emails_to_owners(self):
@@ -271,21 +271,21 @@ class BatchNotifierTest(unittest.TestCase):
 
         self.send_error_email.assert_called_once_with(
             'Luigi: 3 failures in the last 60 minutes',
-            'Task(a=1) (2 failures)\n'
-            'Task(a=2) (1 failure)'
+            '- Task(a=1) (2 failures)\n'
+            '- Task(a=2) (1 failure)'
         )
 
         owner_send_calls = [
             mock.call(
                 'Luigi: Your tasks have 2 failures in the last 60 minutes',
-                'Task(a=1) (1 failure)\n'
-                'Task(a=2) (1 failure)',
+                '- Task(a=1) (1 failure)\n'
+                '- Task(a=2) (1 failure)',
                 'sender@test.com',
                 ('a@test.com',),
             ),
             mock.call(
                 'Luigi: Your tasks have 2 failures in the last 60 minutes',
-                'Task(a=1) (2 failures)',
+                '- Task(a=1) (2 failures)',
                 'sender@test.com',
                 ('b@test.com',),
             ),
@@ -299,12 +299,12 @@ class BatchNotifierTest(unittest.TestCase):
 
         self.send_error_email.assert_called_once_with(
             'Luigi: 0 failures in the last 60 minutes',
-            'Task(a=1) (0 failures, 1 disable)',
+            '- Task(a=1) (0 failures, 1 disable)',
         )
 
         self.send_email.assert_called_once_with(
             'Luigi: Your tasks have 0 failures in the last 60 minutes',
-            'Task(a=1) (0 failures, 1 disable)',
+            '- Task(a=1) (0 failures, 1 disable)',
             'sender@test.com',
             ('a@test.com',),
         )

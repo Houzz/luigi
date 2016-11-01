@@ -68,7 +68,13 @@ class BatchNotifier(object):
         if self._email_format == 'html':
             return '<pre>{}</pre>'.format('\n'.join(lines))
         else:
-            return '\n{}'.format('\n'.join(map('    {}'.format, lines)))
+            return '\n{}'.format('\n'.join(map('      {}'.format, lines)))
+
+    def _expl_body(self, expls):
+        lines = [self._format_expl(expl) for expl in expls]
+        if lines and self._email_format != 'html':
+            lines.append('')
+        return '\n'.join(lines)
 
     def _format_task(self, task, failure_count, disable_count):
         if disable_count == 1:
@@ -82,7 +88,7 @@ class BatchNotifier(object):
         if self._email_format == 'html':
             return '<li>{}'.format(line)
         else:
-            return line
+            return '- {}'.format(line)
 
     def add_failure(self, task_name, family, unbatched_args, expl, owners=None):
         key = self._key(task_name, family, unbatched_args)
@@ -103,13 +109,10 @@ class BatchNotifier(object):
         body_lines = []
         for name, failure_count in fail_counts.most_common():
             body_lines.append(self._format_task(name, failure_count, disable_counts[name]))
-            for expl in self._fail_expls[name].keys():
-                body_lines.append(self._format_expl(expl))
-            if self._fail_expls[name] and self._email_format != 'html':
-                body_lines.append('')
-        body = '\n'.join(body_lines).rstrip()
+            body_lines.append(self._expl_body(self._fail_expls[name].keys()))
+        body = '\n'.join(filter(None, body_lines)).rstrip()
         if self._email_format == 'html':
-            return '<ul>\n{}</ul>'.format(body)
+            return '<ul>\n{}\n</ul>'.format(body)
         else:
             return body
 
