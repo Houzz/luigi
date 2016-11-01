@@ -308,3 +308,45 @@ class BatchNotifierTest(unittest.TestCase):
             'sender@test.com',
             ('a@test.com',),
         )
+
+    def test_batch_identical_expls(self):
+        bn = BatchNotifier(error_messages=1, group_by_error_messages=True)
+        bn.add_failure('Task(a=1)', 'Task', {'a': '1'}, 'msg1')
+        bn.add_failure('Task(a=2)', 'Task', {'a': '2'}, 'msg1')
+        bn.add_failure('Task(a=3)', 'Task', {'a': '3'}, 'msg1')
+        bn.add_failure('Task(a=4)', 'Task', {'a': '4'}, 'msg2')
+        bn.add_failure('Task(a=4)', 'Task', {'a': '4'}, 'msg2')
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 5 failures in the last 60 minutes',
+            '- Task(a=1) (1 failure)\n'
+            '  Task(a=2) (1 failure)\n'
+            '  Task(a=3) (1 failure)\n'
+            '\n'
+            '      msg1\n'
+            '\n'
+            '- Task(a=4) (2 failures)\n'
+            '\n'
+            '      msg2'
+        )
+
+    def test_batch_identical_expls_html(self):
+        self.email().format = 'html'
+        bn = BatchNotifier(error_messages=1, group_by_error_messages=True)
+        bn.add_failure('Task(a=1)', 'Task', {'a': '1'}, 'msg1')
+        bn.add_failure('Task(a=2)', 'Task', {'a': '2'}, 'msg1')
+        bn.add_failure('Task(a=3)', 'Task', {'a': '3'}, 'msg1')
+        bn.add_failure('Task(a=4)', 'Task', {'a': '4'}, 'msg2')
+        bn.add_failure('Task(a=4)', 'Task', {'a': '4'}, 'msg2')
+        bn.send_email()
+        self.send_error_email.assert_called_once_with(
+            'Luigi: 5 failures in the last 60 minutes',
+            '<ul>\n'
+            '<li>Task(a=1) (1 failure)\n'
+            '<br>Task(a=2) (1 failure)\n'
+            '<br>Task(a=3) (1 failure)\n'
+            '<pre>msg1</pre>\n'
+            '<li>Task(a=4) (2 failures)\n'
+            '<pre>msg2</pre>\n'
+            '</ul>'
+        )

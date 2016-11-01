@@ -22,6 +22,8 @@ class batch_email(luigi.Config):
         default=0, description='Number of lines to show from each error message. Default: all')
     error_messages = luigi.parameter.IntParameter(
         default=0, description='Number of error messages to show for each group')
+    group_by_error_messages = luigi.parameter.BoolParameter(
+        default=False, description='Group items with the same error messages together')
 
 
 class ExplQueue(collections.OrderedDict):
@@ -76,7 +78,7 @@ class BatchNotifier(object):
             lines.append('')
         return '\n'.join(lines)
 
-    def _format_task(self, task, failure_count, disable_count):
+    def _format_task(self, (task, failure_count, disable_count)):
         if disable_count == 1:
             disabled_line = ', 1 disable'
         elif disable_count:
@@ -84,11 +86,14 @@ class BatchNotifier(object):
         else:
             disabled_line = ''
         plural_failure = '' if failure_count == 1 else 's'
-        line = '{} ({} failure{}{})'.format(task, failure_count, plural_failure, disabled_line)
+        return '{} ({} failure{}{})'.format(task, failure_count, plural_failure, disabled_line)
+
+    def _format_tasks(self, tasks):
+        lines = map(self._format_task, reversed(tasks))
         if self._email_format == 'html':
-            return '<li>{}'.format(line)
+            return '<li>{}'.format('\n<br>'.join(lines))
         else:
-            return '- {}'.format(line)
+            return '- {}'.format('\n  '.join(lines))
 
     def add_failure(self, task_name, family, unbatched_args, expl, owners=None):
         key = self._key(task_name, family, unbatched_args)
@@ -105,11 +110,31 @@ class BatchNotifier(object):
             self._owner_disabled_counts[owner][key] += 1
             self._owner_fail_counts[owner].setdefault(key, 0)
 
+    def _task_expl_groups(self, expls):
+        if not self._config.group_by_error_messages:
+            return [((expl,), msg) for expl, msg in six.iteritems(expls)]
+
+        groups = collections.defaultdict(list)
+        for expl, msg in six.iteritems(expls):
+            groups[msg].append(expl)
+        return [(expls, msg) for msg, expls in six.iteritems(groups)]
+
+    def _expls_key(self, (expls, _)):
+        num_failures = sum(failures for (_1, failures, _2) in expls)
+        num_disables = sum(disables for (_1, _2, disables) in expls)
+        max_name = max(expls)[0]
+        return -num_failures, -num_disables, max_name
+
     def _email_body(self, fail_counts, disable_counts):
+        expls = {
+            (name, fail_count, disable_counts[name]): self._expl_body(self._fail_expls[name])
+            for name, fail_count in six.iteritems(fail_counts)
+        }
+        expl_groups = sorted(self._task_expl_groups(expls), key=self._expls_key)
         body_lines = []
-        for name, failure_count in fail_counts.most_common():
-            body_lines.append(self._format_task(name, failure_count, disable_counts[name]))
-            body_lines.append(self._expl_body(self._fail_expls[name].keys()))
+        for tasks, msg in expl_groups:
+            body_lines.append(self._format_tasks(tasks))
+            body_lines.append(msg)
         body = '\n'.join(filter(None, body_lines)).rstrip()
         if self._email_format == 'html':
             return '<ul>\n{}\n</ul>'.format(body)
