@@ -80,6 +80,15 @@ class BatchNotifierTest(unittest.TestCase):
             '- Task (20 failures, 2 disables)'
         )
 
+    def test_send_single_scheduling_fail(self):
+        bn = BatchNotifier(batch_mode='family')
+        bn.add_scheduling_fail('Task()', 'Task', {}, 'error')
+        bn.send_email()
+        self.check_email_send(
+            'Luigi: 0 failures in the last 60 minutes',
+            '- Task (0 failures, 1 scheduling failure)',
+        )
+
     def test_multiple_failures_of_same_job(self):
         bn = BatchNotifier(batch_mode='all')
         bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error')
@@ -257,11 +266,32 @@ class BatchNotifierTest(unittest.TestCase):
         bn = BatchNotifier(batch_mode='all')
         bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error')
         bn.add_disable('Task(a=5)', 'Task', {'a': 5})
+        bn.add_scheduling_fail('Task(a=6)', 'Task', {'a': 6}, 'scheduling error')
         bn.send_email()
 
         self.send_email.reset_mock()
         bn.send_email()
         self.send_email.assert_not_called()
+
+    def test_send_clears_all_old_data(self):
+        bn = BatchNotifier(batch_mode='all', error_messages=100)
+
+        for i in range(100):
+            bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error {}'.format(i))
+            bn.add_disable('Task(a=5)', 'Task', {'a': 5})
+            bn.add_scheduling_fail('Task(a=6)', 'Task', {'a': 6}, 'scheduling error {}'.format(i))
+            bn.send_email()
+            self.check_email_send(
+                'Luigi: 1 failure in the last 60 minutes',
+                '- Task(a=5) (1 failure, 1 disable)\n'
+                '\n'
+                '      error {}\n'
+                '\n'
+                '- Task(a=6) (0 failures, 1 scheduling failure)\n'
+                '\n'
+                '      scheduling error {}'.format(i, i),
+            )
+            self.send_email.reset_mock()
 
     def test_auto_send_on_update_after_time_period(self):
         bn = BatchNotifier(batch_mode='all')
