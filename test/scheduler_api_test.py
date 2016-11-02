@@ -2104,6 +2104,33 @@ class SchedulerApiTest(unittest.TestCase):
         BatchNotifier().add_disable.assert_not_called()
 
     @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_scheduling_failure(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=True)
+        scheduler.announce_scheduling_failure(
+            worker=WORKER,
+            task_name='T(a=1, b=2)',
+            family='T',
+            params={'a': '1', 'b': '2'},
+            expl='error',
+            owners=('owner',)
+        )
+        BatchNotifier().add_scheduling_fail.assert_called_once_with(
+            'T(a=1, b=2)', 'T', {'a': '1', 'b': '2'}, 'error', ('owner',))
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_scheduling_failure_without_batcher(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=False)
+        scheduler.announce_scheduling_failure(
+            worker=WORKER,
+            task_name='T(a=1, b=2)',
+            family='T',
+            params={'a': '1', 'b': '2'},
+            expl='error',
+            owners=('owner',)
+        )
+        BatchNotifier().add_scheduling_fail.assert_not_called()
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
     def test_batch_failure_emails_with_task_batcher(self, BatchNotifier):
         scheduler = Scheduler(batch_emails=True)
         scheduler.add_task_batcher(worker=WORKER, task_family='T', batched_args=['a'])
@@ -2118,6 +2145,21 @@ class SchedulerApiTest(unittest.TestCase):
             None,
         )
         BatchNotifier().add_disable.assert_not_called()
+
+    @mock.patch('luigi.scheduler.BatchNotifier')
+    def test_scheduling_failure_with_task_batcher(self, BatchNotifier):
+        scheduler = Scheduler(batch_emails=True)
+        scheduler.add_task_batcher(worker=WORKER, task_family='T', batched_args=['a'])
+        scheduler.announce_scheduling_failure(
+            worker=WORKER,
+            task_name='T(a=1, b=2)',
+            family='T',
+            params={'a': '1', 'b': '2'},
+            expl='error',
+            owners=('owner',)
+        )
+        BatchNotifier().add_scheduling_fail.assert_called_once_with(
+            'T(a=1, b=2)', 'T', {'b': '2'}, 'error', ('owner',))
 
     @mock.patch('luigi.scheduler.BatchNotifier')
     def test_batch_failure_email_with_owner(self, BatchNotifier):

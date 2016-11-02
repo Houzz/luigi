@@ -904,6 +904,22 @@ class Scheduler(object):
             task.runnable = runnable
 
     @rpc_method()
+    def announce_scheduling_failure(self, task_name, family, params, expl, owners, **kwargs):
+        if not self._config.batch_emails:
+            return
+        worker_id = kwargs['worker']
+        batched_params, _ = self._state.get_batcher(worker_id, family)
+        if batched_params:
+            unbatched_params = {
+                param: value
+                for param, value in six.iteritems(params)
+                if param not in batched_params
+            }
+        else:
+            unbatched_params = params
+        self._email_batcher.add_scheduling_fail(task_name, family, unbatched_params, expl, owners)
+
+    @rpc_method()
     def add_worker(self, worker, info, **kwargs):
         self._state.get_worker(worker).add_info(info)
 
