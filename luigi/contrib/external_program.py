@@ -89,7 +89,7 @@ class ExternalProgramTask(luigi.Task):
         args = list(map(str, self.program_args()))
 
         logger.info('Running command: %s', ' '.join(args))
-        tmp_stdout, tmp_stderr = tempfile.TemporaryFile(), tempfile.TemporaryFile()
+        tmp_stdout, tmp_stderr = tempfile.NamedTemporaryFile(), tempfile.NamedTemporaryFile()
         env = self.program_environment()
         proc = subprocess.Popen(
             args,
