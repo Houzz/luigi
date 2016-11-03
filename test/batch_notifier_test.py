@@ -63,7 +63,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.add_disable('Task(a=5)', 'Task', {'a': 5})
         bn.send_email()
         self.check_email_send(
-            'Luigi: 10 failures in the last 60 minutes',
+            'Luigi: 10 failures, 1 disable in the last 60 minutes',
             '- Task(a=5) (10 failures, 1 disable)'
         )
 
@@ -76,7 +76,7 @@ class BatchNotifierTest(unittest.TestCase):
         bn.add_disable('Task(a=6)', 'Task', {'a': 6})
         bn.send_email()
         self.check_email_send(
-            'Luigi: 20 failures in the last 60 minutes',
+            'Luigi: 20 failures, 2 disables in the last 60 minutes',
             '- Task (20 failures, 2 disables)'
         )
 
@@ -85,8 +85,8 @@ class BatchNotifierTest(unittest.TestCase):
         bn.add_scheduling_fail('Task()', 'Task', {}, 'error')
         bn.send_email()
         self.check_email_send(
-            'Luigi: 0 failures in the last 60 minutes',
-            '- Task (0 failures, 1 scheduling failure)',
+            'Luigi: 1 scheduling failure in the last 60 minutes',
+            '- Task (1 scheduling failure)',
         )
 
     def test_multiple_failures_of_same_job(self):
@@ -282,12 +282,12 @@ class BatchNotifierTest(unittest.TestCase):
             bn.add_scheduling_fail('Task(a=6)', 'Task', {'a': 6}, 'scheduling error {}'.format(i))
             bn.send_email()
             self.check_email_send(
-                'Luigi: 1 failure in the last 60 minutes',
+                'Luigi: 1 failure, 1 disable, 1 scheduling failure in the last 60 minutes',
                 '- Task(a=5) (1 failure, 1 disable)\n'
                 '\n'
                 '      error {}\n'
                 '\n'
-                '- Task(a=6) (0 failures, 1 scheduling failure)\n'
+                '- Task(a=6) (1 scheduling failure)\n'
                 '\n'
                 '      scheduling error {}'.format(i, i),
             )
@@ -319,8 +319,8 @@ class BatchNotifierTest(unittest.TestCase):
 
         bn.update()
         self.check_email_send(
-            'Luigi: 0 failures in the last 60 minutes',
-            '- Task(a=5) (0 failures, 1 disable)'
+            'Luigi: 1 disable in the last 60 minutes',
+            '- Task(a=5) (1 disable)'
         )
 
     def test_no_auto_send_until_end_of_interval_with_error(self):
@@ -381,14 +381,14 @@ class BatchNotifierTest(unittest.TestCase):
 
         send_calls = [
             mock.call(
-                'Luigi: 0 failures in the last 60 minutes',
-                '- Task(a=1) (0 failures, 1 disable)',
+                'Luigi: 1 disable in the last 60 minutes',
+                '- Task(a=1) (1 disable)',
                 'sender@test.com',
                 ('r@test.com',),
             ),
             mock.call(
-                'Luigi: Your tasks have 0 failures in the last 60 minutes',
-                '- Task(a=1) (0 failures, 1 disable)',
+                'Luigi: Your tasks have 1 disable in the last 60 minutes',
+                '- Task(a=1) (1 disable)',
                 'sender@test.com',
                 ('a@test.com',),
             ),

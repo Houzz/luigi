@@ -42,8 +42,8 @@ def _fail_queue(num_messages):
     return lambda: collections.defaultdict(lambda: ExplQueue(num_messages))
 
 
-def plural_format(template, number, plural='s', empty_on_zero=True):
-    if number == 0 and empty_on_zero:
+def _plural_format(template, number, plural='s'):
+    if number == 0:
         return ''
     return template.format(number, '' if number == 1 else plural)
 
@@ -92,10 +92,13 @@ class BatchNotifier(object):
         return '\n'.join(lines)
 
     def _format_task(self, (task, failure_count, disable_count, scheduling_count)):
-        disabled_line = plural_format(', {} disable{}', disable_count)
-        fail_line = plural_format('{} failure{}', failure_count, empty_on_zero=False)
-        scheduling_line = plural_format(', {} scheduling failure{}', scheduling_count)
-        return '{} ({}{}{})'.format(task, fail_line, disabled_line, scheduling_line)
+        counts = [
+            _plural_format('{} failure{}', failure_count),
+            _plural_format('{} disable{}', disable_count),
+            _plural_format('{} scheduling failure{}', scheduling_count),
+        ]
+        count_str = ', '.join(filter(None, counts))
+        return '{} ({})'.format(task, count_str)
 
     def _format_tasks(self, tasks):
         lines = map(self._format_task, sorted(tasks, key=self._expl_key))
@@ -138,8 +141,8 @@ class BatchNotifier(object):
     def _expls_key(self, (expls, _)):
         num_failures = sum(failures + scheduling_fails for (_1, failures, _2, scheduling_fails) in expls)
         num_disables = sum(disables for (_1, _2, disables, _3) in expls)
-        max_name = max(expls)[0]
-        return -num_failures, -num_disables, max_name
+        min_name = min(expls)[0]
+        return -num_failures, -num_disables, min_name
 
     def _expl_key(self, expl):
         return self._expls_key(((expl,), None))
@@ -162,11 +165,18 @@ class BatchNotifier(object):
 
     def _send_email(self, fail_counts, disable_counts, scheduling_counts, fail_expls, owner):
         num_failures = sum(six.itervalues(fail_counts))
-        if num_failures > 0 or disable_counts or scheduling_counts:
-            plural_s = 's' if num_failures != 1 else ''
+        num_disables = sum(six.itervalues(disable_counts))
+        num_scheduling_failures = sum(six.itervalues(scheduling_counts))
+        subject_parts = [
+            _plural_format('{} failure{}', num_failures),
+            _plural_format('{} disable{}', num_disables),
+            _plural_format('{} scheduling failure{}', num_scheduling_failures),
+        ]
+        subject_base = ', '.join(filter(None, subject_parts))
+        if subject_base:
             prefix = '' if owner in self._default_owner else 'Your tasks have '
-            subject = 'Luigi: {}{} failure{} in the last {} minutes'.format(
-                prefix, num_failures, plural_s, self._config.email_interval)
+            subject = 'Luigi: {}{} in the last {} minutes'.format(
+                prefix, subject_base, self._config.email_interval)
             email_body = self._email_body(fail_counts, disable_counts, scheduling_counts, fail_expls)
             send_email(subject, email_body, email().sender, (owner,))
 
