@@ -202,7 +202,7 @@ function visualiserApp(luigi) {
     }
 
     function selectSidebarItem(item) {
-        var sidebarItems = $('.sidebar').find('li');
+        var sidebarItems = $('#familySidebar').find('li');
         sidebarItems.each(function (i) {
             var item2 = sidebarItems[i];
             if (item2.dataset.task === undefined) {
@@ -228,6 +228,21 @@ function visualiserApp(luigi) {
         });
     }
 
+    function selectWorkerSidebarItem(item) {
+        var domItem = $(item);
+        if (domItem.hasClass('active')) {
+            // item is active, deselect
+            domItem.removeClass('active');
+            domItem.find('.badge').removeClass('bg-green');
+            return false;
+        } else {
+            // select item
+            domItem.addClass('active');
+            domItem.find('.badge').addClass('bg-green');
+            return true;
+        }
+    }
+
     function renderWarnings() {
         return renderTemplate("warningsTemplate",
             {missingCategories: $.map(missingCategories, function (v, k) {return v})}
@@ -246,6 +261,34 @@ function visualiserApp(luigi) {
 
     function renderWorkers(workers) {
         return renderTemplate("workerTemplate", {"workers": workers.map(processWorker)});
+    }
+
+    function renderWorkerSidebar(workers) {
+        var familyCounts = {};
+        for (var i in workers) {
+            worker = workers[i];
+            family = worker.first_task_family || 'SCHEDULING';
+            if (familyCounts[family] === undefined) {
+                familyCounts[family] = 0;
+            }
+            familyCounts[family] += 1;
+        }
+
+        families = [];
+        for (var family in familyCounts) {
+            count = familyCounts[family];
+            families.push({'name': family, 'count': count});
+        }
+        families.sort(function(a,b){
+          if (a.name === 'SCHEDULING') {
+            return -1;
+          }
+          if (b.name === 'SCHEDULING') {
+            return 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        return renderTemplate("workerSidebarTemplate", {"families": families});
     }
 
     function processResource(resource) {
@@ -772,10 +815,10 @@ function visualiserApp(luigi) {
         $.when(ajax1, ajax2, ajax3, ajax4, ajax5, ajax6, ajax7, ajax8).done(function () {
             dt.draw();
 
-            $('.sidebar').html(renderSidebar(dt.column(1).data()));
-            var selectedFamily = $('.sidebar-menu').find('li[data-task="' + currentFilter.taskFamily + '"]')[0];
+            $('#familySidebar').html(renderSidebar(dt.column(1).data()));
+            var selectedFamily = $('#familySidebar .sidebar-menu').find('li[data-task="' + currentFilter.taskFamily + '"]')[0];
             selectSidebarItem(selectedFamily);
-            $('.sidebar-menu').on('click', 'li', function () {
+            $('#familySidebar .sidebar-menu').on('click', 'li', function () {
                 if (this.dataset.task) {
                     selectSidebarItem(this);
                     if ($(this).hasClass('active')) {
@@ -799,9 +842,14 @@ function visualiserApp(luigi) {
 
     function updateSidebar(tabName) {
         if (tabName === 'taskList') {
+            $('#familySidebar').show();
+            $('#workerSidebar').hide();
             $('body').removeClass('sidebar-collapse');
-        }
-        else {
+        } else if(tabName === 'workerList') {
+            $('#familySidebar').hide();
+            $('#workerSidebar').show();
+            $('body').removeClass('sidebar-collapse');
+        } else {
             $('body').addClass('sidebar-collapse');
         }
 
@@ -838,7 +886,24 @@ function visualiserApp(luigi) {
 
         luigi.getWorkerList(function(workers) {
             $("#workerList").append(renderWorkers(workers));
+            $("#workerSidebar").append(renderWorkerSidebar(workers));
 
+            $('#workerSidebar .sidebar-menu').on('click', 'li', function () {
+                if (this.dataset.task) {
+                    var family = this.dataset.task === 'SCHEDULING' ? '' : this.dataset.task;
+                    var active = selectWorkerSidebarItem(this);
+                    var numSelected = $('#workerSidebar li.active').size();
+                    if (numSelected === 0) {
+                        $('.worker-box').show();
+                    } else if (numSelected === 1 && active) {
+                        $('.worker-box[family!=' + family + ']').hide();
+                    } else if (active) {
+                        $('.worker-box[family=' + family + ']').show();
+                    } else {
+                        $('.worker-box[family=' + family + ']').hide();
+                    }
+                }
+            });
             $('.worker-table tbody').on('click', 'td .statusMessage', function() {
                 var data = $(this).data();
                 showStatusMessage(data);

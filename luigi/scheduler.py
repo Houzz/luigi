@@ -1344,12 +1344,13 @@ class Scheduler(object):
             return {'num_tasks': len(result)}
         return result
 
-    def _first_task_display_name(self, worker):
+    def _first_task_info(self, worker):
         task_id = worker.info.get('first_task', '')
         if self._state.has_task(task_id):
-            return self._state.get_task(task_id).pretty_id
+            task = self._state.get_task(task_id)
+            return task.pretty_id, task.family
         else:
-            return task_id
+            return task_id, task_id
 
     @rpc_method()
     def blockers(self, min_blocked=1, limit=None, priority_sum=False):
@@ -1390,7 +1391,8 @@ class Scheduler(object):
                 last_active=worker.last_active,
                 started=worker.started,
                 state=worker.state,
-                first_task_display_name=self._first_task_display_name(worker),
+                first_task_display_name=self._first_task_info(worker)[0],
+                first_task_family=self._first_task_info(worker)[1],
                 **worker.info
             ) for worker in self._state.get_active_workers()]
         workers.sort(key=lambda worker: worker['started'], reverse=True)
