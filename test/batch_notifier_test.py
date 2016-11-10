@@ -1,6 +1,7 @@
 import mock
 import unittest
 
+import six
 from luigi.batch_notifier import BatchNotifier
 
 
@@ -443,9 +444,11 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
-            u'- Task() (1 failure)\n'
-            u'\n'
-            u'      \u2018',
+            six.u(
+                '- Task() (1 failure)\n'
+                '\n'
+                '      \u2018'
+            )
         )
 
     def test_unicode_error_message_html(self):
@@ -455,8 +458,10 @@ class BatchNotifierTest(unittest.TestCase):
         bn.send_email()
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
-            u'<ul>\n'
-            u'<li>Task() (1 failure)\n'
-            u'<pre>\u2018</pre>\n'
-            u'</ul>',
+            six.u(
+                '<ul>\n'
+                '<li>Task() (1 failure)\n'
+                '<pre>\u2018</pre>\n'
+                '</ul>'
+            ),
         )

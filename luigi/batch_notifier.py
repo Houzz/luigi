@@ -81,9 +81,9 @@ class BatchNotifier(object):
     def _format_expl(self, expl):
         lines = expl.rstrip().split('\n')[-self._config.error_lines:]
         if self._email_format == 'html':
-            return u'<pre>{}</pre>'.format('\n'.join(lines))
+            return six.u('<pre>{}</pre>').format('\n'.join(lines))
         else:
-            return u'\n{}'.format(u'\n'.join(map(u'      {}'.format, lines)))
+            return six.u('\n{}').format(six.u('\n').join(map(six.u('      {}').format, lines)))
 
     def _expl_body(self, expls):
         lines = [self._format_expl(expl) for expl in expls]
@@ -157,9 +157,9 @@ class BatchNotifier(object):
         for tasks, msg in expl_groups:
             body_lines.append(self._format_tasks(tasks))
             body_lines.append(msg)
-        body = u'\n'.join(filter(None, body_lines)).rstrip()
+        body = six.u('\n').join(filter(None, body_lines)).rstrip()
         if self._email_format == 'html':
-            return u'<ul>\n{}\n</ul>'.format(body)
+            return six.u('<ul>\n{}\n</ul>').format(body)
         else:
             return body
 
