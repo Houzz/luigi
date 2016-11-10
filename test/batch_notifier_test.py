@@ -436,3 +436,27 @@ class BatchNotifierTest(unittest.TestCase):
             '<pre>msg2</pre>\n'
             '</ul>'
         )
+
+    def test_unicode_error_message(self):
+        bn = BatchNotifier(error_messages=1)
+        bn.add_failure('Task()', 'Task', {}, u'\u2018')
+        bn.send_email()
+        self.check_email_send(
+            'Luigi: 1 failure in the last 60 minutes',
+            u'- Task() (1 failure)\n'
+            u'\n'
+            u'      \u2018',
+        )
+
+    def test_unicode_error_message_html(self):
+        self.email().format = 'html'
+        bn = BatchNotifier(error_messages=1)
+        bn.add_failure('Task()', 'Task', {}, u'\u2018')
+        bn.send_email()
+        self.check_email_send(
+            'Luigi: 1 failure in the last 60 minutes',
+            u'<ul>\n'
+            u'<li>Task() (1 failure)\n'
+            u'<pre>\u2018</pre>\n'
+            u'</ul>',
+        )
