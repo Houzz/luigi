@@ -684,6 +684,7 @@ function visualiserApp(luigi) {
                 'BATCH_RUNNING',
                 'DONE',
                 'PENDING',
+                'READY_PENDING',
                 'UPSTREAM_DISABLED',
                 'UPSTREAM_FAILED',
                 'DISABLED',
@@ -813,7 +814,11 @@ function visualiserApp(luigi) {
             updateTaskCategory(dt, 'DONE', doneTasks);
         });
 
-        $.when(ajax1, ajax2, ajax3, ajax4, ajax5, ajax6, ajax7, ajax8).done(function () {
+        var ajax9 = luigi.getReadyPendingTaskList(function(readyPendingTasks) {
+            updateTaskCategory(dt, 'READY_PENDING', readyPendingTasks);
+        });
+
+        $.when(ajax1, ajax2, ajax3, ajax4, ajax5, ajax6, ajax7, ajax8, ajax9).done(function () {
             dt.draw();
 
             $('#familySidebar').html(renderSidebar(dt.column(1).data()));

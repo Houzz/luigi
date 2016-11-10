@@ -55,6 +55,7 @@ UPSTREAM_RUNNING = 'UPSTREAM_RUNNING'
 UPSTREAM_MISSING_INPUT = 'UPSTREAM_MISSING_INPUT'
 UPSTREAM_FAILED = 'UPSTREAM_FAILED'
 UPSTREAM_DISABLED = 'UPSTREAM_DISABLED'
+UPSTREAM_DONE = 'UPSTREAM_DONE'
 
 UPSTREAM_SEVERITY_ORDER = (
     '',
@@ -1200,7 +1201,7 @@ class Scheduler(object):
                                       for a_task_id in dep.deps),
                                      key=UPSTREAM_SEVERITY_KEY)
                         upstream_status_table[dep_id] = status
-            return upstream_status_table[dep_id]
+            return UPSTREAM_DONE if (not dep.deps and dep.runnable) or not upstream_status_table[dep_id] else upstream_status_table[dep_id]
 
     def _serialize_task(self, task_id, include_deps=True, deps=None):
         task = self._state.get_task(task_id)
