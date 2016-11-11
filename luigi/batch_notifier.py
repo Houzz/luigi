@@ -72,8 +72,8 @@ class BatchNotifier(object):
         elif self._config.batch_mode == 'family':
             return family
         elif self._config.batch_mode == 'unbatched_params':
-            param_str = ', '.join('{}={}'.format(*kv) for kv in six.iteritems(unbatched_args))
-            return '{}({})'.format(family, param_str)
+            param_str = six.u(', ').join(six.u('{}={}').format(*kv) for kv in six.iteritems(unbatched_args))
+            return six.u('{}({})').format(family, param_str)
         else:
             raise ValueError('Unknown batch mode for batch notifier: {}'.format(
                 self._config.batch_mode))
@@ -97,15 +97,15 @@ class BatchNotifier(object):
             _plural_format('{} disable{}', disable_count),
             _plural_format('{} scheduling failure{}', scheduling_count),
         ]
-        count_str = ', '.join(filter(None, counts))
-        return '{} ({})'.format(task, count_str)
+        count_str = six.u(', ').join(filter(None, counts))
+        return six.u('{} ({})').format(task, count_str)
 
     def _format_tasks(self, tasks):
         lines = map(self._format_task, sorted(tasks, key=self._expl_key))
         if self._email_format == 'html':
-            return '<li>{}'.format('\n<br>'.join(lines))
+            return six.u('<li>{}').format(six.u('\n<br>').join(lines))
         else:
-            return '- {}'.format('\n  '.join(lines))
+            return six.u('- {}').format(six.u('\n  ').join(lines))
 
     def _owners(self, owners):
         return self._default_owner | set(owners or ())

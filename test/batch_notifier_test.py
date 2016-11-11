@@ -1,3 +1,5 @@
+# coding=utf-8
+
 import mock
 import unittest
 
@@ -440,28 +442,105 @@ class BatchNotifierTest(unittest.TestCase):
 
     def test_unicode_error_message(self):
         bn = BatchNotifier(error_messages=1)
-        bn.add_failure('Task()', 'Task', {}, u'\u2018')
+        bn.add_failure('Task()', 'Task', {}, six.u('Érror'))
         bn.send_email()
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
             six.u(
                 '- Task() (1 failure)\n'
                 '\n'
-                '      \u2018'
+                '      Érror'
             )
         )
 
     def test_unicode_error_message_html(self):
         self.email().format = 'html'
         bn = BatchNotifier(error_messages=1)
-        bn.add_failure('Task()', 'Task', {}, u'\u2018')
+        bn.add_failure('Task()', 'Task', {}, six.u('Érror'))
         bn.send_email()
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
             six.u(
                 '<ul>\n'
                 '<li>Task() (1 failure)\n'
-                '<pre>\u2018</pre>\n'
+                '<pre>Érror</pre>\n'
+                '</ul>'
+            ),
+        )
+
+    def test_unicode_param_value(self):
+        for batch_mode in ('all', 'unbatched_params'):
+            self.send_email.reset_mock()
+            bn = BatchNotifier(batch_mode=batch_mode)
+            bn.add_failure(six.u('Task(a=á)'), 'Task', {'a': six.u('á')}, 'error')
+            bn.send_email()
+            self.check_email_send(
+                'Luigi: 1 failure in the last 60 minutes',
+                six.u('- Task(a=á) (1 failure)')
+            )
+
+    def test_unicode_param_value_html(self):
+        self.email().format='html'
+        for batch_mode in ('all', 'unbatched_params'):
+            self.send_email.reset_mock()
+            bn = BatchNotifier(batch_mode=batch_mode)
+            bn.add_failure(six.u('Task(a=á)'), 'Task', {'a': six.u('á')}, 'error')
+            bn.send_email()
+            self.check_email_send(
+                'Luigi: 1 failure in the last 60 minutes',
+                six.u(
+                    '<ul>\n'
+                    '<li>Task(a=á) (1 failure)\n'
+                    '</ul>'
+                )
+            )
+
+    def test_unicode_param_name(self):
+        for batch_mode in ('all', 'unbatched_params'):
+            self.send_email.reset_mock()
+            bn = BatchNotifier(batch_mode=batch_mode)
+            bn.add_failure(six.u('Task(á=a)'), 'Task', {six.u('á'): 'a'}, 'error')
+            bn.send_email()
+            self.check_email_send(
+                'Luigi: 1 failure in the last 60 minutes',
+                six.u('- Task(á=a) (1 failure)')
+            )
+
+    def test_unicode_param_name_html(self):
+        self.email().format='html'
+        for batch_mode in ('all', 'unbatched_params'):
+            self.send_email.reset_mock()
+            bn = BatchNotifier(batch_mode=batch_mode)
+            bn.add_failure(six.u('Task(á=a)'), 'Task', {six.u('á'): 'a'}, 'error')
+            bn.send_email()
+            self.check_email_send(
+                'Luigi: 1 failure in the last 60 minutes',
+                six.u(
+                    '<ul>\n'
+                    '<li>Task(á=a) (1 failure)\n'
+                    '</ul>'
+                )
+            )
+
+    def test_unicode_class_name(self):
+        bn = BatchNotifier()
+        bn.add_failure(six.u('Tásk()'), six.u('Tásk'), {}, 'error')
+        bn.send_email()
+        self.check_email_send(
+            'Luigi: 1 failure in the last 60 minutes',
+            six.u('- Tásk() (1 failure)')
+        )
+
+    def test_unicode_class_name_html(self):
+        self.email().format = 'html'
+        bn = BatchNotifier()
+        bn.add_failure(six.u('Tásk()'), six.u('Tásk'), {}, 'error')
+        bn.send_email()
+        self.check_email_send(
+            'Luigi: 1 failure in the last 60 minutes',
+            six.u(
+                '<ul>\n'
+                '<li>Tásk() (1 failure)\n'
                 '</ul>'
             ),
         )
