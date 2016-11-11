@@ -70,6 +70,7 @@ function visualiserApp(luigi) {
             time_running = task.time_running;
             displayTime += " | " + minutes_running + " minutes";
         }
+        var re_enable = task.status == "DISABLED" && task.re_enable_able
         return {
             taskId: task.taskId,
             encodedTaskId: encodeURIComponent(task.taskId),
@@ -84,8 +85,8 @@ function visualiserApp(luigi) {
             trackingUrl: task.tracking_url,
             status: task.status,
             graph: (task.status == "PENDING" || task.status == "RUNNING" || task.status == "DONE"),
-            error: task.status == "FAILED",
-            re_enable: task.status == "DISABLED" && task.re_enable_able,
+            error: (task.status == "FAILED" || re_enable),
+            re_enable: re_enable,
             statusMessage: task.status_message
         };
     }
