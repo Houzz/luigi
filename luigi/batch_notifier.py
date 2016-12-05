@@ -1,10 +1,11 @@
 import collections
 from datetime import datetime
+import os
 import time
 
 import luigi
 from luigi import six
-from luigi.notifications import send_email, send_error_email, email
+from luigi.notifications import send_email, email
 import luigi.parameter
 
 
@@ -190,11 +191,24 @@ class BatchNotifier(object):
                 owner=owner,
         )
         self._update_next_send()
+        self._clear_data()
+
+    def _clear_data(self):
         self._fail_counts.clear()
         self._disabled_counts.clear()
         self._scheduling_fail_counts.clear()
         self._fail_expls.clear()
 
     def update(self):
-        if time.time() >= self._next_send:
+        if time.time() < self._next_send:
+            return
+
+        # fork a child process to send email in case it takes too long
+        if os.fork() == 0:
             self.send_email()
+            os._exit(0)  # used to exit from child process
+
+        # parent process just needs to clear the queue
+        else:
+            self._update_next_send()
+            self._clear_data()
