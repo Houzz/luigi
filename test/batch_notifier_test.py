@@ -296,69 +296,43 @@ class BatchNotifierTest(unittest.TestCase):
             )
             self.send_email.reset_mock()
 
-    @mock.patch('os._exit')
-    @mock.patch('os.fork')
-    def test_auto_send_on_update_after_time_period(self, fork, _exit):
+    def test_auto_send_on_update_after_time_period(self):
         bn = BatchNotifier(batch_mode='all')
         bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error')
 
-        fork.return_value = 0  # child process
         for i in range(60):
             bn.update()
             self.send_email.assert_not_called()
             self.incr_time(minutes=1)
 
-        fork.assert_not_called()
-        _exit.assert_not_called()
-
         bn.update()
-        fork.assert_called_once_with()
-        _exit.assert_called_once_with(0)
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
             '- Task(a=5) (1 failure)'
         )
-        fork.assert_called_once_with()
-        _exit.assert_called_once_with(0)
 
-    @mock.patch('os._exit')
-    @mock.patch('os.fork')
-    def test_auto_send_on_update_after_time_period_with_disable_only(self, fork, _exit):
+    def test_auto_send_on_update_after_time_period_with_disable_only(self):
         bn = BatchNotifier(batch_mode='all')
         bn.add_disable('Task(a=5)', 'Task', {'a': 5})
 
-        fork.return_value = 0  # child process
         for i in range(60):
             bn.update()
             self.send_email.assert_not_called()
             self.incr_time(minutes=1)
 
-        fork.assert_not_called()
-        _exit.assert_not_called()
-
         bn.update()
-        fork.assert_called_once_with()
-        _exit.assert_called_once_with(0)
         self.check_email_send(
             'Luigi: 1 disable in the last 60 minutes',
             '- Task(a=5) (1 disable)'
         )
 
-    @mock.patch('os._exit')
-    @mock.patch('os.fork')
-    def test_no_auto_send_until_end_of_interval_with_error(self, fork, _exit):
+    def test_no_auto_send_until_end_of_interval_with_error(self):
         bn = BatchNotifier(batch_mode='all')
 
-        fork.return_value = 0  # child process
         for i in range(90):
             bn.update()
             self.send_email.assert_not_called()
             self.incr_time(minutes=1)
-
-        fork.assert_called_once_with()
-        _exit.assert_called_once_with(0)
-        fork.reset_mock()
-        _exit.reset_mock()
 
         bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error')
         for i in range(30):
@@ -366,42 +340,11 @@ class BatchNotifierTest(unittest.TestCase):
             self.send_email.assert_not_called()
             self.incr_time(minutes=1)
 
-        fork.assert_not_called()
-        _exit.assert_not_called()
-
         bn.update()
-        fork.assert_called_once_with()
-        _exit.assert_called_once_with(0)
         self.check_email_send(
             'Luigi: 1 failure in the last 60 minutes',
             '- Task(a=5) (1 failure)'
         )
-
-    @mock.patch('os.fork')
-    def test_update_clears_emails(self, fork):
-        bn = BatchNotifier(batch_mode='all')
-        bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error')
-        self.incr_time(60)
-
-        fork.return_value = 1  # parent process
-        bn.update()
-        fork.assert_called_once_with()
-        self.send_email.assert_not_called()
-
-        bn.send_email()
-        self.send_email.assert_not_called()
-
-    @mock.patch('os.fork')
-    def test_update_resets_email_timer(self, fork):
-        bn = BatchNotifier(batch_mode='all')
-
-        fork.return_value = 1  # parent process
-        for i in range(120):
-            bn.add_failure('Task(a={})'.format(i), 'Task', {'a': i}, 'error')
-            bn.update()
-            self.incr_time(1)
-
-        fork.assert_called_once_with()
 
     def test_send_batch_failure_emails_to_owners(self):
         bn = BatchNotifier(batch_mode='all')
