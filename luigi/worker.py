@@ -56,7 +56,7 @@ from luigi.task_register import load_task, Register
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, UNKNOWN, Scheduler, RetryPolicy
 from luigi.scheduler import WORKER_STATE_ACTIVE, WORKER_STATE_DISABLED
 from luigi.target import Target
-from luigi.task import Task, flatten, getpaths, Config
+from luigi.task import Task, flatten, getpaths, Config, Parameter
 from luigi.task_register import TaskClassException
 from luigi.task_status import RUNNING
 from luigi.parameter import FloatParameter, IntParameter, BoolParameter, ListParameter
@@ -351,6 +351,8 @@ class worker(Config):
     assistant_groups = ListParameter(default=(),
                                      description='Default assistant group for task and assistant '
                                                  'workers')
+    version_file = Parameter(default='',
+                             description='If this file changes, stop requesting new work')
 
 
 class KeepAliveThread(threading.Thread):
@@ -439,6 +441,9 @@ class Worker(object):
         # Stuff for execution_summary
         self._add_task_history = []
         self._get_work_response_history = []
+
+        # store version info for controlled restarts
+        self._version = self._get_version()
 
     def _add_task(self, *args, **kwargs):
         """
@@ -1027,6 +1032,15 @@ class Worker(object):
         self._config.keep_alive = False
         self._stop_requesting_work = True
 
+    def _get_version(self):
+        if self._config.version_file:
+            return os.stat(self._config.version_file).st_mtime
+        else:
+            return None
+
+    def _check_version(self):
+        return self._version == self._get_version()
+
     def run(self):
         """
         Returns True if all scheduled tasks were executed successfully.
@@ -1038,7 +1052,7 @@ class Worker(object):
 
         self._add_worker()
 
-        while True:
+        while self._check_version():
             while len(self._running_tasks) >= self.worker_processes > 0:
                 logger.debug('%d running tasks, waiting for next task to finish', len(self._running_tasks))
                 self._handle_next_task()
