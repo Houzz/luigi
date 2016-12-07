@@ -1057,7 +1057,7 @@ class Worker(object):
                 logger.debug('%d running tasks, waiting for next task to finish', len(self._running_tasks))
                 self._handle_next_task()
 
-            if not self.check_version():
+            if not self._check_version():
                 break
 
             get_work_response = self._get_work()
