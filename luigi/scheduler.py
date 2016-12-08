@@ -378,7 +378,7 @@ class Worker(object):
 
     def prune(self, config):
         # Delete workers that were removed or haven't said anything for a while (probably killed)
-        return self.removed or (self.last_active + config.worker_disconnect_delay < time.time())
+        return getattr(self, 'removed', False) or (self.last_active + config.worker_disconnect_delay < time.time())
 
     def remove(self):
         self.removed = True
