@@ -727,6 +727,18 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertEqual(s['task_id'], 'A')
         self.assertEqual(s['worker'], 'X')
 
+    def test_remove_worker(self):
+        self.assertFalse(self.sch.worker_list())
+        self.sch.add_worker('test_worker', {})
+        self.assertEqual(['test_worker'], [worker['name'] for worker in self.sch.worker_list()])
+        self.sch.remove_worker('test_worker')
+        self.assertFalse(self.sch.worker_list())
+
+    def test_remove_missing_worker(self):
+        self.assertFalse(self.sch.worker_list())
+        self.sch.remove_worker('test_worker')
+        self.assertFalse(self.sch.worker_list())
+
     def test_assistant_get_work(self):
         self.sch.add_task(worker='X', task_id='A')
         self.sch.add_worker('Y', [])

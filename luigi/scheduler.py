@@ -364,6 +364,7 @@ class Worker(object):
         self.tasks = set()  # task objects
         self.info = {}
         self.disabled = False
+        self.removed = False
 
     def add_info(self, info):
         self.info.update(info)
@@ -376,9 +377,11 @@ class Worker(object):
             self.last_get_work = time.time()
 
     def prune(self, config):
-        # Delete workers that haven't said anything for a while (probably killed)
-        if self.last_active + config.worker_disconnect_delay < time.time():
-            return True
+        # Delete workers that were removed or haven't said anything for a while (probably killed)
+        return self.removed or (self.last_active + config.worker_disconnect_delay < time.time())
+
+    def remove(self):
+        self.removed = True
 
     def get_pending_tasks(self, state):
         """
@@ -922,6 +925,10 @@ class Scheduler(object):
     @rpc_method()
     def add_worker(self, worker, info, **kwargs):
         self._state.get_worker(worker).add_info(info)
+
+    @rpc_method()
+    def remove_worker(self, worker):
+        self._state.get_worker(worker).remove()
 
     @rpc_method()
     def disable_worker(self, worker):

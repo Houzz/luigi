@@ -750,6 +750,16 @@ class WorkerTest(LuigiTestCase):
 
         self.assertEqual(3, len(runs))
 
+    def test_remove_worker_after_run(self):
+        self.w.add(DummyTask())
+        self.assertTrue(self.w.run())
+        self.assertFalse(self.sch.worker_list())
+
+    def test_remove_worker_after_failed_run(self):
+        self.w.add(DummyErrorTask())
+        self.assertFalse(self.w.run())
+        self.assertFalse(self.sch.worker_list())
+
     def test_fail_max_batch_job(self):
         class MaxBatchFailJob(luigi.Task):
             value = luigi.IntParameter(batch_method=max)

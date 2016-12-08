@@ -763,6 +763,9 @@ class Worker(object):
         self._scheduler.add_worker(self._id, self._worker_info)
         self._add_task_batchers()
 
+    def _remove_worker(self):
+        self._scheduler.remove_worker(self._id)
+
     def _log_remote_tasks(self, get_work_response):
         logger.debug("Done")
         logger.debug("There are no more tasks to run at this time")
@@ -1086,4 +1089,5 @@ class Worker(object):
             logger.debug('Shut down Worker, %d more tasks to go', len(self._running_tasks))
             self._handle_next_task()
 
+        self._remove_worker()
         return self.run_succeeded
