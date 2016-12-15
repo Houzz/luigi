@@ -641,7 +641,7 @@ class SimpleTaskState(object):
         return filter(lambda w: w.assistant, self.get_active_workers(last_active_lt))
 
     def get_worker_ids(self):
-        return self._active_workers.keys()  # only used for unit tests
+        return self._active_workers.keys()
 
     def get_worker(self, worker_id):
         return self._active_workers.setdefault(worker_id, Worker(worker_id))
@@ -712,6 +712,7 @@ class Scheduler(object):
         self._make_task = functools.partial(Task, retry_policy=self._config._get_retry_policy())
         self._worker_requests = {}
         self._rank = rank_prefer_newer if self._config.prefer_newer_tasks else rank_prefer_older
+        self._paused = False
 
         if self._config.batch_emails:
             self._email_batcher = BatchNotifier()
@@ -935,6 +936,18 @@ class Scheduler(object):
         self._state.disable_workers({worker})
 
     @rpc_method()
+    def disable_all_workers(self):
+        self._state.disable_workers(set(self._state.get_worker_ids()))
+
+    @rpc_method()
+    def pause(self):
+        self._paused = True
+
+    @rpc_method()
+    def unpause(self):
+        self._paused = False
+
+    @rpc_method()
     def update_resources(self, **resources):
         if not resources:
             config = configuration.get_config()
@@ -1053,6 +1066,7 @@ class Scheduler(object):
                      'running_tasks': [],
                      'task_id': None,
                      'n_unique_pending': 0,
+                     'n_pending_last_scheduled': 0,
                      'worker_state': worker.state,
                      }
             return reply
@@ -1080,7 +1094,9 @@ class Scheduler(object):
         greedy_resources = collections.defaultdict(int)
 
         worker = self._state.get_worker(worker_id)
-        if worker.is_trivial_worker(self._state):
+        if self._paused:
+            relevant_tasks = []
+        elif worker.is_trivial_worker(self._state):
             relevant_tasks = worker.get_pending_tasks(self._state)
             used_resources = collections.defaultdict(int)
             greedy_workers = dict()  # If there's no resources, then they can grab any task

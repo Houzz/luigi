@@ -1527,10 +1527,45 @@ class SchedulerApiTest(unittest.TestCase):
     def test_disable_worker(self):
         self.sch.add_task(worker=WORKER, task_id='A')
         self.sch.disable_worker(worker=WORKER)
-        work = self.sch.get_work(worker=WORKER)
-        self.assertEqual(0, work['n_unique_pending'])
-        self.assertEqual(0, work['n_pending_tasks'])
-        self.assertIsNone(work['task_id'])
+        self.assertEqual({
+            'n_pending_last_scheduled': 0,
+            'n_unique_pending': 0,
+            'n_pending_tasks': 0,
+            'running_tasks': [],
+            'task_id': None,
+            'worker_state': 'disabled',
+        }, self.sch.get_work(worker=WORKER))
+
+    def test_disable_all_workers(self):
+        workers = ('W1', 'W2', 'W3')
+        for worker in workers:
+            self.sch.add_task(worker=worker, task_id='A')
+        self.sch.disable_all_workers()
+        for worker in workers:
+            self.assertEqual({
+                'n_pending_last_scheduled': 0,
+                'n_unique_pending': 0,
+                'n_pending_tasks': 0,
+                'running_tasks': [],
+                'task_id': None,
+                'worker_state': 'disabled',
+            }, self.sch.get_work(worker=worker))
+
+    def test_pause_work(self):
+        self.sch.add_task(worker=WORKER, task_id='A')
+
+        self.sch.pause()
+        self.assertEqual({
+            'n_pending_last_scheduled': 1,
+            'n_unique_pending': 1,
+            'n_pending_tasks': 1,
+            'running_tasks': [],
+            'task_id': None,
+            'worker_state': 'active',
+        }, self.sch.get_work(worker=WORKER))
+
+        self.sch.unpause()
+        self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_disable_worker_leaves_jobs_running(self):
         self.sch.add_task(worker=WORKER, task_id='A')
