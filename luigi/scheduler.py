@@ -948,6 +948,10 @@ class Scheduler(object):
         self._paused = False
 
     @rpc_method()
+    def is_paused(self):
+        return {'paused': self._paused}
+
+    @rpc_method()
     def update_resources(self, **resources):
         if not resources:
             config = configuration.get_config()
