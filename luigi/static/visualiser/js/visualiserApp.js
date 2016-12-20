@@ -876,8 +876,7 @@ function visualiserApp(luigi) {
     function renderParams(params) {
         var htmls = [];
         for (var key in params) {
-            htmls.push('<span class="param-name">' + key +
-                '</span>=<span class="param-value">' + params[key] + '</span>');
+            htmls.push(key + '=' + params[key]);
         }
         return htmls.join(', ');
     }
@@ -947,6 +946,7 @@ function visualiserApp(luigi) {
             columns: [
                 {
                     data: 'category',
+                    width: '12em',
                     render: function (data, type, row) {
                         return taskCategoryIcon(data)+' '+data;
                     }
@@ -957,19 +957,20 @@ function visualiserApp(luigi) {
                     render: function(data, type, row) {
                         var params = JSON.parse(data);
                         if (row.resources !== '{}') {
-                            return '<div>' + renderParams(params) + '</div><div>' + row.resources + '</div>';
+                            return '<div class="params">' + renderParams(params) + '</div><div class="resources">' + row.resources + '</div>';
                         }
                         else {
-                            return '<div>' + renderParams(params) + '</div>';
+                            return '<div class="params">' + renderParams(params) + '</div>';
                         }
                     }
                 },
-                {data: 'priority', width: "2em"},
-                {data: 'displayTime'},
+                {data: 'priority', width: '3em'},
+                {data: 'displayTime', 'width': '12em'},
                 {
                     className: 'details-control',
                     orderable: false,
                     data: null,
+                    width: '3em',
                     render: function (data, type, row) {
                         return Mustache.render(templates['actionsTemplate'], row);
                     }

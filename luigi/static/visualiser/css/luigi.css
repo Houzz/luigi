@@ -181,6 +181,16 @@ span.status-icon {
   margin-top: 9px;
 }
 
+#taskTable {
+  table-layout: fixed;
+}
+
+#taskTable .params, #taskTable .resources {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
 #loadTaskForm input {
   width: 20em;
 }
