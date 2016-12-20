@@ -87,6 +87,13 @@ class RemoteSchedulerTest(unittest.TestCase):
         fetch_results = ['{"response": null}'] * 3 + ['{"response": {}}']
         self.assertRaises(luigi.rpc.RPCError, self.get_work, fetch_results)
 
+    def test_bad_json_response(self):
+        try:
+            self.get_work(['{"resp'])
+        except ValueError as e:
+            pass
+        self.assertEqual("Bad response can't be parsed as JSON: '{\"resp'", e.message)
+
 
 class RPCTest(scheduler_api_test.SchedulerApiTest, ServerTestBase):
 
