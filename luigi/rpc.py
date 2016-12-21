@@ -140,15 +140,20 @@ class RemoteScheduler(object):
     def _request(self, url, data, log_exceptions=True, attempts=3, allow_null=True):
         body = {'data': json.dumps(data)}
 
+        exc = None
         for _ in range(attempts):
             page = self._fetch(url, body, log_exceptions, attempts)
             try:
                 response = json.loads(page)["response"]
-            except ValueError as e:
-                raise ValueError("Bad response can't be parsed as JSON: %r" % page)
+            except ValueError:
+                exc = "Bad response from remote scheduler %r cannot be parsed: %r" % (
+                    self._url, page)
+                continue
             if allow_null or response is not None:
                 return response
-        raise RPCError("Received null response from remote scheduler %r" % self._url)
+            else:
+                exc = None
+        raise RPCError(exc or "Received null response from remote scheduler %r" % self._url)
 
 
 for method_name, method in RPC_METHODS.items():
