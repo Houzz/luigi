@@ -4,7 +4,7 @@ import time
 
 import luigi
 from luigi import six
-from luigi.notifications import send_email, send_error_email, email
+from luigi.notifications import send_email, email
 import luigi.parameter
 
 
@@ -181,19 +181,21 @@ class BatchNotifier(object):
             send_email(subject, email_body, email().sender, (owner,))
 
     def send_email(self):
-        for owner, failures in six.iteritems(self._fail_counts):
-            self._send_email(
-                fail_counts=failures,
-                disable_counts=self._disabled_counts[owner],
-                scheduling_counts=self._scheduling_fail_counts[owner],
-                fail_expls=self._fail_expls[owner],
-                owner=owner,
-        )
-        self._update_next_send()
-        self._fail_counts.clear()
-        self._disabled_counts.clear()
-        self._scheduling_fail_counts.clear()
-        self._fail_expls.clear()
+        try:
+            for owner, failures in six.iteritems(self._fail_counts):
+                self._send_email(
+                    fail_counts=failures,
+                    disable_counts=self._disabled_counts[owner],
+                    scheduling_counts=self._scheduling_fail_counts[owner],
+                    fail_expls=self._fail_expls[owner],
+                    owner=owner,
+            )
+        finally:
+            self._update_next_send()
+            self._fail_counts.clear()
+            self._disabled_counts.clear()
+            self._scheduling_fail_counts.clear()
+            self._fail_expls.clear()
 
     def update(self):
         if time.time() >= self._next_send:
