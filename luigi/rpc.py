@@ -146,6 +146,7 @@ class RemoteScheduler(object):
             try:
                 response = json.loads(page)["response"]
             except ValueError:
+                logger.debug("Bad JSON response from remote scheduler: %r" % page)
                 exc = "Bad response from remote scheduler %r cannot be parsed: %r" % (
                     self._url, page)
                 continue
