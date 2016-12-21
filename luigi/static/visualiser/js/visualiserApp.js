@@ -970,7 +970,7 @@ function visualiserApp(luigi) {
                     className: 'details-control',
                     orderable: false,
                     data: null,
-                    width: '3em',
+                    width: '61px',
                     render: function (data, type, row) {
                         return Mustache.render(templates['actionsTemplate'], row);
                     }
