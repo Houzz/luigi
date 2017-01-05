@@ -463,9 +463,11 @@ class Worker(object):
             for batch_task in self._batch_running_tasks.pop(task_id):
                 self._add_task_history.append((batch_task, status, True))
 
+        logger.info('Informing scheduler that task   %s (%s)   has status   %s', task_id, task, status)
+
         self._scheduler.add_task(*args, **kwargs)
 
-        logger.info('Informed scheduler that task   %s   has status   %s', task_id, status)
+        logger.info('Informed scheduler that task   %s (%s)   has status   %s', task_id, task, status)
 
     def __enter__(self):
         """
