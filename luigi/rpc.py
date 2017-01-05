@@ -124,10 +124,11 @@ class RemoteScheduler(object):
             try:
                 response = self._fetcher.fetch(full_url, body, self._connect_timeout)
                 break
-            except self._fetcher.raises as e:
+            except (self._fetcher.raises, socket.error) as e:
                 last_exception = e
                 if log_exceptions:
                     logger.exception("Failed connecting to remote scheduler %r", self._url)
+                    logger.exception("Exception was " + e)
                 continue
         else:
             raise RPCError(
