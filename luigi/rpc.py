@@ -103,9 +103,10 @@ class RemoteScheduler(object):
         if connect_timeout is None:
             connect_timeout = config.getfloat('core', 'rpc-connect-timeout', 10.0)
         self._connect_timeout = connect_timeout
+        self._connect_keep_alive = config.getboolean('core', 'connect-keep-alive', True)
 
         if HAS_REQUESTS:
-            self._fetcher = RequestsFetcher(requests.Session())
+            self._fetcher = RequestsFetcher(requests.Session(config={'keep_alive': self._connect_keep_alive}))
         else:
             self._fetcher = URLLibFetcher()
 
