@@ -1022,17 +1022,41 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.update_resources(R1=1, R2=2)
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'B')
 
-    def test_scheduler_with_priority_and_competing_resources(self):
-        self.sch.add_task(worker='X', task_id='A')
-        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+    def test_reserve_resource_for_higher_priority_worker(self):
+        self.assertFalse(self.sch.get_work(worker='X')['task_id'])
 
-        self.sch.add_task(worker='X', task_id='B', resources={'R': 1}, priority=10)
-        self.sch.add_task(worker='Y', task_id='C', resources={'R': 1}, priority=1)
-        self.sch.update_resources(R=1)
+        self.sch.add_task(worker='X', task_id='A', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
-        self.sch.add_task(worker='Y', task_id='D', priority=0)
-        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'D')
+    def test_reserve_resource_for_higher_priority_assistant(self):
+        self.assertFalse(self.sch.get_work(worker='ASSISTANT', assistant=True)['task_id'])
+
+        self.sch.add_task(worker='X', task_id='A', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
+        self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
+
+    def test_reserve_multiple_resources_for_high_priority_multiple_workers(self):
+        self.assertFalse(self.sch.get_work(worker='X')['task_id'])
+
+        self.sch.add_worker('X', {'workers': 3})
+        self.sch.add_task(worker='X', task_id='A1', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='X', task_id='A2', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='X', task_id='A3', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
+        self.sch.update_resources(R=3)
+        self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
+
+    def test_allow_running_with_plentiful_resources(self):
+        self.assertFalse(self.sch.get_work(worker='X')['task_id'])
+
+        self.sch.add_worker('X', {'workers': 4})
+        self.sch.add_task(worker='X', task_id='A1', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='X', task_id='A2', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='X', task_id='A3', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
+        self.sch.update_resources(R=4)
+        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'B')
 
     def test_do_not_lock_resources_when_not_ready(self):
         """ Test to make sure that resources won't go unused waiting on workers """

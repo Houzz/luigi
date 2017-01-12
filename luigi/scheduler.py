@@ -1103,14 +1103,17 @@ class Scheduler(object):
         elif worker.is_trivial_worker(self._state):
             relevant_tasks = worker.get_pending_tasks(self._state)
             used_resources = collections.defaultdict(int)
-            greedy_workers = dict()  # If there's no resources, then they can grab any task
+            active_workers = dict  # if there are no resources, we don't need to worry about others
         else:
             relevant_tasks = self._state.get_pending_tasks()
             used_resources = self._used_resources()
             activity_limit = time.time() - self._config.worker_disconnect_delay
-            active_workers = self._state.get_active_workers(last_get_work_gt=activity_limit)
-            greedy_workers = dict((worker.id, worker.info.get('workers', 1))
-                                  for worker in active_workers)
+
+            def active_workers():
+                return self._state.get_active_workers(last_get_work_gt=activity_limit)
+
+        greedy_workers = {worker.id: worker.info.get('workers', 1) for worker in active_workers()}
+        assistants = [worker.id for worker in active_workers() if worker.assistant]
         tasks = list(relevant_tasks)
         tasks.sort(key=self._rank, reverse=True)
 
@@ -1150,7 +1153,7 @@ class Scheduler(object):
                             batched_params, unbatched_params = None, None
                 else:
                     workers = itertools.chain(task.workers, [worker_id]) if in_workers else task.workers
-                    for task_worker in workers:
+                    for task_worker in itertools.chain(workers, assistants):
                         if greedy_workers.get(task_worker, 0) > 0:
                             # use up a worker
                             greedy_workers[task_worker] -= 1
