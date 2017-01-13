@@ -1100,6 +1100,7 @@ class Scheduler(object):
         worker = self._state.get_worker(worker_id)
         if self._paused:
             relevant_tasks = []
+            active_workers = dict
         elif worker.is_trivial_worker(self._state):
             relevant_tasks = worker.get_pending_tasks(self._state)
             used_resources = collections.defaultdict(int)
