@@ -1036,6 +1036,20 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
         self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
 
+    def test_do_not_reserve_resource_for_higher_priority_assistant_from_wrong_group(self):
+        self.assertFalse(self.sch.get_work(worker='ASSISTANT', assistant=True, assistant_groups=['not_this'])['task_id'])
+
+        self.sch.add_task(worker='X', task_id='A', resources={'R': 1}, priority=10)
+        self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
+        self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'B')
+
+    def test_reserve_resource_for_higher_priority_assistant_from_right_group(self):
+        self.assertFalse(self.sch.get_work(worker='ASSISTANT', assistant=True, assistant_groups=['this'])['task_id'])
+
+        self.sch.add_task(worker='X', task_id='A', resources={'R': 1}, priority=10, assistant_groups=['this'])
+        self.sch.add_task(worker='Y', task_id='B', resources={'R': 1}, priority=1)
+        self.assertFalse(self.sch.get_work(worker='Y')['task_id'])
+
     def test_reserve_multiple_resources_for_high_priority_multiple_workers(self):
         self.assertFalse(self.sch.get_work(worker='X')['task_id'])
 

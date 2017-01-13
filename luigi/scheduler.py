@@ -1114,7 +1114,13 @@ class Scheduler(object):
                 return self._state.get_active_workers(last_get_work_gt=activity_limit)
 
         greedy_workers = {worker.id: worker.info.get('workers', 1) for worker in active_workers()}
-        assistants = [worker.id for worker in active_workers() if worker.assistant]
+        greedy_assistant_groups = collections.defaultdict(list)
+        for active_worker in active_workers():
+            if not active_worker.assistant:
+                continue
+            for assistant_group in active_worker.info.get('assistant_groups') or [None]:
+                greedy_assistant_groups[assistant_group].append(active_worker.id)
+
         tasks = list(relevant_tasks)
         tasks.sort(key=self._rank, reverse=True)
 
@@ -1154,7 +1160,8 @@ class Scheduler(object):
                             batched_params, unbatched_params = None, None
                 else:
                     workers = itertools.chain(task.workers, [worker_id]) if in_workers else task.workers
-                    for task_worker in itertools.chain(workers, assistants):
+                    assistants = [greedy_assistant_groups[group] for group in task.assistant_groups or [None]]
+                    for task_worker in itertools.chain(workers, *assistants):
                         if greedy_workers.get(task_worker, 0) > 0:
                             # use up a worker
                             greedy_workers[task_worker] -= 1
