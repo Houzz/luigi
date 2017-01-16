@@ -1233,7 +1233,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.check_task_order([])
 
     def test_multiple_resources_no_lock(self):
-        self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1}, priority=10)
+        self.sch.add_task(worker=WORKER, task_id='A', resources={'r1': 1}, priority=11)
         self.sch.add_task(worker=WORKER, task_id='B', resources={'r1': 1, 'r2': 1}, priority=10)
         self.sch.add_task(worker=WORKER, task_id='C', resources={'r2': 1})
         self.sch.update_resources(r1=1, r2=2)
@@ -1413,6 +1413,14 @@ class SchedulerApiTest(unittest.TestCase):
         sch.add_task(task_id='A', worker=WORKER)
         sch.add_task(task_id='B', worker=WORKER)
         self.check_task_order(['A', 'B'], sch)
+
+    def test_rank_prefer_resource_constrained(self):
+        for prefer_newer_tasks in (True, False):
+            sch = Scheduler(prefer_newer_tasks=prefer_newer_tasks)
+            sch.add_task(task_id='A', worker=WORKER)
+            sch.add_task(task_id='B', worker=WORKER, resources={'R': 1})
+            sch.add_task(task_id='C', worker=WORKER)
+            self.assertEqual('B', sch.get_work(worker=WORKER)['task_id'])
 
     def test_disable(self):
         self.sch.add_task(worker=WORKER, task_id='A')

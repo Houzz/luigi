@@ -207,11 +207,11 @@ def _get_default(x, default):
 
 
 def rank_prefer_older(task):
-    return task.priority, -task.time
+    return task.priority, sum(task.resources.values()), -task.time
 
 
 def rank_prefer_newer(task):
-    return task.priority, task.time
+    return task.priority, sum(task.resources.values()), task.time
 
 
 class OrderedSet(collections.MutableSet):
