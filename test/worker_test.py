@@ -33,7 +33,7 @@ import luigi.notifications
 import luigi.task_register
 import luigi.worker
 import mock
-from luigi import ExternalTask, RemoteScheduler, Task, Event
+from luigi import ExternalTask, RemoteScheduler, Task, Event, WrapperTask
 from luigi.mock import MockTarget, MockFileSystem
 from luigi.scheduler import Scheduler
 from luigi.worker import Worker
@@ -817,6 +817,60 @@ class WorkerTest(LuigiTestCase):
         failed_ids = set(self.sch.task_list('FAILED', ''))
         self.assertEqual({task.task_id for task in tasks}, failed_ids)
         self.assertTrue(all(self.sch.fetch_error(task_id)['error'] for task_id in failed_ids))
+
+    def test_do_not_schedule_dependencies_for_low_level_disabled_tasks(self):
+        class EnabledWrapper(WrapperTask):
+            def requires(self):
+                return A(0), A(1)
+
+        class A(Task):
+            val = luigi.IntParameter()
+
+            @property
+            def disabled(self):
+                return self.val == 0
+
+            def requires(self):
+                return b_tasks[self.val]
+
+        class B(DummyTask):
+            val = luigi.IntParameter()
+
+        b_tasks = [B(0), B(1)]
+
+        self.assertFalse(any(task.complete() for task in b_tasks))
+        self.assertTrue(self.w.add(EnabledWrapper()))
+        self.assertTrue(self.w.run())
+        self.assertTrue(b_tasks[1].complete())
+        self.assertFalse(b_tasks[0].complete())
+
+    def test_do_not_schedule_dependencies_for_low_level_disabled_tasks_with_disabled_root(self):
+        class DisabledWrapper(WrapperTask):
+            disabled = True
+
+            def requires(self):
+                return A(0), A(1)
+
+        class A(Task):
+            val = luigi.IntParameter()
+
+            @property
+            def disabled(self):
+                return self.val == 0
+
+            def requires(self):
+                return b_tasks[self.val]
+
+        class B(DummyTask):
+            val = luigi.IntParameter()
+
+        b_tasks = [B(0), B(1)]
+
+        self.assertFalse(any(task.complete() for task in b_tasks))
+        self.assertTrue(self.w.add(DisabledWrapper()))
+        self.assertTrue(self.w.run())
+        self.assertTrue(b_tasks[1].complete())
+        self.assertFalse(b_tasks[0].complete())
 
 
 class WorkerKeepAliveTests(LuigiTestCase):

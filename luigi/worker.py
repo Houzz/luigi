@@ -624,7 +624,7 @@ class Worker(object):
                 current = queue.get()
                 queue_size -= 1
                 item, is_complete = current
-                for next in self._add(item, is_complete):
+                for next in self._add(item, is_complete, item.task_id == task.task_id):
                     if next.task_id not in seen:
                         self._validate_task(next)
                         seen.add(next.task_id)
@@ -654,7 +654,7 @@ class Worker(object):
                     max_batch_size=task_class.max_batch_size,
                 )
 
-    def _add(self, task, is_complete):
+    def _add(self, task, is_complete, is_first=False):
         if self._config.task_limit is not None and len(self._scheduled_tasks) >= self._config.task_limit:
             logger.warning('Will not run %s or any dependencies due to exceeded task-limit of %d', task, self._config.task_limit)
             deps = None
@@ -715,7 +715,7 @@ class Worker(object):
             if task.disabled:
                 status = DISABLED
 
-            if deps:
+            if deps and (status != DISABLED or is_first):
                 for d in deps:
                     self._validate_dependency(d)
                     task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)
