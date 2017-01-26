@@ -714,8 +714,10 @@ class Worker(object):
 
             if task.disabled:
                 status = DISABLED
+                if not is_first:
+                    deps = None
 
-            if deps and (status != DISABLED or is_first):
+            if deps:
                 for d in deps:
                     self._validate_dependency(d)
                     task.trigger_event(Event.DEPENDENCY_DISCOVERED, task, d)

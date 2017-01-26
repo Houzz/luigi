@@ -843,6 +843,7 @@ class WorkerTest(LuigiTestCase):
         self.assertTrue(self.w.run())
         self.assertTrue(b_tasks[1].complete())
         self.assertFalse(b_tasks[0].complete())
+        self.assertEqual(4, len(self.sch.task_list('', '')))
 
     def test_do_not_schedule_dependencies_for_low_level_disabled_tasks_with_disabled_root(self):
         class DisabledWrapper(WrapperTask):
@@ -871,6 +872,7 @@ class WorkerTest(LuigiTestCase):
         self.assertTrue(self.w.run())
         self.assertTrue(b_tasks[1].complete())
         self.assertFalse(b_tasks[0].complete())
+        self.assertEqual(4, len(self.sch.task_list('', '')))
 
 
 class WorkerKeepAliveTests(LuigiTestCase):
