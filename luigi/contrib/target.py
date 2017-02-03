@@ -38,6 +38,7 @@ class CascadingClient(object):
                         'count', 'copy', 'get', 'put', 'mkdir', 'list', 'listdir',
                         'getmerge',
                         'isdir',
+                        'move',
                         'rename_dont_move',
                         'touchz',
                         ]
