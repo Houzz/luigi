@@ -851,7 +851,7 @@ class Worker(object):
                     load_task(module=r.get('task_module'),
                               task_name=r['task_family'],
                               params_str=r['task_params'])
-            except TaskClassException as ex:
+            except Exception as ex:
                 self._handle_task_load_error(ex, [task_id])
                 task_id = None
                 self.run_succeeded = False

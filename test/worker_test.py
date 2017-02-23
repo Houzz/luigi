@@ -1647,6 +1647,20 @@ class UnimportedTask(luigi.Task):
         self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [task.task_id])
         self.assertTrue(self.sch.fetch_error(task.task_id)['error'])
 
+    def test_parameter_failure_does_not_break_assistant(self):
+        class BadIntParameter(luigi.IntParameter):
+            def parse(self, x):
+                raise ValueError('this should appear in the scheduler')
+
+        class BadParameterTask(luigi.Task):
+            param = BadIntParameter()
+
+        task = BadParameterTask(param=1)
+        self.w.add(task)
+        self.assertFalse(self.assistant.run())
+        self.assertEqual(list(self.sch.task_list('FAILED', '').keys()), [task.task_id])
+        self.assertTrue(self.sch.fetch_error(task.task_id)['error'])
+
     def test_run_batch_jobs_in_assistant(self):
         class BatchJob(luigi.Task):
             param = luigi.IntParameter(batch_method=max)
