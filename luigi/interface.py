@@ -36,6 +36,7 @@ from luigi import parameter
 from luigi import rpc
 from luigi import scheduler
 from luigi import task
+from luigi import task_register
 from luigi import worker
 from luigi import execution_summary
 from luigi.cmdline_parser import CmdlineParser
@@ -119,6 +120,9 @@ class core(task.Config):
     assistant = parameter.BoolParameter(
         default=False,
         description='Run any task from the scheduler.')
+    disable_cache = parameter.BoolParameter(
+        default=False,
+        description='Disable the task cache to save memory')
     help = parameter.BoolParameter(
         default=False,
         description='Show most common flags and all task-specific flags',
@@ -187,6 +191,9 @@ def _schedule_and_run(tasks, worker_scheduler_factory=None, override_defaults=No
 
     worker = worker_scheduler_factory.create_worker(
         scheduler=sch, worker_processes=env_params.workers, assistant=env_params.assistant)
+
+    if env_params.disable_cache:
+        task_register.Register.disable_instance_cache()
 
     success = True
     luigi_state.set_state(luigi_state.SCHEDULING)
