@@ -358,6 +358,9 @@ class worker(Config):
     version_file = Parameter(default='',
                              description='If this file changes, stop requesting new work')
 
+    max_tasks_per_scheduler = IntParameter(
+        default=10000, description='Number of tasks before we start a new scheduling subprocess')
+
 
 class KeepAliveThread(threading.Thread):
     """
@@ -613,7 +616,7 @@ class Worker(object):
         self.add_succeeded = True
         if multiprocess:
             queue = multiprocessing.Manager().Queue()
-            pool = multiprocessing.Pool(maxtasksperchild=100)
+            pool = multiprocessing.Pool(maxtasksperchild=self._config.max_tasks_per_scheduler)
         else:
             queue = DequeQueue()
             pool = SingleProcessPool()
