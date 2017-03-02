@@ -613,7 +613,7 @@ class Worker(object):
         self.add_succeeded = True
         if multiprocess:
             queue = multiprocessing.Manager().Queue()
-            pool = multiprocessing.Pool(maxtasksperchild=10000)
+            pool = multiprocessing.Pool(maxtasksperchild=100)
         else:
             queue = DequeQueue()
             pool = SingleProcessPool()
