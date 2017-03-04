@@ -46,7 +46,8 @@ logger = logging.getLogger('luigi-interface')
 class RemoteFileSystem(luigi.target.FileSystem):
 
     def __init__(self, host, username=None, password=None, port=None,
-                 tls=False, timeout=60, sftp=False, pysftp_conn_kwargs=None):
+                 tls=False, timeout=60, sftp=False, pysftp_conn_kwargs=None,
+                 debuglevel=0):
         self.host = host
         self.username = username
         self.password = password
@@ -54,6 +55,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
         self.timeout = timeout
         self.sftp = sftp
         self.pysftp_conn_kwargs = pysftp_conn_kwargs or {}
+        self.debuglevel = debuglevel
 
         if port is None:
             if self.sftp:
@@ -90,6 +92,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
         self.conn.login(self.username, self.password)
         if self.tls:
             self.conn.prot_p()
+        self.conn.set_debuglevel(self.debuglevel)
 
     def _close(self):
         """
@@ -352,7 +355,8 @@ class RemoteTarget(luigi.target.FileSystemTarget):
     def __init__(
         self, path, host, format=None, username=None,
         password=None, port=None, mtime=None, tls=False,
-            timeout=60, sftp=False, pysftp_conn_kwargs=None
+            timeout=60, sftp=False, pysftp_conn_kwargs=None,
+            debuglevel=0
     ):
         if format is None:
             format = luigi.format.get_default_format()
@@ -363,7 +367,8 @@ class RemoteTarget(luigi.target.FileSystemTarget):
         self.tls = tls
         self.timeout = timeout
         self.sftp = sftp
-        self._fs = RemoteFileSystem(host, username, password, port, tls, timeout, sftp, pysftp_conn_kwargs)
+        self._fs = RemoteFileSystem(
+            host, username, password, port, tls, timeout, sftp, pysftp_conn_kwargs, debuglevel)
 
     @property
     def fs(self):
