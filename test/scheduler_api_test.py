@@ -870,6 +870,13 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='D', status=FAILED, deps=['A'])
         self._test_prune_done_tasks([])
 
+    def test_mark_dependencies_done(self):
+        self.sch.add_task(worker='W1', task_id='A', status=PENDING, deps=['B'])
+        self.sch.add_task(worker='W1', task_id='B', status=PENDING, deps=['C'])
+        self.sch.add_task(worker='W1', task_id='C', status=PENDING, deps=[])
+        self.sch.add_task(worker='W2', task_id='A', status=DONE)
+        self.assertFalse(self.sch.task_list(status=PENDING))
+
     def test_count_pending(self):
         for num_tasks in range(1, 20):
             self.sch.add_task(worker=WORKER, task_id=str(num_tasks), status=PENDING)

@@ -582,6 +582,11 @@ class SimpleTaskState(object):
             self._status_tasks[new_status][task.id] = task
             task.status = new_status
             task.updated = time.time()
+            if new_status == DONE:
+                for dep in task.deps:
+                    dep_obj = self.get_task(dep)
+                    if dep_obj is not None:
+                        self.set_status(dep_obj, DONE, config)
 
         if new_status == FAILED:
             task.retry = time.time() + config.retry_delay
