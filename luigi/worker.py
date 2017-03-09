@@ -361,6 +361,10 @@ class worker(Config):
     max_tasks_per_scheduler = IntParameter(
         default=10000, description='Number of tasks before we start a new scheduling subprocess')
 
+    num_scheduling_processes = IntParameter(
+        default=multiprocessing.cpu_count(),
+        description="Number of processes to use in parallel scheduling")
+
 
 class KeepAliveThread(threading.Thread):
     """
@@ -616,7 +620,10 @@ class Worker(object):
         self.add_succeeded = True
         if multiprocess:
             queue = multiprocessing.Manager().Queue()
-            pool = multiprocessing.Pool(maxtasksperchild=self._config.max_tasks_per_scheduler)
+            pool = multiprocessing.Pool(
+                processes=self._config.num_scheduling_processes,
+                maxtasksperchild=self._config.max_tasks_per_scheduler,
+            )
         else:
             queue = DequeQueue()
             pool = SingleProcessPool()
