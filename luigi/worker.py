@@ -365,6 +365,9 @@ class worker(Config):
         default=multiprocessing.cpu_count(),
         description="Number of processes to use in parallel scheduling")
 
+    skip_execution_summary = BoolParameter(
+        default=False, description='Do not show an execution summary at the end of the run')
+
 
 class KeepAliveThread(threading.Thread):
     """
@@ -452,6 +455,7 @@ class Worker(object):
         # Stuff for execution_summary
         self._add_task_history = []
         self._get_work_response_history = []
+        self.show_execution_summary = not self._config.skip_execution_summary
 
         # store version info for controlled restarts
         self._version = self._get_version()
@@ -466,11 +470,12 @@ class Worker(object):
         runnable = kwargs['runnable']
         task = self._scheduled_tasks.get(task_id)
         if task:
-            msg = (task, status, runnable)
-            self._add_task_history.append(msg)
+            if not self.show_execution_summary:
+                msg = (task, status, runnable)
+                self._add_task_history.append(msg)
             kwargs['owners'] = task._owner_list()
 
-        if task_id in self._batch_running_tasks:
+        if task_id in self._batch_running_tasks and not self.show_execution_summary:
             for batch_task in self._batch_running_tasks.pop(task_id):
                 self._add_task_history.append((batch_task, status, True))
 
@@ -848,10 +853,11 @@ class Worker(object):
         running_tasks = r['running_tasks']
         task_id = self._get_work_task_id(r)
 
-        self._get_work_response_history.append({
-            'task_id': task_id,
-            'running_tasks': running_tasks,
-        })
+        if not self.show_execution_summary:
+            self._get_work_response_history.append({
+                'task_id': task_id,
+                'running_tasks': running_tasks,
+            })
 
         if task_id is not None and task_id not in self._scheduled_tasks:
             logger.info('Did not schedule %s, will load it dynamically', task_id)

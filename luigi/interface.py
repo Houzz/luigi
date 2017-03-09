@@ -204,7 +204,8 @@ def _schedule_and_run(tasks, worker_scheduler_factory=None, override_defaults=No
         logger.info('Done scheduling tasks')
         luigi_state.set_state(luigi_state.RUNNING)
         success &= worker.run()
-    logger.info(execution_summary.summary(worker))
+    if self.worker.show_execution_summary:
+        logger.info(execution_summary.summary(worker))
     return dict(success=success, worker=worker)
 
 
