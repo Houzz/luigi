@@ -470,12 +470,12 @@ class Worker(object):
         runnable = kwargs['runnable']
         task = self._scheduled_tasks.get(task_id)
         if task:
-            if not self.show_execution_summary:
+            if self.show_execution_summary:
                 msg = (task, status, runnable)
                 self._add_task_history.append(msg)
             kwargs['owners'] = task._owner_list()
 
-        if task_id in self._batch_running_tasks and not self.show_execution_summary:
+        if task_id in self._batch_running_tasks and self.show_execution_summary:
             for batch_task in self._batch_running_tasks.pop(task_id):
                 self._add_task_history.append((batch_task, status, True))
 
@@ -853,7 +853,7 @@ class Worker(object):
         running_tasks = r['running_tasks']
         task_id = self._get_work_task_id(r)
 
-        if not self.show_execution_summary:
+        if self.show_execution_summary:
             self._get_work_response_history.append({
                 'task_id': task_id,
                 'running_tasks': running_tasks,
