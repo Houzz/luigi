@@ -109,7 +109,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
     def _ftp_close(self):
         self.conn.quit()
 
-    def exists(self, path, mtime=None):
+    def exists(self, path, mtime=None, min_age_seconds=0):
         """
         Return `True` if file or directory at `path` exist, False otherwise.
 
@@ -120,34 +120,39 @@ class RemoteFileSystem(luigi.target.FileSystem):
         self._connect()
 
         if self.sftp:
-            exists = self._sftp_exists(path, mtime)
+            exists = self._sftp_exists(path, mtime, min_age_seconds)
         else:
-            exists = self._ftp_exists(path, mtime)
+            exists = self._ftp_exists(path, mtime, min_age_seconds)
 
         self._close()
 
         return exists
 
-    def _sftp_exists(self, path, mtime):
-        exists = False
-        if mtime:
-            exists = self.conn.stat(path).st_mtime > mtime
-        elif self.conn.exists(path):
-            exists = True
+    def _sftp_exists(self, path, mtime, min_age_seconds):
+        exists = self.conn.exists(path)
+        if exists:
+            file_mtime = self.conn.stat(path).st_mtime
+            age = datetime.datetime.utcnow() - file_mtime
+            exists = age > datetime.timedelta(seconds=min_age_seconds)
+            if exists and mtime:
+                exists = file_mtime > mtime
+
         return exists
 
-    def _ftp_exists(self, path, mtime):
+    def _ftp_exists(self, path, mtime, min_age_seconds):
         dirname, fn = os.path.split(path)
         files = self.conn.nlst(dirname.replace(' ', '\ '))
 
         exists = False
         if path in files or fn in files:
-            if mtime:
-                mdtm = self.conn.sendcmd('MDTM ' + path)
-                modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S")
+            mdtm = self.conn.sendcmd('MDTM ' + path)
+            modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S")
+            age = datetime.datetime.utcnow() - modified
+            exists = age > datetime.timedelta(seconds=min_age_seconds)
+
+            if exists and mtime:
                 exists = modified > mtime
-            else:
-                exists = True
+
         return exists
 
     def remove(self, path, recursive=True):
@@ -354,15 +359,16 @@ class RemoteTarget(luigi.target.FileSystemTarget):
 
     def __init__(
         self, path, host, format=None, username=None,
-        password=None, port=None, mtime=None, tls=False,
-            timeout=60, sftp=False, pysftp_conn_kwargs=None,
-            debuglevel=0
+        password=None, port=None, mtime=None, min_age_seconds=0, tls=False,
+        timeout=60, sftp=False, pysftp_conn_kwargs=None,
+        debuglevel=0
     ):
         if format is None:
             format = luigi.format.get_default_format()
 
         self.path = path
         self.mtime = mtime
+        self.min_age_seconds = min_age_seconds
         self.format = format
         self.tls = tls
         self.timeout = timeout
@@ -402,7 +408,7 @@ class RemoteTarget(luigi.target.FileSystemTarget):
             raise Exception("mode must be 'r' or 'w' (got: %s)" % mode)
 
     def exists(self):
-        return self.fs.exists(self.path, self.mtime)
+        return self.fs.exists(self.path, self.mtime, self.min_age_seconds)
 
     def put(self, local_path, atomic=True):
         self.fs.put(local_path, self.path, atomic)
