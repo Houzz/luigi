@@ -163,6 +163,8 @@ class Task(object):
 
     assistant_groups = None
 
+    batch_delegate = None
+
     @property
     def batchable(self):
         """
@@ -373,15 +375,20 @@ class Task(object):
         :param params_str: dict of param name -> value as string.
         """
         kwargs = {}
+        is_batch = False
         for param_name, param in cls.get_params():
             if param_name in params_str:
                 param_str = params_str[param_name]
                 if isinstance(param_str, list):
+                    is_batch = True
                     kwargs[param_name] = param._parse_list(param_str)
                 else:
                     kwargs[param_name] = param.parse(param_str)
 
-        return cls(**kwargs)
+        if is_batch and cls.batch_delegate is not None:
+            return cls.batch_delegate(**kwargs)
+        else:
+            return cls(**kwargs)
 
     def to_str_params(self, only_significant=False):
         """

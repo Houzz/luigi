@@ -750,6 +750,37 @@ class WorkerTest(LuigiTestCase):
 
         self.assertEqual(3, len(runs))
 
+    def test_run_batch_job_with_delegate(self):
+        class DelegateRunnerTask(luigi.Task):
+            param = luigi.TupleParameter()
+
+            def run(self):
+                for param_val in self.param:
+                    DelegatorTask(param_val).has_run = True
+
+        class DelegatorTask(luigi.Task):
+            param = luigi.Parameter(batch_method=tuple)
+            batchable = True
+            batch_delegate = DelegateRunnerTask
+            has_run = False
+
+            def run(self):
+                raise NotImplementedError('this should not happen')
+
+            def complete(self):
+                return self.has_run
+
+        delegator_tasks = [DelegatorTask(str(i)) for i in range(10)]
+
+        class DelegateWrapperTask(luigi.WrapperTask):
+            def requires(self):
+                return delegator_tasks
+
+        self.w.add(DelegateWrapperTask())
+        self.assertFalse(DelegateWrapperTask().complete())
+        self.assertTrue(self.w.run())
+        self.assertTrue(DelegateWrapperTask().complete())
+
     def test_remove_worker_after_run(self):
         self.w.add(DummyTask())
         self.assertTrue(self.w.run())

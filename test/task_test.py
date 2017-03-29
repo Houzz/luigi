@@ -43,6 +43,22 @@ class DefaultInsignificantParamTask(luigi.Task):
     necessary_param = luigi.Parameter(significant=False)
 
 
+class BatchDelegateClass(luigi.Task):
+    batchable_param = luigi.TupleParameter()
+
+
+class BatchableClassWithDelegate(luigi.Task):
+    batchable = True
+
+    batchable_param = luigi.Parameter(batch_method=tuple)
+    batch_delegate = BatchDelegateClass
+
+
+class BatchableClassWithoutDelegate(luigi.Task):
+    batchable = True
+    batchable_param = luigi.Parameter(batch_method=max)
+
+
 class TaskTest(unittest.TestCase):
 
     def test_tasks_doctest(self):
@@ -68,6 +84,24 @@ class TaskTest(unittest.TestCase):
         original = DefaultInsignificantParamTask(**params)
         other = DefaultInsignificantParamTask.from_str_params(params)
         self.assertEqual(original, other)
+
+    def test_task_from_str_with_batch_method_without_delegate(self):
+        params = {'batchable_param': ['a', 'b']}
+        delegate = BatchableClassWithoutDelegate.from_str_params(params)
+        expected_delegate = BatchableClassWithoutDelegate('b')
+        self.assertEqual(expected_delegate, delegate)
+
+    def test_task_from_str_with_batch_delegate(self):
+        params = {'batchable_param': ['a', 'b']}
+        delegate = BatchableClassWithDelegate.from_str_params(params)
+        expected_delegate = BatchDelegateClass(('a', 'b'))
+        self.assertEqual(expected_delegate, delegate)
+
+    def test_task_from_str_without_using_batch_delegate(self):
+        params = {'batchable_param': 'a'}
+        delegate = BatchableClassWithDelegate.from_str_params(params)
+        expected_delegate = BatchableClassWithDelegate('a')
+        self.assertEqual(expected_delegate, delegate)
 
     def test_task_missing_necessary_param(self):
         with self.assertRaises(luigi.parameter.MissingParameterException):
