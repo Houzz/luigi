@@ -68,7 +68,7 @@ logger = logging.getLogger('luigi-interface')
 _attached_packages = []
 
 
-TRACKING_RE = re.compile(r'(tracking url|the url to track the job):\s+(?P<url>.+)$')
+TRACKING_RE = re.compile(r'(tracking url|the url to track the job)(:|\s*=)\s+(?P<url>.+)$')
 
 
 class hadoop(luigi.task.Config):

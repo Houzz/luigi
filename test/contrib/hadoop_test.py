@@ -433,6 +433,14 @@ class JobRunnerTest(unittest.TestCase):
         self._run_and_track(yarn_lines, 0)
         self.assertEqual([url], self.tracking_urls)
 
+    def test_tracking_url_hive(self):
+        url = 'http://example.jobtracker.com:8088/proxy/application_1490248943983_82216/'
+        hive_line = [
+            "Starting Job = job_1490248943983_82216, Tracking URL = %s\n" % url,
+        ]
+        self._run_and_track(hive_line, 0)
+        self.assertEqual([url], self.tracking_urls)
+
     def test_tracking_url_old_version(self):
         url = 'http://tracker.com/1234_5678'
         err_lines = [
