@@ -214,16 +214,12 @@ class TaskProcess(multiprocessing.Process):
             status = FAILED
             logger.exception("[pid %s] Worker %s failed    %s", os.getpid(), self.worker_id, self.task)
             self.task.trigger_event(Event.FAILURE, self.task, ex)
-            logger.debug('BaseException - trigger_event')
             raw_error_message = self.task.on_failure(ex)
-            logger.debug('BaseException - on_failure')
             expl = raw_error_message
-            logger.debug('BaseException - expl: %s', raw_error_message)
 
         finally:
             self.result_queue.put(
                 (self.task.task_id, status, expl, missing, new_deps))
-            logger.debug('BaseException - finally done')
 
     def _recursive_terminate(self):
         import psutil
