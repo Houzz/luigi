@@ -132,8 +132,10 @@ class RemoteFileSystem(luigi.target.FileSystem):
         exists = self.conn.exists(path)
         if exists:
             file_mtime = self.conn.stat(path).st_mtime
-            age = datetime.datetime.utcnow() - file_mtime
-            exists = age > datetime.timedelta(seconds=min_age_seconds)
+            utcnow = datetime.datetime.utcnow()
+            curr_timestamp = (utcnow - datetime.datetime(1970, 1, 1)).total_seconds()
+            age = curr_timestamp - file_mtime
+            exists = age > min_age_seconds
             if exists and mtime:
                 exists = file_mtime > mtime
 
