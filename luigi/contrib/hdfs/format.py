@@ -4,6 +4,7 @@ import os
 from luigi.contrib.hdfs.config import load_hadoop_cmd
 from luigi.contrib.hdfs import config as hdfs_config
 from luigi.contrib.hdfs.clients import remove, rename, mkdir
+from luigi.contrib.hdfs.error import HDFSCliError
 
 logger = logging.getLogger('luigi-interface')
 
@@ -42,6 +43,10 @@ class HdfsAtomicWritePipe(luigi.format.OutputPipeProcessWrapper):
 
     def close(self):
         super(HdfsAtomicWritePipe, self).close()
+        try:
+            remove(self.path)
+        except HDFSCliError:
+            pass
         rename(self.tmppath, self.path)
 
 
