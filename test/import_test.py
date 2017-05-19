@@ -54,7 +54,7 @@ class ImportTest(unittest.TestCase):
             luigi.Event,
             luigi.Config,
             luigi.Task, luigi.ExternalTask, luigi.WrapperTask,
-            luigi.Target, luigi.LocalTarget, luigi.File,
+            luigi.Target, luigi.LocalTarget,
             luigi.namespace,
             luigi.RemoteScheduler,
             luigi.RPCError,
@@ -64,6 +64,6 @@ class ImportTest(unittest.TestCase):
             luigi.MonthParameter, luigi.YearParameter,
             luigi.DateIntervalParameter, luigi.TimeDeltaParameter,
             luigi.IntParameter, luigi.FloatParameter,
-            luigi.BooleanParameter, luigi.BoolParameter,
+            luigi.BoolParameter,
         ]
         self.assertGreater(len(expected), 0)

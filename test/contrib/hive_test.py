@@ -279,13 +279,6 @@ class HiveCommandClientTest(unittest.TestCase):
         self.assertEqual("", returned)
 
 
-class TestHiveMisc(unittest.TestCase):
-
-    def test_import_old(self):
-        import luigi.hive
-        self.assertEqual(luigi.hive.HiveQueryTask, luigi.contrib.hive.HiveQueryTask)
-
-
 class MyHiveTask(luigi.contrib.hive.HiveQueryTask):
     param = luigi.Parameter()
 
@@ -315,7 +308,3 @@ class TestHiveTarget(unittest.TestCase):
         target = luigi.contrib.hive.HivePartitionTarget(database='db', table='foo', partition='bar', client=client)
         target.exists()
         client.table_exists.assert_called_with('foo', 'db', 'bar')
-
-
-if __name__ == '__main__':
-    unittest.main()

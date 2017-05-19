@@ -1,3 +1,8 @@
+"""
+Library for sending batch notifications from the Luigi scheduler. This module
+is internal to Luigi and not designed for use in other contexts.
+"""
+
 import collections
 from datetime import datetime
 import time
@@ -16,14 +21,13 @@ class batch_email(luigi.Config):
         description='Method used for batching failures in e-mail. If "family" all failures for '
                     'tasks with the same family will be batched. If "unbatched_params", all '
                     'failures for tasks with the same family and non-batched parameters will be '
-                    'batched. If "all", tasks will only be batched if they have identical names. '
-                    '(default: unbatched_params)')
+                    'batched. If "all", tasks will only be batched if they have identical names.')
     error_lines = luigi.parameter.IntParameter(
-        default=0, description='Number of lines to show from each error message. Default: all')
+        default=20, description='Number of lines to show from each error message. 0 means show all')
     error_messages = luigi.parameter.IntParameter(
-        default=0, description='Number of error messages to show for each group')
+        default=1, description='Number of error messages to show for each group')
     group_by_error_messages = luigi.parameter.BoolParameter(
-        default=False, description='Group items with the same error messages together')
+        default=True, description='Group items with the same error messages together')
 
 
 class ExplQueue(collections.OrderedDict):
@@ -91,7 +95,8 @@ class BatchNotifier(object):
             lines.append('')
         return '\n'.join(lines)
 
-    def _format_task(self, (task, failure_count, disable_count, scheduling_count)):
+    def _format_task(self, task_tuple):
+        task, failure_count, disable_count, scheduling_count = task_tuple
         counts = [
             _plural_format('{} failure{}', failure_count),
             _plural_format('{} disable{}', disable_count),
@@ -108,21 +113,21 @@ class BatchNotifier(object):
             return six.u('- {}').format(six.u('\n  ').join(lines))
 
     def _owners(self, owners):
-        return self._default_owner | set(owners or ())
+        return self._default_owner | set(owners)
 
-    def add_failure(self, task_name, family, unbatched_args, expl, owners=None):
+    def add_failure(self, task_name, family, unbatched_args, expl, owners):
         key = self._key(task_name, family, unbatched_args)
         for owner in self._owners(owners):
             self._fail_counts[owner][key] += 1
             self._fail_expls[owner][key].enqueue(expl)
 
-    def add_disable(self, task_name, family, unbatched_args, owners=None):
+    def add_disable(self, task_name, family, unbatched_args, owners):
         key = self._key(task_name, family, unbatched_args)
         for owner in self._owners(owners):
             self._disabled_counts[owner][key] += 1
             self._fail_counts[owner].setdefault(key, 0)
 
-    def add_scheduling_fail(self, task_name, family, unbatched_args, expl, owners=None):
+    def add_scheduling_fail(self, task_name, family, unbatched_args, expl, owners):
         key = self._key(task_name, family, unbatched_args)
         for owner in self._owners(owners):
             self._scheduling_fail_counts[owner][key] += 1
@@ -131,14 +136,15 @@ class BatchNotifier(object):
 
     def _task_expl_groups(self, expls):
         if not self._config.group_by_error_messages:
-            return [((expl,), msg) for expl, msg in six.iteritems(expls)]
+            return [((task,), msg) for task, msg in six.iteritems(expls)]
 
         groups = collections.defaultdict(list)
-        for expl, msg in six.iteritems(expls):
-            groups[msg].append(expl)
-        return [(expls, msg) for msg, expls in six.iteritems(groups)]
+        for task, msg in six.iteritems(expls):
+            groups[msg].append(task)
+        return [(tasks, msg) for msg, tasks in six.iteritems(groups)]
 
-    def _expls_key(self, (expls, _)):
+    def _expls_key(self, expls_tuple):
+        expls = expls_tuple[0]
         num_failures = sum(failures + scheduling_fails for (_1, failures, _2, scheduling_fails) in expls)
         num_disables = sum(disables for (_1, _2, disables, _3) in expls)
         min_name = min(expls)[0]

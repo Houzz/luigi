@@ -17,6 +17,10 @@
 #
 
 """
+Since after Luigi 2.5.0, this is a private module to Luigi. Luigi users should
+not rely on that importing this module works.  Furthermore, "luigi mr streaming"
+have been greatly superseeded by technoligies like Spark, Hive, etc.
+
 The hadoop runner.
 
 This module contains the main() method which will be used to run the
@@ -91,6 +95,7 @@ def main(args=None, stdin=sys.stdin, stdout=sys.stdout, print_exception=print_ex
         # Dump encoded data that we will try to fetch using mechanize
         print_exception(exc)
         raise
+
 
 if __name__ == '__main__':
     main()

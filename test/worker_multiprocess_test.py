@@ -77,6 +77,7 @@ class MultiprocessWorkerTest(unittest.TestCase):
                                                     self.gw_res(1, c.task_id),
                                                     self.gw_res(0, None),
                                                     self.gw_res(0, None)])
+        self.scheduler.remove_worker = Mock()
 
         self.assertTrue(self.worker.run())
         self.assertTrue(c.has_run)
@@ -104,9 +105,6 @@ class MultiprocessWorkerTest(unittest.TestCase):
                                                     self.gw_res(1, c.task_id),
                                                     self.gw_res(0, None),
                                                     self.gw_res(0, None)])
+        self.scheduler.remove_worker = Mock()
 
         self.assertFalse(self.worker.run())
-
-
-if __name__ == '__main__':
-    unittest.main()

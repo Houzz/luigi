@@ -74,7 +74,7 @@ class DuplicateParameterException(ParameterException):
 
 class Parameter(object):
     """
-    An untyped Parameter
+    Parameter whose value is a ``str``, and a base class for other parameter types.
 
     Parameters are objects set on the Task class level to make it possible to parameterize tasks.
     For instance:
@@ -107,9 +107,6 @@ class Parameter(object):
         * With ``[TASK_NAME]>PARAM_NAME: <serialized value>`` syntax. See :ref:`ParamConfigIngestion`
 
         * Any default value set using the ``default`` flag.
-
-    There are subclasses of ``Parameter`` that define what type the parameter has. This is not
-    enforced within Python, but are used for command line interaction.
 
     Parameter objects may be reused, but you must then set the ``positional=False`` flag.
     """
@@ -255,9 +252,13 @@ class Parameter(object):
 
         :param x: the value to serialize.
         """
-        if not isinstance(x, six.string_types) and self.__class__ == Parameter:
-            warnings.warn("Parameter {0} is not of type string.".format(str(x)))
         return str(x)
+
+    def _warn_on_wrong_param_type(self, param_name, param_value):
+        if self.__class__ != Parameter:
+            return
+        if not isinstance(param_value, six.string_types):
+            warnings.warn('Parameter "{}" with value "{}" is not of type string.'.format(param_name, param_value))
 
     def normalize(self, x):
         """
@@ -354,8 +355,17 @@ class DateParameter(_DateParameterBase):
             def run(self):
                 templated_path = "/my/path/to/my/dataset/{date:%Y/%m/%d}/"
                 instantiated_path = templated_path.format(date=self.date)
-                // print(instantiated_path) --> /my/path/to/my/dataset/2016/06/09/
-                // ... use instantiated_path ...
+                # print(instantiated_path) --> /my/path/to/my/dataset/2016/06/09/
+                # ... use instantiated_path ...
+
+    To set this parameter to default to the current day. You can write code like this:
+
+    .. code:: python
+
+        import datetime
+
+        class MyTask(luigi.Task):
+            date = luigi.DateParameter(default=datetime.date.today())
     """
 
     date_format = '%Y-%m-%d'
@@ -595,20 +605,6 @@ class BoolParameter(Parameter):
         return 'store_true'
 
 
-class BooleanParameter(BoolParameter):
-    """
-    DEPRECATED. Use :py:class:`~BoolParameter`
-    """
-
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            'BooleanParameter is deprecated, use BoolParameter instead',
-            DeprecationWarning,
-            stacklevel=2
-        )
-        super(BooleanParameter, self).__init__(*args, **kwargs)
-
-
 class DateIntervalParameter(Parameter):
     """
     A Parameter whose value is a :py:class:`~luigi.date_interval.DateInterval`.
@@ -652,13 +648,14 @@ class TimeDeltaParameter(Parameter):
     def _apply_regex(self, regex, input):
         import re
         re_match = re.match(regex, input)
-        if re_match:
+        if re_match and any(re_match.groups()):
             kwargs = {}
             has_val = False
             for k, v in six.iteritems(re_match.groupdict(default="0")):
                 val = int(v)
-                has_val = has_val or val != 0
-                kwargs[k] = val
+                if val > -1:
+                    has_val = True
+                    kwargs[k] = val
             if has_val:
                 return datetime.timedelta(**kwargs)
 
@@ -688,10 +685,30 @@ class TimeDeltaParameter(Parameter):
         result = self._parseIso8601(input)
         if not result:
             result = self._parseSimple(input)
-        if result:
+        if result is not None:
             return result
         else:
             raise ParameterException("Invalid time delta - could not parse %s" % input)
+
+    def serialize(self, x):
+        """
+        Converts datetime.timedelta to a string
+
+        :param x: the value to serialize.
+        """
+        weeks = x.days // 7
+        days = x.days % 7
+        hours = x.seconds // 3600
+        minutes = (x.seconds % 3600) // 60
+        seconds = (x.seconds % 3600) % 60
+        result = "{} w {} d {} h {} m {} s".format(weeks, days, hours, minutes, seconds)
+        return result
+
+    def _warn_on_wrong_param_type(self, param_name, param_value):
+        if self.__class__ != TimeDeltaParameter:
+            return
+        if not isinstance(param_value, datetime.timedelta):
+            warnings.warn('Parameter "{}" with value "{}" is not of type timedelta.'.format(param_name, param_value))
 
 
 class TaskParameter(Parameter):
@@ -701,7 +718,7 @@ class TaskParameter(Parameter):
     When used programatically, the parameter should be specified
     directly with the :py:class:`luigi.task.Task` (sub) class. Like
     ``MyMetaTask(my_task_param=my_tasks.MyTask)``. On the command line,
-    you specify the :py:attr:`luigi.task.Task.task_family`. Like
+    you specify the :py:meth:`luigi.task.Task.get_task_family`. Like
 
     .. code-block:: console
 
@@ -723,7 +740,7 @@ class TaskParameter(Parameter):
         """
         Converts the :py:class:`luigi.task.Task` (sub) class to its family name.
         """
-        return cls.task_family
+        return cls.get_task_family()
 
 
 class EnumParameter(Parameter):

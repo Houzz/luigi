@@ -49,12 +49,13 @@ def mocked_requests_get(*args, **kwargs):
     )
     return MockResponse(result_list, 200)
 
+
 # Keep open around so we can use it in the mock responses
 old__open = open
 
 
 def mocked_open(*args, **kwargs):
-    if re.match("job_data", args[0]):
+    if re.match("job_data", str(args[0])):
         return MockTarget(args[0]).open(args[1])
     else:
         return old__open(*args)
