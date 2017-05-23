@@ -988,6 +988,8 @@ function visualiserApp(luigi) {
 
                 if (data.search.search) {
                     state.search__search = data.search.search;
+                } else {
+                    delete state.search__search;
                 }
 
                 if (data.order && data.order.length) {
