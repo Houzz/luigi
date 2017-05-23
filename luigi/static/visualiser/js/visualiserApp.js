@@ -444,11 +444,11 @@ function visualiserApp(luigi) {
             $('#hideDoneCheckbox').prop('checked', hideDone);
             $("#invertCheckbox").prop('checked', fragmentQuery.invert === '1' ? true : false);
             $("#js-task-id").val(fragmentQuery.taskId);
-            if (fragmentQuery.visType == 'svg') {
-                $("input[name=vis-type][value=svg]").prop('checked', true);
-            } else {
-                // d3 is default visualization.
+            if (fragmentQuery.visType == 'd3') {
                 $("input[name=vis-type][value=d3]").prop('checked', true);
+            } else {
+                // svg is default visualization.
+                $("input[name=vis-type][value=svg]").prop('checked', true);
             }
 
             // Empty errors.
@@ -463,7 +463,7 @@ function visualiserApp(luigi) {
                     luigi.getDependencyGraph(taskId, depGraphCallback, !hideDone);
                 }
             }
-            updateVisType(fragmentQuery.visType || 'd3');
+            updateVisType(fragmentQuery.visType || 'svg');
             initVisualisation(fragmentQuery.visType);
             switchTab("dependencyGraph");
         } else {
