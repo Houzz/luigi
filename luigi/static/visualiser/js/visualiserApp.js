@@ -123,7 +123,20 @@ function visualiserApp(luigi) {
     /**
      * Filter table by all activated info boxes.
      */
-    function filterByCategory(dt) {
+    function filterByCategory(dt, activeBoxes) {
+        if (activeBoxes === undefined) {
+            activeBoxes = getActiveBoxes();
+        }
+        currentFilter.taskCategory = activeBoxes;
+        dt.column(0).search(categoryQuery(activeBoxes), regex=true).draw();
+    }
+
+    function categoryQuery(activeBoxes) {
+        // Searched content will be <icon> <category>.
+        return '\\b(' + activeBoxes.join('|') + ')\\b';
+    }
+
+    function getActiveBoxes() {
         var infoBoxes = $('.info-box');
 
         var activeBoxes = [];
@@ -132,10 +145,7 @@ function visualiserApp(luigi) {
                 activeBoxes.push(infoBoxes[i].dataset.category);
             }
         });
-        // Searched content will be <icon> <category>.
-        var pattern = '\\b(' + activeBoxes.join('|') + ')\\b';
-        currentFilter.taskCategory = activeBoxes;
-        dt.column(0).search(pattern, regex=true).draw();
+        return activeBoxes;
     }
 
     function filterByTaskFamily(taskFamily, dt) {
@@ -148,12 +158,12 @@ function visualiserApp(luigi) {
         }
     }
 
-    function toggleInfoBox(infoBox) {
+    function toggleInfoBox(infoBox, activate) {
         var infoBoxColor = infoBox.dataset.color;
         var infoBoxIcon = $(infoBox).find('.info-box-icon');
         var colorClass = 'bg-' + infoBoxColor;
 
-        if ((infoBox.dataset.on === undefined) || (infoBox.dataset.on === 'no')) {
+        if ((infoBox.dataset.on === undefined) || (infoBox.dataset.on === 'no') || activate) {
             infoBox.dataset.on = 'yes';
             infoBoxIcon.removeClass(colorClass);
             $(infoBox).addClass(colorClass);
@@ -483,6 +493,14 @@ function visualiserApp(luigi) {
                 family_item.addClass('active');
                 family_item.find('.badge').addClass('bg-green');
                 filterByTaskFamily(fragmentQuery.family, dt);
+            }
+
+            if (fragmentQuery.statuses) {
+                var statuses = JSON.parse(fragmentQuery.statuses);
+                $.each(statuses, function (status) {
+                    toggleInfoBox($('#' + statuses[status] + '_info')[0], true);
+                });
+                filterByCategory(dt, statuses);
             }
 
             if (fragmentQuery.order) {
@@ -1011,6 +1029,12 @@ function visualiserApp(luigi) {
                     delete state.family;
                 }
 
+                if (currentFilter.taskCategory.length > 0) {
+                    state.statuses = JSON.stringify(currentFilter.taskCategory);
+                } else {
+                    delete state.statuses;
+                }
+
                 if (data.order && data.order.length) {
                     state.order = '' + data.order[0][0] + ',' + data.order[0][1];
                 }
@@ -1041,6 +1065,13 @@ function visualiserApp(luigi) {
                     family_search = {'search': '^' + fragmentQuery.family + '$', 'regex': true};
                 }
 
+                var status_search = {};
+                if (fragmentQuery.statuses) {
+                    var statuses = JSON.parse(fragmentQuery.statuses);
+                    currentFilter.taskCategory = statuses;
+                    status_search = {'search': categoryQuery(statuses), 'regex': true};
+                }
+
                 // Prepare state for datatable.
                 var o = {
                     order: order,                 // Table rows order.
@@ -1048,7 +1079,7 @@ function visualiserApp(luigi) {
                     start: 0,                     // Pagination initial page.
                     time: new Date().getTime(),   // Current time to help datatable.js to handle asynchronous.
                     columns: [
-                        {visible: true, search: {}},
+                        {visible: true, search: status_search},
                         {visible: true, search: family_search},  // Name column
                         {visible: true, search: {}},  // Details column
                         {visible: true, search: {}},  // Priority column
@@ -1249,6 +1280,12 @@ function visualiserApp(luigi) {
                     state.family = family;
                 } else {
                     delete state.family;
+                }
+
+                if (currentFilter.taskCategory.length > 0) {
+                    state.statuses = currentFilter.taskCategory;
+                } else {
+                    delete state.statuses;
                 }
 
                 if (search) {
