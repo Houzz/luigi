@@ -237,6 +237,42 @@ function visualiserApp(luigi) {
         }
     }
 
+    function setWorkerSidebarFamilies(families) {
+        if (families === undefined) {
+            $('#workerSidebar li').removeClass('active');
+            $('#workerSidebar li .badge').removeClass('bg-green');
+            $('#workerList .worker-box').show();
+            return;
+        }
+
+        $('#workerSidebar li').each(function (key, item) {
+            family = item.dataset.task;
+            var domItem = $(item);
+            if (families.indexOf(family) === -1) {
+                domItem.removeClass('active');
+                domItem.find('.badge').removeClass('bg-green');
+            } else {
+                domItem.addClass('active');
+                domItem.find('.badge').addClass('bg-green');
+            }
+        });
+
+        $('#workerList .worker-box').each(function (key, item) {
+            domItem = $(item);
+            family = domItem.attr('family');
+            if (families.indexOf(family) === -1) {
+                domItem.hide();
+            } else {
+                domItem.show();
+            }
+        });
+    }
+
+
+    function workerSidebarFamilies(item) {
+        return $('#workerSidebar li.active').toArray().map(function (a,b) {return a.dataset.task});
+    }
+
     function renderWarnings() {
         return renderTemplate(
             "warningsTemplate",
@@ -443,6 +479,7 @@ function visualiserApp(luigi) {
         var fragmentQuery = URI.parseQuery(location.hash.replace('#', '')); // "http://example.org/#!/foo/bar/baz.html");
 
         if (fragmentQuery.tab == "workers") {
+            setWorkerSidebarFamilies(fragmentQuery.worker_families);
             switchTab("workerList");
         } else if (fragmentQuery.tab == "resources") {
             switchTab("resourceList");
@@ -984,7 +1021,8 @@ function visualiserApp(luigi) {
             $("#workerList").append(renderWorkers(workers));
             $("#workerSidebar").append(renderWorkerSidebar(workers));
 
-            $('#workerSidebar .sidebar-menu').on('click', 'li', function () {
+            $('#workerSidebar .sidebar-menu').on('click', 'li', function (e) {
+                e.preventDefault();
                 if (this.dataset.task) {
                     var family = this.dataset.task === 'SCHEDULING' ? '' : this.dataset.task;
                     var active = selectWorkerSidebarItem(this);
@@ -998,6 +1036,8 @@ function visualiserApp(luigi) {
                     } else {
                         $('.worker-box[family=' + family + ']').hide();
                     }
+                    var workerFamilies = workerSidebarFamilies();
+                    changeState('worker_families', workerFamilies.length > 0 ? JSON.stringify(workerFamilies) : null);
                 }
             });
             $('.worker-table tbody').on('click', 'td .statusMessage', function() {
@@ -1315,6 +1355,10 @@ function visualiserApp(luigi) {
 
                 state.visType = $('input[name=vis-type]:checked').val();
             } else if (tabId == 'workerList') {
+                var families = workerSidebarFamilies();
+                if (families.length > 0) {
+                    state.worker_families = JSON.stringify(families);
+                }
                 state.tab = 'workers';
             } else if (tabId == 'resourceList') {
                 state.tab = 'resources';
