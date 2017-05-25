@@ -244,6 +244,7 @@ function visualiserApp(luigi) {
             $('#workerList .worker-box').show();
             return;
         }
+        families = JSON.parse(families);
 
         $('#workerSidebar li').each(function (key, item) {
             family = item.dataset.task;
@@ -260,6 +261,9 @@ function visualiserApp(luigi) {
         $('#workerList .worker-box').each(function (key, item) {
             domItem = $(item);
             family = domItem.attr('family');
+            if (family == '') {
+                family = 'SCHEDULING';
+            }
             if (families.indexOf(family) === -1) {
                 domItem.hide();
             } else {
@@ -1020,6 +1024,7 @@ function visualiserApp(luigi) {
         luigi.getWorkerList(function(workers) {
             $("#workerList").append(renderWorkers(workers));
             $("#workerSidebar").append(renderWorkerSidebar(workers));
+            setWorkerSidebarFamilies(URI.parseQuery(location.hash.replace('#', '')).worker_families);
 
             $('#workerSidebar .sidebar-menu').on('click', 'li', function (e) {
                 e.preventDefault();
