@@ -194,3 +194,7 @@ span.status-icon {
 #loadTaskForm input {
   width: 20em;
 }
+
+i.resources-collapse {
+  padding-left: 10px;
+}
