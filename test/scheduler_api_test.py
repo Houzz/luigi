@@ -1227,6 +1227,41 @@ class SchedulerApiTest(unittest.TestCase):
         config.getintdict.assert_called_once_with('resources')
         check_resources(post_reload)
 
+    def validate_resource_count(self, name, count):
+        counts = {resource['name']: resource['num_total'] for resource in self.sch.resource_list()}
+        self.assertEqual(count, counts.get(name))
+
+    def test_update_new_resource(self):
+        self.assertEqual([], self.sch.resource_list())
+        self.sch.update_resource('new_resource', 1)
+        self.validate_resource_count('new_resource', 1)
+
+    def test_update_existing_resource(self):
+        self.assertEqual([], self.sch.resource_list())
+        self.sch.update_resource('new_resource', 1)
+        self.sch.update_resource('new_resource', 2)
+        self.validate_resource_count('new_resource', 2)
+
+    def test_disable_existing_resource(self):
+        self.assertEqual([], self.sch.resource_list())
+        self.sch.update_resource('new_resource', 1)
+        self.sch.update_resource('new_resource', 0)
+        self.validate_resource_count('new_resource', 0)
+
+    def test_attempt_to_set_resource_to_negative_value(self):
+        self.assertEqual([], self.sch.resource_list())
+        self.sch.update_resource('new_resource', 1)
+        self.assertFalse(self.sch.update_resource('new_resource', -1))
+        self.validate_resource_count('new_resource', 1)
+
+    def test_attempt_to_set_resource_to_non_integer(self):
+        self.assertEqual([], self.sch.resource_list())
+        self.sch.update_resource('new_resource', 1)
+        self.assertFalse(self.sch.update_resource('new_resource', 1.3))
+        self.assertFalse(self.sch.update_resource('new_resource', '1'))
+        self.assertFalse(self.sch.update_resource('new_resource', None))
+        self.validate_resource_count('new_resource', 1)
+
     def test_priority_update_with_pruning(self):
         self.setTime(0)
         self.sch.add_task(task_id='A', worker='X')

@@ -982,6 +982,13 @@ class Scheduler(object):
             resources = config.getintdict('resources')
         self._resources = resources
 
+    @rpc_method()
+    def update_resource(self, resource, amount):
+        if amount < 0 or not isinstance(amount, int):
+            return False
+        self._resources[resource] = amount
+        return True
+
     def _generate_retry_policy(self, task_retry_policy_dict):
         retry_policy_dict = self._config._get_retry_policy()._asdict()
         retry_policy_dict.update({k: v for k, v in six.iteritems(task_retry_policy_dict) if v is not None})
