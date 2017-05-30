@@ -18,6 +18,7 @@ function visualiserApp(luigi) {
         DISABLED: 'minus-circle',
         UPSTREAM_DISABLED: 'warning'
     };
+    var VISTYPE_DEFAULT = 'svg';
 
     /*
      * Updates view of the Visualization type.
@@ -499,18 +500,14 @@ function visualiserApp(luigi) {
             $('#hideDoneCheckbox').prop('checked', hideDone);
             $("#invertCheckbox").prop('checked', fragmentQuery.invert === '1' ? true : false);
             $("#js-task-id").val(fragmentQuery.taskId);
-            if (fragmentQuery.visType == 'd3') {
-                $("input[name=vis-type][value=d3]").prop('checked', true);
-            } else {
-                // svg is default visualization.
-                $("input[name=vis-type][value=svg]").prop('checked', true);
-            }
 
             // Empty errors.
             $("#searchError").empty();
             $("#searchError").removeClass();
+
+            var visType = fragmentQuery.visType || VISTYPE_DEFAULT;
             if (taskId) {
-                var depGraphCallback = makeGraphCallback(fragmentQuery.visType, taskId, paint);
+                var depGraphCallback = makeGraphCallback(visType, taskId, paint);
 
                 if (fragmentQuery.invert) {
                     luigi.getInverseDependencyGraph(taskId, depGraphCallback, !hideDone);
@@ -518,8 +515,8 @@ function visualiserApp(luigi) {
                     luigi.getDependencyGraph(taskId, depGraphCallback, !hideDone);
                 }
             }
-            updateVisType(fragmentQuery.visType || 'svg');
-            initVisualisation(fragmentQuery.visType);
+            updateVisType(visType);
+            initVisualisation(visType);
             switchTab("dependencyGraph");
         } else {
             // Tasks tab.
