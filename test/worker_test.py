@@ -925,7 +925,7 @@ class WorkerKeepAliveTests(LuigiTestCase):
                 self.sch.add_task(worker='DummyWorker', task_id=DummyTask().task_id, status=task_status)
 
             # allow workers to run their get work loops a few times
-            time.sleep(0.1)
+            time.sleep(1)
 
             try:
                 self.assertEqual(first_should_live, t1.isAlive())
