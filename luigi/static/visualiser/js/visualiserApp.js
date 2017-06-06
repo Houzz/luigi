@@ -568,7 +568,8 @@ function visualiserApp(luigi) {
                     });
                 }
                 else {
-                    window.location.href = 'index.html#tab=graph&taskId=' + taskId;
+                    fragmentQuery['taskId'] = taskId;
+                    window.location.href = 'index.html#' + URI.buildQuery(fragmentQuery);
                 }
             });
         }
@@ -1031,6 +1032,25 @@ function visualiserApp(luigi) {
         location.hash = '#' + URI.buildQuery(fragmentQuery);
     }
 
+   function expandedResources() {
+        return $('.resource-box.in').toArray().map(function (val) { return val.dataset.resource; });
+    }
+
+    function expandResources(resources) {        
+        if (resources === undefined) {
+            resources = [];
+        } else {
+            resources = JSON.parse(resources);
+        }
+        $('.resource-box').each(function (i, item) {
+            if (resources.indexOf(item.dataset.resource) === -1) {
+                $(item).collapse('hide');
+            } else {
+                $(item).collapse('show');
+            }
+        });
+    }
+
     /**
      * Create the pause/unpause toggle
      */
@@ -1051,25 +1071,6 @@ function visualiserApp(luigi) {
                 luigi.pause();
             }
         })
-    }
-
-    function expandedResources() {
-        return $('.resource-box.in').toArray().map(function (val) { return val.dataset.resource; });
-    }
-
-    function expandResources(resources) {        
-        if (resources === undefined) {
-            resources = [];
-        } else {
-            resources = JSON.parse(resources);
-        }
-        $('.resource-box').each(function (i, item) {
-            if (resources.indexOf(item.dataset.resource) === -1) {
-                $(item).collapse('hide');
-            } else {
-                $(item).collapse('show');
-            }
-        });
     }
 
     $(document).ready(function() {

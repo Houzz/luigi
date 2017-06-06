@@ -975,6 +975,18 @@ class Scheduler(object):
         self._state.get_worker(worker).add_rpc_message('set_worker_processes', n=n)
 
     @rpc_method()
+    def is_paused(self):
+        return {'paused': self._paused}
+
+    @rpc_method()
+    def pause(self):
+        self._paused = True
+
+    @rpc_method()
+    def unpause(self):
+        self._paused = False
+
+    @rpc_method()
     def update_resources(self, **resources):
         if not resources:
             config = configuration.get_config()

@@ -15,7 +15,6 @@
 # limitations under the License.
 #
 
-import mock
 import itertools
 import mock
 import time

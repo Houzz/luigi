@@ -20,6 +20,7 @@ svg {
   word-break:break-all;
 }
 
+
 @-webkit-keyframes flash {
   0%, 50%, 100% {
     opacity: 1;
@@ -47,8 +48,6 @@ svg {
   animation-fill-mode: both;
   -webkit-animation-iteration-count: 1;
   animation-iteration-count: 1;
-  -webkit-animation-name: flash;
-  animation-name: flash;
 }
 
 .live.map {
@@ -104,6 +103,11 @@ svg {
 
 .live.map .DISABLED .status {
   background-color: #aaaaaa;
+}
+
+.RUNNING {
+  -webkit-animation-name: flash;
+  animation-name: flash;
 }
 
 .live.map .consumers {
@@ -181,20 +185,21 @@ span.status-icon {
   margin-top: 9px;
 }
 
-#taskTable {
-  table-layout: fixed;
-}
-
-#taskTable .params, #taskTable .resources {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
-}
-
 #loadTaskForm input {
   width: 20em;
 }
 
-i.resources-collapse {
-  padding-left: 10px;
+#workerList .box-tools > div {
+  display: inline-block;
+}
+
+#workerList .btn-set-workers > span.caret {
+  margin-left: 4px;
+}
+
+#workerList .box-tools > span.label-unread-worker-messages {
+  margin-right: 6px;
+  vertical-align: middle;
+  font-style: italic;
+  color: red;
 }
