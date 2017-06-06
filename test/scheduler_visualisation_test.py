@@ -103,6 +103,7 @@ class SchedulerVisualisationTest(unittest.TestCase):
 
     def setUp(self):
         self.scheduler = luigi.scheduler.Scheduler()
+        self.scheduler.remove_worker = lambda _: None  # don't remove workers after run
 
     def tearDown(self):
         pass
