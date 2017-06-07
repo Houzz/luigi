@@ -1445,7 +1445,7 @@ class Scheduler(object):
                 if dep in blockable_ids:
                     reverse_deps[dep].append(task.id)
 
-        reachables = list(filter(lambda (num_blocked, _1, _2): num_blocked >= min_blocked, (
+        reachables = list(filter(lambda blocked_tuple: blocked_tuple[0] >= min_blocked, (
             (
                 _reachable_sum(task.id, reverse_deps, weights),
                 task.id,
