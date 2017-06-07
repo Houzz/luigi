@@ -2,14 +2,14 @@
    :alt: Luigi Logo
    :align: center
 
-.. image:: https://img.shields.io/travis/houzz/luigi/master.svg?style=flat
-    :target: https://travis-ci.org/houzz/luigi
+.. image:: https://img.shields.io/travis/Houzz/luigi/master.svg?style=flat
+    :target: https://travis-ci.org/Houzz/luigi
 
-.. image:: https://img.shields.io/codecov/c/github/houzz/luigi/master.svg?style=flat
-    :target: https://codecov.io/gh/houzz/luigi?branch=master
+.. image:: https://img.shields.io/codecov/c/github/Houzz/luigi/master.svg?style=flat
+    :target: https://codecov.io/gh/Houzz/luigi?branch=master
 
-.. image:: https://landscape.io/github/houzz/luigi/master/landscape.svg?style=flat
-   :target: https://landscape.io/github/houzz/luigi/master
+.. image:: https://landscape.io/github/Houzz/luigi/master/landscape.svg?style=flat
+   :target: https://landscape.io/github/Houzz/luigi/master
 
 .. image:: https://img.shields.io/pypi/l/luigi.svg?style=flat
    :target: https://pypi.python.org/pypi/luigi
