@@ -19,7 +19,6 @@ Define the centralized register of all :class:`~luigi.task.Task` classes.
 """
 
 import abc
-from collections import OrderedDict
 from contextlib import contextmanager
 
 from luigi import six

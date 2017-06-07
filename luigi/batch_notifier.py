@@ -195,7 +195,7 @@ class BatchNotifier(object):
                     scheduling_counts=self._scheduling_fail_counts[owner],
                     fail_expls=self._fail_expls[owner],
                     owner=owner,
-            )
+                )
         finally:
             self._update_next_send()
             self._fail_counts.clear()

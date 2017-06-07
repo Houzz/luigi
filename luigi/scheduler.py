@@ -959,18 +959,6 @@ class Scheduler(object):
         self._state.disable_workers(set(self._state.get_worker_ids()))
 
     @rpc_method()
-    def pause(self):
-        self._paused = True
-
-    @rpc_method()
-    def unpause(self):
-        self._paused = False
-
-    @rpc_method()
-    def is_paused(self):
-        return {'paused': self._paused}
-
-    @rpc_method()
     def set_worker_processes(self, worker, n):
         self._state.get_worker(worker).add_rpc_message('set_worker_processes', n=n)
 

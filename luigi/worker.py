@@ -57,7 +57,6 @@ from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, UNKNOWN, Scheduler,
 from luigi.scheduler import WORKER_STATE_ACTIVE, WORKER_STATE_DISABLED
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config, Parameter
-from luigi.task_register import TaskClassException
 from luigi.task_status import RUNNING
 from luigi.parameter import FloatParameter, IntParameter, BoolParameter, ListParameter
 

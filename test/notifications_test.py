@@ -290,8 +290,6 @@ class TestSMTPEmail(unittest.TestCase, NotificationFixture):
                 self.assertEqual(SMTP.sendemail.called, False)
 
 
-
-
 class TestSendgridEmail(unittest.TestCase, NotificationFixture):
     """
     Tests sending Sendgrid email.
