@@ -546,7 +546,7 @@ function visualiserApp(luigi) {
             }
 
             if (fragmentQuery.order) {
-                dt.order = [fragmentQuery.order.split(',')];
+                dt.order([fragmentQuery.order.split(',')]);
             }
             dt.draw();
             switchTab("taskList");
