@@ -1036,7 +1036,7 @@ function visualiserApp(luigi) {
         return $('.resource-box.in').toArray().map(function (val) { return val.dataset.resource; });
     }
 
-    function expandResources(resources) {        
+    function expandResources(resources) {
         if (resources === undefined) {
             resources = [];
         } else {
