@@ -172,7 +172,7 @@ class SparkSubmitTask(ExternalProgramTask):
         command = [self.spark_submit]
         command += self._text_arg('--master', self.master)
         command += self._text_arg('--deploy-mode', self.deploy_mode)
-        command += self._text_arg('--name', self.name)
+        command += self._text_arg('--name', "{}".format(self))
         command += self._text_arg('--class', self.entry_class)
         command += self._list_arg('--jars', self.jars)
         command += self._list_arg('--packages', self.packages)
