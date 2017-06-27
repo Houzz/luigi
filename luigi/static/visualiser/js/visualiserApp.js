@@ -1440,7 +1440,7 @@ function visualiserApp(luigi) {
                 }
 
                 if (currentFilter.taskCategory.length > 0) {
-                    state.statuses = currentFilter.taskCategory;
+                    state.statuses = JSON.stringify(currentFilter.taskCategory);
                 } else {
                     delete state.statuses;
                 }
