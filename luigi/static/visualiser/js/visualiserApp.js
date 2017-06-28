@@ -11,10 +11,10 @@ function visualiserApp(luigi) {
         tableFilter: ""
     };
     var taskIcons = {
-        PENDING: 'pause',
+        PENDING: 'check-square-o',
         RUNNING: 'play',
-        DONE: 'check',
-        FAILED: 'times',
+        DONE: 'clock-o',
+        FAILED: 'hand-stop-o',
         UPSTREAM_FAILED: 'warning',
         DISABLED: 'minus-circle',
         UPSTREAM_DISABLED: 'warning'
@@ -92,20 +92,20 @@ function visualiserApp(luigi) {
         var iconColor;
         switch (category) {
             case 'PENDING':
-                iconClass = 'fa-pause';
-                iconColor = 'yellow';
+                iconClass = 'fa-check-square-o';
+                iconColor = 'aqua';
                 break;
             case 'RUNNING':
                 iconClass = 'fa-play';
                 iconColor = 'aqua';
                 break;
             case 'DONE':
-                iconClass = 'fa-check';
+                iconClass = 'fa-clock-o';
                 iconColor = 'green';
                 break;
             case 'FAILED':
-                iconClass = 'fa-times';
-                iconColor = 'red';
+                iconClass = 'fa-hand-stop-o';
+                iconColor = 'yellow';
                 break;
             case 'DISABLED':
                 iconClass = 'fa-minus-circle';
@@ -143,7 +143,7 @@ function visualiserApp(luigi) {
         // Searched content will be <icon> <category>.
         var pattern = '\\b(' + activeBoxes.join('|') + ')\\b';
         currentFilter.taskCategory = activeBoxes;
-        dt.column(0).search(pattern, regex=true).draw();
+        dt.column(3).search(pattern, regex=true).draw();
     }
 
     function filterByTaskFamily(taskFamily, dt) {
@@ -762,10 +762,19 @@ function visualiserApp(luigi) {
         var htmls = [];
         for (var key in params) {
             htmls.push('<span class="param-name">' + key +
-                '</span>=<span class="param-value">' + params[key] + '</span>');
+                '</span>: <span class="param-value">' + params[key] + '</span>');
         }
-        return htmls.join(', ');
+        return htmls.sort().join('<br>');
     }
+
+    var nameMap = {
+        'PENDING': 'NORMAL',
+        'FAILED': 'MANUAL',
+        'DONE': 'DELAYED',
+        'DISABLED': 'DISABLED',
+        'UPSTREAM_DISABLED': 'UPSTREAM_DISABLED',
+    }
+
 
     $(document).ready(function() {
         loadTemplates();
@@ -780,12 +789,7 @@ function visualiserApp(luigi) {
                 search: 'Filter table:'
             },
             columns: [
-                {
-                    data: 'category',
-                    render: function (data, type, row) {
-                        return taskCategoryIcon(data)+' '+data;
-                    }
-                },
+                {data: 'taskId'},
                 {data: 'taskName'},
                 {
                     data: 'taskParams',
@@ -799,15 +803,21 @@ function visualiserApp(luigi) {
                         }
                     }
                 },
-                {data: 'priority', width: "2em"},
-                {data: 'displayTime'},
+                {
+                    data: 'category',
+                    render: function (data, type, row) {
+                        return taskCategoryIcon(data)+' '+nameMap[data];
+                    },
+                    width: "10em"
+                },
                 {
                     className: 'details-control',
                     orderable: false,
                     data: null,
                     render: function (data, type, row) {
                         return Mustache.render(templates['actionsTemplate'], row);
-                    }
+                    },
+                    width: "2em"
                 }
             ]
         });

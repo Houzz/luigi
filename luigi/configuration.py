@@ -43,10 +43,7 @@ class LuigiConfigParser(ConfigParser):
     NO_DEFAULT = object()
     _instance = None
     _config_paths = [
-        '/etc/luigi/client.cfg',  # Deprecated old-style global luigi config
-        '/etc/luigi/luigi.cfg',
-        'client.cfg',  # Deprecated old-style local luigi config
-        'luigi.cfg',
+        '/etc/luigi/luigi_config_viz.cfg',
     ]
     if 'LUIGI_CONFIG_PATH' in os.environ:
         config_file = os.environ['LUIGI_CONFIG_PATH']

@@ -1,12 +1,18 @@
 Graph = (function() {
     var statusColors = {
-        "FAILED":"#DD0000",
-        "RUNNING":"#0044DD",
-        "PENDING":"#EEBB00",
+        "PENDING":"#00c0ef",
+        "FAILED":"#EEBB00",
         "DONE":"#00DD00",
         "DISABLED":"#808080",
-        "UNKNOWN":"#000000",
-        "TRUNCATED":"#FF00FF"
+        "UPSTREAM_DISABLED":"#C0C0C0",
+    }
+
+    var nameMap = {
+        'PENDING': 'Normal',
+        'FAILED': 'Manual Trigger',
+        'DONE': 'Delayed',
+        'DISABLED': 'Disabled',
+        'UPSTREAM_DISABLED': 'Upstream Disabled',
     }
 
     /* Line height for items in task status legend */
@@ -203,7 +209,7 @@ Graph = (function() {
             $(svgLink(node.trackingUrl))
                 .append(
                     $(svgElement("text"))
-                    .text(node.name)
+                    .text(node.taskId)
                     .attr("y", 3))
                 .attr("class","graph-node-a")
                 .attr("data-task-status", node.status)
@@ -217,7 +223,7 @@ Graph = (function() {
                     trigger: 'hover',
                     container: 'body',
                     html: true,
-                    placement: 'top',
+                    placement: 'right',
                     content: content
                 });
         });
@@ -230,7 +236,7 @@ Graph = (function() {
         $(svgElement("rect"))
             .attr("x", -1)
             .attr("y", -1)
-            .attr("width", "100px")
+            .attr("width", "135px")
             .attr("height", legendMaxY + "px")
             .attr("fill", "#FFF")
             .attr("stroke", "#DDD")
@@ -247,7 +253,7 @@ Graph = (function() {
                 .appendTo(legend)
 
             $(svgElement("text"))
-                .text(key.charAt(0).toUpperCase() + key.substring(1).toLowerCase())
+                .text(nameMap[key])
                 .attr("x", legendLineHeight + 14)
                 .attr("y", legendLineHeight+(x*legendLineHeight))
                 .appendTo(legend);

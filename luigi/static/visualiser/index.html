@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>Luigi Task Visualiser</title>
+        <title>Pipeline Config Visualizer</title>
         <script src="lib/jquery-1.10.0.min.js"></script>
         <link href="lib/bootstrap3/css/bootstrap.min.css" rel="stylesheet">
         <link href="lib/bootstrap3/css/bootstrap-theme.min.css" rel="stylesheet">
         <script src="lib/bootstrap3/js/bootstrap.min.js"></script>
         <link rel="stylesheet" href="css/tipsy.css">
         <link href="lib/AdminLTE/css/AdminLTE.min.css" rel="stylesheet"/>
-        <link href="css/font-awesome.min.css" rel="stylesheet"/>
-        <link href="lib/AdminLTE/css/skin-green-light.min.css" rel="stylesheet"/>
+        <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.5.0/css/font-awesome.min.css" rel="stylesheet"/>
+        <link href="lib/AdminLTE/css/skin-purple.min.css" rel="stylesheet"/>
         <link href="lib/datatables/css/jquery.dataTables.min.css" rel="stylesheet"/>
         <script src="lib/d3/d3.min.js" charset="utf-8"></script>
         <script src="lib/d3/dagre-d3.js"></script>
@@ -225,8 +225,6 @@
         <script type="text/template" name="actionsTemplate">
             <div class="span2">
                 <a href="#{{encodedTaskId}}" class="btn btn-info btn-xs" title="View graph" data-toggle="tooltip"><i class="fa fa-sitemap"></i></a>
-                {{#error}}<button class="btn btn-danger btn-xs showError" title="Show error" data-toggle="tooltip"><i class="fa fa-bug"></i></button>{{/error}}
-                {{#re_enable}}<a class="btn btn-warning btn-xs re-enable-button" title="Re-enable" data-toggle="tooltip" data-task-id="{{taskId}}">Re-enable</a>{{/re_enable}}
                 {{#trackingUrl}}<a target="_blank" href="{{trackingUrl}}" class="btn btn-primary btn-xs" title="Track Progress" data-toggle="tooltip"><i class="fa fa-eye"></i></a>{{/trackingUrl}}
             </div>
         </script>
@@ -302,7 +300,7 @@
 
         <script type="text/template" name="sidebarTemplate">
             <ul class="sidebar-menu">
-                <li class="header">TASK FAMILIES</li>
+                <li class="header">CONFIG CLASSES</li>
                 {{#tasks}}
                 <li data-task="{{name}}"><a href="#"><span class="badge">{{count}}</span> {{name}}</a>
                 </li>
@@ -329,13 +327,13 @@
         </script>
 
     </head>
-    <body class="skin-green-light fixed">
+    <body class="skin-purple fixed">
         <div class="modal fade" id="errorModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
         </div>
 
         <div class="wrapper">
             <div class="main-header">
-                <a class="logo" href="#">Luigi Task Status</a>
+                <a class="logo" href="#">Pipeline Config</a>
                 <nav class="navbar navbar-static-top">
                     <a href="#" class="sidebar-toggle" data-toggle="offcanvas" role="button">
                         <span class="sr-only">Toggle navigation</span>
@@ -353,7 +351,6 @@
                             <ul class="nav navbar-nav">
                                 <li><a href="#" data-tab="taskList">Task List</a></li>
                                 <li><a href="#g" data-tab="dependencyGraph">Dependency Graph</a></li>
-                                <li><a href="#w" data-tab="workerList">Workers</a></li>
                             </ul>
                         </div>
                     </div>
@@ -372,60 +369,31 @@
             <section id="taskList" class="container-fluid tab-pane active">
                 <div class="row">
                   <div class="col-md-3 col-sm-6 col-xs-12">
-                    <div class="info-box status-info" data-color='yellow' data-category='PENDING' id="PENDING_info">
-                      <span class="info-box-icon bg-yellow"><i class="fa fa-spinner fa-pulse"></i></span>
-                      <div class="info-box-content">
-                        <span class="info-box-text">Pending Tasks</span>
-                        <span class="info-box-number">?</span>
-                      </div><!-- /.info-box-content -->
-                    </div><!-- /.info-box -->
-                  </div>
-
-                  <div class="col-md-3 col-sm-6 col-xs-12">
-                    <div class="info-box status-info" data-color='aqua' data-category='RUNNING' id="RUNNING_info">
+                    <div class="info-box status-info" data-color='aqua' data-category='NORMAL' id="PENDING_info">
                       <span class="info-box-icon bg-aqua"><i class="fa fa-spinner fa-pulse"></i></span>
                       <div class="info-box-content">
-                        <span class="info-box-text">Running Tasks</span>
+                        <span class="info-box-text">Normal</span>
                         <span class="info-box-number">?</span>
                       </div><!-- /.info-box-content -->
                     </div><!-- /.info-box -->
                   </div>
 
                   <div class="col-md-3 col-sm-6 col-xs-12">
-                    <div class="info-box status-info" data-color='green' data-category='DONE' id="DONE_info">
+                    <div class="info-box status-info" data-color='green' data-category='DELAYED' id="DONE_info">
                       <span class="info-box-icon bg-green"><i class="fa fa-spinner fa-pulse"></i></span>
                       <div class="info-box-content">
-                        <span class="info-box-text">Done Tasks</span>
+                        <span class="info-box-text">Delayed Dependencies</span>
                         <span class="info-box-number">?</span>
                       </div><!-- /.info-box-content -->
                     </div><!-- /.info-box -->
                   </div>
 
-                  <div class="col-md-3 col-sm-6 col-xs-12">
-                    <div class="info-box status-info" data-color='red' data-category='FAILED' id="FAILED_info">
-                      <span class="info-box-icon bg-red"><i class="fa fa-spinner fa-pulse"></i></span>
-                      <div class="info-box-content">
-                        <span class="info-box-text">Failed Tasks</span>
-                        <span class="info-box-number">?</span>
-                      </div><!-- /.info-box-content -->
-                    </div><!-- /.info-box -->
-                  </div>
-
-                  <div class="col-md-3 col-sm-6 col-xs-12">
-                    <div class="info-box status-info" data-color='maroon' data-category='UPSTREAM_FAILED' id="UPSTREAM_FAILED_info">
-                      <span class="info-box-icon bg-maroon"><i class="fa fa-spinner fa-pulse"></i></span>
-                      <div class="info-box-content">
-                        <span class="info-box-text">Upstream Failure</span>
-                        <span class="info-box-number">?</span>
-                      </div><!-- /.info-box-content -->
-                    </div><!-- /.info-box -->
-                  </div>
 
                   <div class="col-md-3 col-sm-6 col-xs-12">
                     <div class="info-box status-info" data-color='gray' data-category='DISABLED' id="DISABLED_info">
                       <span class="info-box-icon bg-gray"><i class="fa fa-spinner fa-pulse"></i></span>
                       <div class="info-box-content">
-                        <span class="info-box-text">Disabled Tasks</span>
+                        <span class="info-box-text">Disabled</span>
                         <span class="info-box-number">?</span>
                       </div><!-- /.info-box-content -->
                     </div><!-- /.info-box -->
@@ -436,6 +404,18 @@
                       <span class="info-box-icon bg-gray"><i class="fa fa-spinner fa-pulse"></i></span>
                       <div class="info-box-content">
                         <span class="info-box-text">Upstream Disabled</span>
+                        <span class="info-box-number">?</span>
+                      </div><!-- /.info-box-content -->
+                    </div><!-- /.info-box -->
+                  </div>
+                </div>
+
+                <div class="row">
+                  <div class="col-md-3 col-sm-6 col-xs-12">
+                    <div class="info-box status-info" data-color='yellow' data-category='MANUAL' id="FAILED_info">
+                      <span class="info-box-icon bg-yellow"><i class="fa fa-spinner fa-pulse"></i></span>
+                      <div class="info-box-content">
+                        <span class="info-box-text">Manual Trigger</span>
                         <span class="info-box-number">?</span>
                       </div><!-- /.info-box-content -->
                     </div><!-- /.info-box -->
@@ -452,12 +432,11 @@
 
                 <table id="taskTable" class="table table-striped">
                   <thead>
-                    <th><!-- Category --></th>
                     <th>Name</th>
-                    <th>Details</th>
-                    <th>Priority</th>
-                    <th>Time</th>
-                    <th>Actions</th>
+                    <th>Class</th>
+                    <th>Config</th>
+                    <th>Scheduling Status</th>
+                    <th>Graph</th>
                   </thead>
                 </table>
 

@@ -618,7 +618,7 @@ class CentralPlannerScheduler(Scheduler):
             task.family = family
         if not getattr(task, 'module', None):
             task.module = module
-        if not task.params:
+        if params or not task.params:
             task.params = _get_default(params, {})
 
         if tracking_url is not None or task.status != RUNNING:
@@ -855,12 +855,21 @@ class CentralPlannerScheduler(Scheduler):
                         upstream_status.append('')  # to handle empty list
                         status = max(upstream_status, key=UPSTREAM_SEVERITY_KEY)
                         upstream_status_table[dep_id] = status
-            return upstream_status_table[dep_id]
+            return upstream_status_table.get(dep_id, UNKNOWN)
 
-    def _serialize_task(self, task_id, include_deps=True, deps=None):
+    def _serialize_task(self, task_id, include_deps=True, deps=None, upstream_status_table=None):
         task = self._state.get_task(task_id)
+
+        if upstream_status_table is not None:
+            upstream_status = self._upstream_status(task_id, upstream_status_table)
+        else:
+            upstream_status = None
+        if task.status == PENDING and upstream_status == UPSTREAM_DISABLED:
+            status = UPSTREAM_DISABLED
+        else:
+            status = task.status
         ret = {
-            'status': task.status,
+            'status': status,
             'workers': list(task.workers),
             'worker_running': task.worker_running,
             'time_running': getattr(task, "time_running", None),
@@ -907,6 +916,7 @@ class CentralPlannerScheduler(Scheduler):
         seen.add(root_task_id)
         serialized = {}
         queue = collections.deque([root_task_id])
+        upstream_status_table = {}
         while queue:
             task_id = queue.popleft()
 
@@ -929,7 +939,8 @@ class CentralPlannerScheduler(Scheduler):
                 }
             else:
                 deps = dep_func(task)
-                serialized[task_id] = self._serialize_task(task_id, deps=deps)
+                serialized[task_id] = self._serialize_task(
+                    task_id, deps=deps, upstream_status_table=upstream_status_table)
                 for dep in sorted(deps):
                     if dep not in seen:
                         seen.add(dep)
