@@ -1228,10 +1228,9 @@ function visualiserApp(luigi) {
                         return taskCategoryIcon(data) + ' ' + data;
                     }
                 },
-                {data: 'taskName'},
+                {data: 'taskName', width: '20em'},
                 {
                     data: 'taskParams',
-                    width: '12em',
                     render: function(data, type, row) {
                         var params = JSON.parse(data);
                         if (row.resources !== '{}') {
