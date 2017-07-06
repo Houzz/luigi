@@ -207,3 +207,7 @@ span.status-icon {
 #resourceList i.resources-collapse {
   padding-left: 10px;
 }
+
+.params {
+  word-break: break-all;
+}
