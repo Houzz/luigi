@@ -1223,7 +1223,7 @@ function visualiserApp(luigi) {
             columns: [
                 {
                     data: 'category',
-                    width: '10em',
+                    width: '12em',
                     render: function (data, type, row) {
                         return taskCategoryIcon(data) + ' ' + data;
                     }
