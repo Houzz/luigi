@@ -211,3 +211,7 @@ span.status-icon {
 .params {
   word-break: break-all;
 }
+
+.display-name {
+  word-break: break-all;
+}
