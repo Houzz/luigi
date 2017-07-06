@@ -1223,12 +1223,12 @@ function visualiserApp(luigi) {
             columns: [
                 {
                     data: 'category',
-                    width: '12em',
+                    width: '10em',
                     render: function (data, type, row) {
                         return taskCategoryIcon(data) + ' ' + data;
                     }
                 },
-                {data: 'taskName', width: '20em'},
+                {data: 'taskName', width: '12em'},
                 {
                     data: 'taskParams',
                     render: function(data, type, row) {
