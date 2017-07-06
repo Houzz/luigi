@@ -1231,7 +1231,7 @@ function visualiserApp(luigi) {
                 {data: 'taskName'},
                 {
                     data: 'taskParams',
-                    width: '20em',
+                    width: '12em',
                     render: function(data, type, row) {
                         var params = JSON.parse(data);
                         if (row.resources !== '{}') {
