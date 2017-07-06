@@ -964,9 +964,10 @@ function visualiserApp(luigi) {
     function renderParams(params) {
         var htmls = [];
         for (var key in params) {
-            htmls.push(key + '=' + params[key]);
+            htmls.push('<span class="param-name">' + key +
+                '</span>: <span class="param-value">' + params[key] + '</span>');
         }
-        return htmls.join(', ');
+        return htmls.sort().join('<br>');
     }
 
     /**
