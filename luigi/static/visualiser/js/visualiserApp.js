@@ -964,8 +964,7 @@ function visualiserApp(luigi) {
     function renderParams(params) {
         var htmls = [];
         for (var key in params) {
-            htmls.push('<span class="param-name">' + key +
-                '</span>: <span class="param-value">' + params[key] + '</span>');
+            htmls.push(key + '=' + params[key]);
         }
         return htmls.sort().join('<br>');
     }
