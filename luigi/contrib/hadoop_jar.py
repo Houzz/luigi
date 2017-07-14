@@ -121,8 +121,10 @@ class HadoopJarJobRunner(luigi.contrib.hadoop.JobRunner):
 
         luigi.contrib.hadoop.run_and_track_hadoop_job(arglist, job.set_tracking_url)
 
-        for a, b in tmp_files:
-            a.move(b)
+        for tmp_target, final_path in tmp_files:
+            if luigi.contrib.hdfs.exists(final_path):
+                luigi.contrib.hdfs.remove(final_path)
+            tmp_target.move(final_path)
 
 
 class HadoopJarJobTask(luigi.contrib.hadoop.BaseHadoopJobTask):
