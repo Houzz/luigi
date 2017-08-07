@@ -1023,7 +1023,7 @@ class Worker(object):
             process = self._running_tasks.pop(task_id)
             logger.debug("pid {} finished running".format(process.pid))
             if process.is_alive():
-                logger.debug("pid {} still alive, killing")
+                logger.debug("pid {} still alive, killing".format(process.pid))
                 process.terminate()
 
             # re-add task to reschedule missing dependencies
