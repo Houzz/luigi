@@ -1020,7 +1020,11 @@ class Worker(object):
                            assistant=self._assistant,
                            retry_policy_dict=_get_retry_policy_dict(task))
 
-            self._running_tasks.pop(task_id)
+            process = self._running_tasks.pop(task_id)
+            logger.debug("pid {} finished running".format(process.pid))
+            if process.is_alive():
+                logger.debug("pid {} still alive, killing")
+                process.terminate()
 
             # re-add task to reschedule missing dependencies
             if missing:
