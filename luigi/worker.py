@@ -1022,6 +1022,7 @@ class Worker(object):
 
             process = self._running_tasks.pop(task_id)
             logger.debug("pid {} finished running".format(process.pid))
+            process.join(10)
             if process.is_alive():
                 logger.debug("pid {} still alive, killing".format(process.pid))
                 process.terminate()
