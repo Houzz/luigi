@@ -1067,7 +1067,10 @@ class Scheduler(object):
                 continue
             num_pending += 1
             num_unique_pending += int(len(task.workers) == 1)
-            num_pending_last_scheduled += int(task.workers.peek(last=True) == worker_id)
+            try:
+                num_pending_last_scheduled += int(task.workers.peek(last=True) == worker_id)
+            except KeyError:
+                pass
 
         return {
             'n_pending_tasks': num_pending,
