@@ -1275,7 +1275,7 @@ class Scheduler(object):
                                       for a_task_id in dep.deps),
                                      key=UPSTREAM_SEVERITY_KEY)
                         upstream_status_table[dep_id] = status
-            return upstream_status_table[dep_id]
+            return upstream_status_table.get(dep_id)
 
     def _serialize_task(self, task_id, include_deps=True, deps=None):
         task = self._state.get_task(task_id)
