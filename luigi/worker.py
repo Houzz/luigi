@@ -417,9 +417,11 @@ class KeepAliveThread(threading.Thread):
                     logger.warning('Failed pinging scheduler')
 
                 # handle rpc messages
-                if response:
-                    for message in response["rpc_messages"]:
+                if response and 'rpc_messages' in response:
+                    for message in response.get("rpc_messages", []):
                         self._rpc_message_callback(message)
+                elif response:
+                    logger.error('Received ping response without rpc_messages: {}'.format(response))
 
 
 def rpc_message_callback(fn):
