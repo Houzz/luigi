@@ -1286,7 +1286,7 @@ class Scheduler(object):
             if dep_id in upstream_status_table:
                 return upstream_status_table[dep_id]
             else:
-                logger.error("task not found in upstream status table: {}".format(repr(dep))
+                logger.error("task not found in upstream status table: {}".format(repr(dep)))
 
     def _serialize_task(self, task_id, include_deps=True, deps=None):
         task = self._state.get_task(task_id)
