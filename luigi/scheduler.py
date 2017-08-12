@@ -1072,7 +1072,7 @@ class Scheduler(object):
             try:
                 num_pending_last_scheduled += int(task.workers.peek(last=True) == worker_id)
             except KeyError:
-                pass
+                logger.error("Tried to count workerless task {}".format(repr(task)))
 
         return {
             'n_pending_tasks': num_pending,
@@ -1280,7 +1280,13 @@ class Scheduler(object):
                                       for a_task_id in dep.deps),
                                      key=UPSTREAM_SEVERITY_KEY)
                         upstream_status_table[dep_id] = status
-            return upstream_status_table.get(dep_id)
+            if dep_id != task_id:
+                logger.error("dep_id not equal to task_id in upstream_status! ({}, {})".format(
+                    dep_id, task_id))
+            if dep_id in upstream_status_table:
+                return upstream_status_table[dep_id]
+            else:
+                logger.error("task not found in upstream status table: {}".format(repr(dep))
 
     def _serialize_task(self, task_id, include_deps=True, deps=None):
         task = self._state.get_task(task_id)
