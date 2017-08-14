@@ -540,7 +540,7 @@ class SimpleTaskState(object):
         if new_status == DISABLED and task.status in (RUNNING, BATCH_RUNNING):
             return
 
-        remove_on_failure = task.batch_id is not None and not task.batchable
+        remove_on_finish = task.batch_id is not None and not task.batchable
 
         if task.status == DISABLED:
             if new_status == DONE:
@@ -575,6 +575,8 @@ class SimpleTaskState(object):
             task.scheduler_disable_time = None
 
         if new_status != task.status:
+            if task.status == RUNNING and remove_on_finish:
+                task.remove = time.time()
             self._status_tasks[task.status].pop(task.id)
             self._status_tasks[new_status][task.id] = task
             task.status = new_status
@@ -587,8 +589,6 @@ class SimpleTaskState(object):
 
         if new_status == FAILED:
             task.retry = time.time() + config.retry_delay
-            if remove_on_failure:
-                task.remove = time.time()
 
     def fail_dead_worker_task(self, task, config, assistants):
         # If a running worker disconnects, tag all its jobs as FAILED and subject it to the same retry logic

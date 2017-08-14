@@ -381,7 +381,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertEqual({'A_1_2'}, set(self.sch.task_list('RUNNING', '').keys()))
 
         self.sch.add_task(worker=WORKER, task_id='A_1_2', status=DONE)
-        self.assertEqual({'A_1', 'A_2', 'A_1_2'}, set(self.sch.task_list(DONE, '').keys()))
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(DONE, '').keys()))
 
     def test_set_batch_runner_max(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
@@ -477,6 +477,22 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.prune()
         self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(FAILED, '').keys()))
 
+    def test_batch_done_remove_runner(self):
+        self.setTime(1)
+        self._start_simple_batch(mark_running=True)
+        self.sch.add_task(worker=WORKER, task_id='A_1_2', status=DONE)
+        self.setTime(601)
+        self.sch.prune()
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(DONE, '').keys()))
+
+    def test_max_batch_done_do_not_remove_runner(self):
+        self.setTime(1)
+        self._start_simple_batch(mark_running=True, use_max=True)
+        self.sch.add_task(worker=WORKER, task_id='A_2', status=DONE)
+        self.setTime(601)
+        self.sch.prune()
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(DONE, '').keys()))
+
     def test_batch_update_status(self):
         self._start_simple_batch()
         self.sch.set_task_status_message('A_1_2', 'test message')
@@ -494,7 +510,7 @@ class SchedulerApiTest(unittest.TestCase):
     def test_finish_batch(self):
         self._start_simple_batch()
         self.sch.add_task(worker=WORKER, task_id='A_1_2', status=DONE)
-        self.assertEqual({'A_1', 'A_2', 'A_1_2'}, set(self.sch.task_list(DONE, '').keys()))
+        self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(DONE, '').keys()))
 
     def test_reschedule_max_batch(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
