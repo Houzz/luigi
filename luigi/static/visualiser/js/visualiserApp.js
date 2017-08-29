@@ -328,7 +328,11 @@ function visualiserApp(luigi) {
     }
 
     function processResource(resource) {
-        resource.tasks = resource.running.map(taskToDisplayTask);
+        resource.tasks = resource.running.map(function(task) {
+            var task_dict = taskToDisplayTask(task);
+            task_dict['resource_count'] = task.resources[resource.name];
+            return task_dict;
+        });
         resource.percent_used = 100 * resource.num_used / resource.num_total;
         if (resource.percent_used >= 100) {
             resource.bar_type = 'danger';
