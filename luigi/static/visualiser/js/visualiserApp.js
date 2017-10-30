@@ -1275,6 +1275,7 @@ function visualiserApp(luigi) {
             }
         });
 
+        processHashChange();
         updateTasks();
         bindListEvents();
 
