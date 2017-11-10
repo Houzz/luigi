@@ -708,8 +708,7 @@ class Worker(object):
                 self._scheduler.add_task_batcher(
                     worker=self._id,
                     task_family=family,
-                    batched_args=batch_param_names,
-                    max_batch_size=task_class.max_batch_size,
+                    batched_args=batch_param_names
                 )
 
     def _add(self, task, is_complete, is_first=False):
@@ -797,6 +796,7 @@ class Worker(object):
             family=task.task_family,
             module=task.task_module,
             batchable=task.batchable,
+            max_batch_size = task.max_batch_size,
             retry_policy_dict=_get_retry_policy_dict(task),
         )
 

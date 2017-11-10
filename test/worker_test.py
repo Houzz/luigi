@@ -715,7 +715,7 @@ class WorkerTest(LuigiTestCase):
             self.assertTrue(task.complete())
             self.assertTrue(task.has_run)
 
-    def test_run_batch_job_limit_batch_size(self):
+    def test_run_batch_job_same_limit_batch_size(self):
         completed = set()
         runs = []
 
@@ -741,6 +741,38 @@ class WorkerTest(LuigiTestCase):
             self.assertTrue(task.complete())
 
         self.assertEqual(3, len(runs))
+
+    def test_run_batch_job_different_limit_batch_size(self):
+        completed = set()
+        runs = []
+
+        class CsvLimitedBatchJob(luigi.Task):
+            value = luigi.parameter.Parameter(batch_method=','.join)
+            has_run = False
+
+            @property
+            def max_batch_size(self):
+                # if value is even, max_batch_size = 3
+                # if value is odd, max_batch_size = 4
+                return int(self.value) % 2 + 3
+
+            def run(self):
+                completed.update(self.value.split(','))
+                runs.append(self)
+
+            def complete(self):
+                return all(value in completed for value in self.value.split(','))
+
+        tasks = [CsvLimitedBatchJob(str(i)) for i in range(13)]
+        for task in tasks:
+            self.assertTrue(self.w.add(task))
+        self.assertTrue(self.w.run())
+
+        for task in tasks:
+            self.assertTrue(task.complete())
+
+        # batch: [0,2,4] [6,8,10] [12] [1,3,5,7] [9,11]
+        self.assertEqual(5, len(runs))
 
     def test_run_batch_job_with_delegate(self):
         class DelegateRunnerTask(luigi.Task):
