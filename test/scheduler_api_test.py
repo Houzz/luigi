@@ -260,15 +260,15 @@ class SchedulerApiTest(unittest.TestCase):
 
     def test_get_work_limited_batch_size(self):
         self.sch.add_task_batcher(
-            worker=WORKER, task_family='A', batched_args=['a'], max_batch_size=2)
+            worker=WORKER, task_family='A', batched_args=['a'])
         self.sch.add_task(
             worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True,
-            priority=1)
+            priority=1, max_batch_size=2)
         self.sch.add_task(
-            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True)
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True, max_batch_size=2)
         self.sch.add_task(
             worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=True,
-            priority=2)
+            priority=2, max_batch_size=2)
 
         response = self.sch.get_work(worker=WORKER)
         self.assertIsNone(response['task_id'])
@@ -277,6 +277,43 @@ class SchedulerApiTest(unittest.TestCase):
 
         response2 = self.sch.get_work(worker=WORKER)
         self.assertEqual('A_a_2', response2['task_id'])
+
+    def test_get_work_limited_different_batch_size(self):
+        self.sch.add_task_batcher(
+            worker=WORKER, task_family='A', batched_args=['a'])
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_6', family='A', params={'a': '6'}, batchable=True,
+            priority=0, max_batch_size=1)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_5', family='A', params={'a': '5'}, batchable=True,
+            priority=1, max_batch_size=3)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_4', family='A', params={'a': '4'}, batchable=True,
+            priority=2, max_batch_size=2)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_3', family='A', params={'a': '3'}, batchable=True,
+            priority=3, max_batch_size=3)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_2', family='A', params={'a': '2'}, batchable=True,
+            priority=4, max_batch_size=2)
+        self.sch.add_task(
+            worker=WORKER, task_id='A_a_1', family='A', params={'a': '1'}, batchable=True,
+            priority=5, max_batch_size=3)
+
+        response = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response['task_id'])
+        self.assertEqual({'a': ['1', '3', '5']}, response['task_params'])
+        self.assertEqual('A', response['task_family'])
+
+        response2 = self.sch.get_work(worker=WORKER)
+        self.assertIsNone(response2['task_id'])
+        self.assertEqual({'a': ['2', '4']}, response2['task_params'])
+        self.assertEqual('A', response2['task_family'])
+
+        response3 = self.sch.get_work(worker=WORKER)
+        self.assertEqual('A_a_6', response3['task_id'])
+        self.assertEqual({'a': '6'}, response3['task_params'])
+        self.assertEqual('A', response3['task_family'])
 
     def test_get_work_do_not_batch_non_batchable_item(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
@@ -1413,10 +1450,10 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertEqual(2, len(self.sch.task_list(RUNNING, '')))
 
     def test_assistant_has_different_resources_than_scheduled_max_task_id(self):
-        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'], max_batch_size=2)
-        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1)
-        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2)
-        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3)
+        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3, max_batch_size=2)
 
         result = self.sch.get_work(worker='assistant', assistant=True, assistant_groups=[])
         self.assertEqual({'A3', 'A2'}, set(result['batch_task_ids']))
@@ -1426,10 +1463,10 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_assistant_has_different_resources_than_scheduled_new_task_id(self):
-        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'], max_batch_size=2)
-        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1)
-        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2)
-        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3)
+        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3, max_batch_size=2)
 
         result = self.sch.get_work(worker='assistant', assistant=True, assistant_groups=[])
         self.assertEqual({'A3', 'A2'}, set(result['batch_task_ids']))
@@ -1439,30 +1476,30 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_assistant_has_different_resources_than_scheduled_max_task_id_during_scheduling(self):
-        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'], max_batch_size=2)
-        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1)
-        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2)
-        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3)
+        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3, max_batch_size=2)
 
         result = self.sch.get_work(worker='assistant', assistant=True, assistant_groups=[])
         self.assertEqual({'A3', 'A2'}, set(result['batch_task_ids']))
-        self.sch.add_task(worker=WORKER, task_id='A2', resources={'b': 1}, family='A', params={'a': '2'}, batchable=True, priority=2)
-        self.sch.add_task(worker=WORKER, task_id='A3', resources={'b': 1}, family='A', params={'a': '3'}, batchable=True, priority=3)
+        self.sch.add_task(worker=WORKER, task_id='A2', resources={'b': 1}, family='A', params={'a': '2'}, batchable=True, priority=2, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A3', resources={'b': 1}, family='A', params={'a': '3'}, batchable=True, priority=3, max_batch_size=2)
         self.sch.add_task(worker='assistant', task_id='A3', status=RUNNING, batch_id=result['batch_id'], resources={'b': 1})
 
         # the statuses changed, but only after they wree batch running
         self.assertIsNone(self.sch.get_work(worker=WORKER)['task_id'])
 
     def test_assistant_has_different_resources_than_scheduled_new_task_id_during_scheduling(self):
-        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'], max_batch_size=2)
-        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1)
-        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2)
-        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3)
+        self.sch.add_task_batcher(worker='assistant', task_family='A', batched_args=['a'])
+        self.sch.add_task(worker=WORKER, task_id='A1', resources={'a': 1}, family='A', params={'a': '1'}, batchable=True, priority=1, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A2', resources={'a': 1}, family='A', params={'a': '2'}, batchable=True, priority=2, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A3', resources={'a': 1}, family='A', params={'a': '3'}, batchable=True, priority=3, max_batch_size=2)
 
         result = self.sch.get_work(worker='assistant', assistant=True, assistant_groups=[])
         self.assertEqual({'A3', 'A2'}, set(result['batch_task_ids']))
-        self.sch.add_task(worker=WORKER, task_id='A2', resources={'b': 1}, family='A', params={'a': '2'}, batchable=True, priority=2)
-        self.sch.add_task(worker=WORKER, task_id='A3', resources={'b': 1}, family='A', params={'a': '3'}, batchable=True, priority=3)
+        self.sch.add_task(worker=WORKER, task_id='A2', resources={'b': 1}, family='A', params={'a': '2'}, batchable=True, priority=2, max_batch_size=2)
+        self.sch.add_task(worker=WORKER, task_id='A3', resources={'b': 1}, family='A', params={'a': '3'}, batchable=True, priority=3, max_batch_size=2)
         self.sch.add_task(worker='assistant', task_id='A_2_3', status=RUNNING, batch_id=result['batch_id'], resources={'b': 1})
 
         # the statuses changed, but only after they were batch running

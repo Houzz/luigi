@@ -501,12 +501,12 @@ class SimpleTaskState(object):
             if task.batch_id == batch_id
         ]
 
-    def set_batcher(self, worker_id, family, batcher_args, max_batch_size):
+    def set_batcher(self, worker_id, family, batcher_args):
         self._task_batchers.setdefault(worker_id, {})
-        self._task_batchers[worker_id][family] = (batcher_args, max_batch_size)
+        self._task_batchers[worker_id][family] = batcher_args
 
     def get_batcher(self, worker_id, family):
-        return self._task_batchers.get(worker_id, {}).get(family, (None, 1))
+        return self._task_batchers.get(worker_id, {}).get(family, None)
 
     def num_pending_tasks(self):
         """
@@ -790,8 +790,8 @@ class Scheduler(object):
                 self._update_priority(t, prio, worker)
 
     @rpc_method()
-    def add_task_batcher(self, worker, task_family, batched_args, max_batch_size=float('inf')):
-        self._state.set_batcher(worker, task_family, batched_args, max_batch_size)
+    def add_task_batcher(self, worker, task_family, batched_args):
+        self._state.set_batcher(worker, task_family, batched_args)
 
     @rpc_method()
     def forgive_failures(self, task_id=None):
@@ -812,7 +812,7 @@ class Scheduler(object):
                  deps=None, new_deps=None, expl=None, resources=None,
                  priority=0, family='', module=None, params=None,
                  assistant=False, assistant_groups=None, tracking_url=None,
-                 worker=None, batchable=None, batch_id=None,
+                 worker=None, batchable=None, max_batch_size=float('inf'), batch_id=None,
                  retry_policy_dict={}, owners=None, **kwargs):
         """
         * add task identified by task_id if it doesn't exist
@@ -863,6 +863,7 @@ class Scheduler(object):
 
         if batchable is not None:
             task.batchable = batchable
+            task.max_batch_size = max_batch_size
         if assistant_groups is not None:
             task.assistant_groups = assistant_groups
 
@@ -885,7 +886,7 @@ class Scheduler(object):
             self._state.set_status(task, PENDING if status == SUSPENDED else status, self._config)
 
         if status == FAILED and self._config.batch_emails:
-            batched_params, _ = self._state.get_batcher(worker_id, family)
+            batched_params = self._state.get_batcher(worker_id, family)
             if batched_params:
                 unbatched_params = {
                     param: value
@@ -939,7 +940,7 @@ class Scheduler(object):
         if not self._config.batch_emails:
             return
         worker_id = kwargs['worker']
-        batched_params, _ = self._state.get_batcher(worker_id, family)
+        batched_params = self._state.get_batcher(worker_id, family)
         if batched_params:
             unbatched_params = {
                 param: value
@@ -1170,11 +1171,11 @@ class Scheduler(object):
 
         tasks = list(relevant_tasks)
         tasks.sort(key=self._rank, reverse=True)
-
         for task in tasks:
             if (best_task and batched_params and task.family == best_task.family and
-                    len(batched_tasks) < max_batch_size and task.is_batchable() and all(
+                    len(batched_tasks) < best_task.max_batch_size and task.is_batchable() and all(
                     task.params.get(name) == value for name, value in unbatched_params.items()) and
+                    task.max_batch_size == best_task.max_batch_size and
                     task.resources == best_task.resources and self._schedulable(task)):
                 for name, params in batched_params.items():
                     params.append(task.params.get(name))
@@ -1191,7 +1192,7 @@ class Scheduler(object):
                 in_workers = self._in_workers(worker_id, assistant_groups, task)
                 if in_workers and self._has_resources(task.resources, used_resources):
                     best_task = task
-                    batch_param_names, max_batch_size = self._state.get_batcher(
+                    batch_param_names = self._state.get_batcher(
                         worker_id, task.family)
                     if batch_param_names and task.is_batchable():
                         try:
