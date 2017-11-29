@@ -39,10 +39,15 @@ logger = logging.getLogger('luigi-interface')
 
 
 class webhdfs(luigi.Config):
-    port = luigi.IntParameter(default=50070,
-                              description='Port for webhdfs')
-    user = luigi.Parameter(default=None, description='Defaults to $USER envvar',
-                           config_path=dict(section='hdfs', name='user'))
+    port = luigi.IntParameter(
+        default=50070,
+        description='Port for webhdfs',
+    )
+    user = luigi.OptionalParameter(
+        default=None,
+        description='Defaults to $USER envvar',
+        config_path=dict(section='hdfs', name='user'),
+    )
 
 
 class WebHdfsClient(hdfs_abstract_client.HdfsFileSystem):
