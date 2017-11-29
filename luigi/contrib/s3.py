@@ -47,7 +47,7 @@ from luigi.six.moves import range
 
 from luigi import configuration
 from luigi.format import get_default_format
-from luigi.parameter import Parameter
+from luigi.parameter import OptionalParameter, Parameter
 from luigi.target import FileAlreadyExists, FileSystem, FileSystemException, FileSystemTarget, AtomicLocalFile, MissingParentDirectory
 from luigi.task import ExternalTask
 
