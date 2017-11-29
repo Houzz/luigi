@@ -72,10 +72,13 @@ TRACKING_RE = re.compile(r'(tracking url|the url to track the job)(:|\s*=)\s+(?P
 
 
 class hadoop(luigi.task.Config):
-    pool = luigi.Parameter(default=None,
-                           description='Hadoop pool so use for Hadoop tasks. '
-                           'To specify pools per tasks, see '
-                           'BaseHadoopJobTask.pool')
+    pool = luigi.OptionalParameter(
+        default=None,
+        description=(
+            'Hadoop pool so use for Hadoop tasks. To specify pools per tasks, '
+            'see BaseHadoopJobTask.pool'
+        ),
+    )
 
 
 def attach(*packages):
