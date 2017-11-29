@@ -349,6 +349,18 @@ class ParameterTest(LuigiTestCase):
         TestConfig(param=1)
         warnings.warn.assert_called_once_with('OptionalParameter "param" with value "1" is not of type string or None.')
 
+    def test_optional_parameter_parse_none(self):
+        self.assertIsNone(luigi.OptionalParameter().parse(''))
+
+    def test_optional_parameter_parse_string(self):
+        self.assertEqual('test', luigi.OptionalParameter().parse('test'))
+
+    def test_optional_parameter_serialize_none(self):
+        self.assertEqual('', luigi.OptionalParameter().serialize(None))
+
+    def test_optional_parameter_serialize_string(self):
+        self.assertEqual('test', luigi.OptionalParameter().serialize('test'))
+
 
 class TestParametersHashability(LuigiTestCase):
     def test_date(self):

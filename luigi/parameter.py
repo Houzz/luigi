@@ -311,7 +311,7 @@ class OptionalParameter(Parameter):
         else:
             return str(x)
 
-    def parse(self, gx):
+    def parse(self, x):
         return x or None
 
     def _warn_on_wrong_param_type(self, param_name, param_value):
