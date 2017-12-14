@@ -275,7 +275,7 @@ _ORDERED_STATUSES = (
     "not_run",
 )
 _PENDING_SUB_STATUSES = set(_ORDERED_STATUSES[_ORDERED_STATUSES.index("still_pending_ext"):])
-_COMMENTS = set((
+_COMMENTS = {
     ("already_done", 'present dependencies were encountered'),
     ("completed", 'ran successfully'),
     ("failed", 'failed'),
@@ -288,7 +288,7 @@ _COMMENTS = set((
     ("upstream_run_by_other_worker", 'had dependencies that were being run by other worker'),
     ("upstream_scheduling_error", 'had dependencies whose scheduling failed'),
     ("not_run", 'was not granted run permission by the scheduler'),
-))
+}
 
 
 def _get_run_by_other_worker(worker):
@@ -382,7 +382,7 @@ def _summary_format(set_tasks, worker):
     if set_tasks["ever_failed"]:
         if not set_tasks["failed"]:
             smiley = ":)"
-            reason = "there were failed tasks but they all suceeded in a retry"
+            reason = "there were failed tasks but they all succeeded in a retry"
         else:
             smiley = ":("
             reason = "there were failed tasks"

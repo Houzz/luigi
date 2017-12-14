@@ -102,6 +102,14 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'C')
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'B')
 
+    def test_status_wont_override(self):
+        # Worker X is running A
+        # Worker Y wants to override the status to UNKNOWN (e.g. complete is throwing an exception)
+        self.sch.add_task(worker='X', task_id='A')
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+        self.sch.add_task(worker='Y', task_id='A', status=UNKNOWN)
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNING, '').keys()))
+
     def test_retry(self):
         # Try to build A but fails, will retry after 100s
         self.setTime(0)
@@ -536,6 +544,12 @@ class SchedulerApiTest(unittest.TestCase):
         for task_id in ('A_1', 'A_2', 'A_1_2'):
             self.assertEqual('test message', self.sch.get_task_status_message(task_id)['statusMessage'])
 
+    def test_batch_update_progress(self):
+        self._start_simple_batch()
+        self.sch.set_task_progress_percentage('A_1_2', 30)
+        for task_id in ('A_1', 'A_2', 'A_1_2'):
+            self.assertEqual(30, self.sch.get_task_progress_percentage(task_id)['progressPercentage'])
+
     def test_batch_tracking_url(self):
         self._start_simple_batch()
         self.sch.add_task(worker=WORKER, task_id='A_1_2', tracking_url='http://test.tracking.url/')
@@ -915,7 +929,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='E', status=DISABLED)
 
         # scheduler prunes the worker disabled task
-        self.assertEqual(set(['D', 'E']), set(self.sch.task_list(DISABLED, '')))
+        self.assertEqual({'D', 'E'}, set(self.sch.task_list(DISABLED, '')))
         self._test_prune_done_tasks([])
 
     def test_keep_failed_tasks_for_assistant(self):
@@ -1292,6 +1306,7 @@ class SchedulerApiTest(unittest.TestCase):
 
     def test_update_new_resource(self):
         self.assertEqual([], self.sch.resource_list())
+        self.validate_resource_count('new_resource', None)  # new_resource is not in the scheduler
         self.sch.update_resource('new_resource', 1)
         self.validate_resource_count('new_resource', 1)
 

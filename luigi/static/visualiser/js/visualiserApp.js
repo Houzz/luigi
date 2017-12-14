@@ -25,7 +25,9 @@ function visualiserApp(luigi) {
      */
     function updateVisType(newVisType) {
         $('#toggleVisButtons label').removeClass('active');
-        $('#toggleVisButtons input[value="' + newVisType + '"]').parent().addClass('active');
+        var visTypeInput = $('#toggleVisButtons input[value="' + newVisType + '"]');
+        visTypeInput.parent().addClass('active');
+        visTypeInput.prop('checked', true);
     }
 
     function loadTemplates() {
@@ -71,9 +73,10 @@ function visualiserApp(luigi) {
             trackingUrl: task.tracking_url,
             status: task.status,
             graph: (task.status == "PENDING" || task.status == "RUNNING" || task.status == "DONE"),
-            error: (task.status == "FAILED" || re_enable),
+            error: task.status == "FAILED" || re_enable,
             re_enable: re_enable,
-            statusMessage: task.status_message
+            statusMessage: task.status_message,
+            progressPercentage: task.progress_percentage
         };
     }
 
@@ -383,12 +386,33 @@ function visualiserApp(luigi) {
 
     function showStatusMessage(data) {
         $("#statusMessageModal").empty().append(renderTemplate("statusMessageTemplate", data));
-        $("#statusMessageModal .refresh").on('click', function() {
-            luigi.getTaskStatusMessage(data.taskId, function(data) {
-                $("#statusMessageModal pre").html(data.statusMessage);
-            });
-        }).trigger('click');
         $("#statusMessageModal").modal({});
+        var refreshInterval = setInterval(function() {
+                if ($("#statusMessageModal").is(":hidden"))
+                    clearInterval(refreshInterval);
+                else {
+                    luigi.getTaskStatusMessage(data.taskId, function(data) {
+                        if (data.statusMessage === null)
+                            $("#statusMessageModal pre").hide();
+                        else {
+                            $("#statusMessageModal pre").html(data.statusMessage).show();
+                        }
+                    });
+                    luigi.getTaskProgressPercentage(data.taskId, function(data) {
+                        if (data.progressPercentage === null)
+                            $("#statusMessageModal .progress").hide();
+                        else {
+                            $("#statusMessageModal .progress").show();
+                            $("#statusMessageModal .progress-bar")
+                                .attr('aria-valuenow', data.progressPercentage)
+                                .text(data.progressPercentage + '%')
+                                .css({'width': data.progressPercentage + '%'});
+                        }
+                    });
+                }
+            },
+            500
+        );
     }
 
     function preProcessGraph(dependencyGraph) {
@@ -527,7 +551,7 @@ function visualiserApp(luigi) {
 
             // Populate fields with values from hash.
             if (fragmentQuery.length) {
-                $('select[name=taskTable_length').val(fragmentQuery.length);
+                $('select[name=taskTable_length]').val(fragmentQuery.length);
             }
             $("#serverSideCheckbox").prop('checked', fragmentQuery.filterOnServer === '1' ? true : false);
             dt.search(fragmentQuery.search__search);
@@ -581,7 +605,7 @@ function visualiserApp(luigi) {
             $(".graph-node-a").click(function(event) {
                 var taskId = $(this).attr("data-task-id");
                 var status = $(this).attr("data-task-status");
-                if (status=="FAILED") {
+                if (status == "FAILED") {
                     event.preventDefault();
                     luigi.getErrorTrace(taskId, function(error) {
                        showErrorTrace(error);
@@ -646,7 +670,7 @@ function visualiserApp(luigi) {
         var times = {};
         for (var i = 0; i < listId.length; i++) {
             for (var j = 0; j < tasks.length; j++) {
-                if (listId[i]===tasks[j].taskId) {
+                if (listId[i] === tasks[j].taskId) {
                     var finishTime = new Date(tasks[j].time_running*1000);
                     var startTime = new Date(tasks[j].start_time*1000);
                     var durationTime = new Date((finishTime - startTime)*1000).getSeconds();

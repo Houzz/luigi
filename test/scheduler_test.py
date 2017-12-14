@@ -40,8 +40,7 @@ class SchedulerIoTest(unittest.TestCase):
                 state_path=fn.name)
             state.load()
 
-            self.assertEqual(set(state.get_worker_ids()),
-                             set(['Worker1', 'Worker2']))
+            self.assertEqual(set(state.get_worker_ids()), {'Worker1', 'Worker2'})
 
     def test_load_broken_state(self):
         with tempfile.NamedTemporaryFile(delete=True) as fn:
@@ -54,7 +53,7 @@ class SchedulerIoTest(unittest.TestCase):
 
             self.assertEqual(list(state.get_worker_ids()), [])
 
-    @with_config({'scheduler': {'retry_count': '44', 'worker-disconnect-delay': '55'}})
+    @with_config({'scheduler': {'retry_count': '44', 'worker_disconnect_delay': '55'}})
     def test_scheduler_with_config(self):
         scheduler = luigi.scheduler.Scheduler()
         self.assertEqual(44, scheduler._config.retry_count)
