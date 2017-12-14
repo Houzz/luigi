@@ -17,11 +17,13 @@
 
 import logging
 import os
+import re
 import sys
 import tempfile
 import shutil
 import importlib
 import tarfile
+import inspect
 try:
     import cPickle as pickle
 except ImportError:
@@ -52,6 +54,17 @@ class SparkSubmitTask(ExternalProgramTask):
 
     # Only log stderr if spark fails (since stderr is normally quite verbose)
     always_log_stderr = False
+    # Spark applications write its logs into stderr
+    stream_for_searching_tracking_url = 'stderr'
+
+    def run(self):
+        if self.deploy_mode == "cluster":
+            # in cluster mode client only receives application status once a period of time
+            self.tracking_url_pattern = r"tracking URL: (https?://.*)\s"
+        else:
+            self.tracking_url_pattern = r"Bound (?:.*) to (?:.*), and started at (https?://.*)\s"
+
+        super(SparkSubmitTask, self).run()
 
     def app_options(self):
         """
@@ -286,9 +299,13 @@ class PySparkTask(SparkSubmitTask):
         return [self.app, pickle_loc] + self.app_options()
 
     def run(self):
-        self.run_path = tempfile.mkdtemp(prefix=self.name)
-        self.run_pickle = os.path.join(self.run_path, '.'.join([self.name.replace(' ', '_'), 'pickle']))
+        path_name_fragment = re.sub(r'[^\w]', '_', self.name)
+        self.run_path = tempfile.mkdtemp(prefix=path_name_fragment)
+        self.run_pickle = os.path.join(self.run_path, '.'.join([path_name_fragment, 'pickle']))
         with open(self.run_pickle, 'wb') as fd:
+            # Copy module file to run path.
+            module_path = os.path.abspath(inspect.getfile(self.__class__))
+            shutil.copy(module_path, os.path.join(self.run_path, '.'))
             self._dump(fd)
         try:
             super(PySparkTask, self).run()
@@ -300,7 +317,7 @@ class PySparkTask(SparkSubmitTask):
             if self.__module__ == '__main__':
                 d = pickle.dumps(self)
                 module_name = os.path.basename(sys.argv[0]).rsplit('.', 1)[0]
-                d = d.replace(b'(c__main__', "(c" + module_name)
+                d = d.replace(b'c__main__', b'c' + module_name.encode('ascii'))
                 fd.write(d)
             else:
                 pickle.dump(self, fd)

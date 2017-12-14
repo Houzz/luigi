@@ -24,6 +24,7 @@ import luigi
 import sys
 import logging
 from luigi import IntParameter
+from luigi.setup_logging import InterfaceLogging
 
 
 class retcode(luigi.Config):
@@ -71,18 +72,20 @@ def run_with_retcodes(argv):
 
     worker = None
     try:
-        worker = luigi.interface._run(argv)['worker']
+        worker = luigi.interface._run(argv).worker
     except luigi.interface.PidLockAlreadyTakenExit:
         sys.exit(retcodes.already_running)
     except Exception:
         # Some errors occur before logging is set up, we set it up now
-        luigi.interface.setup_interface_logging()
+        env_params = luigi.interface.core()
+        InterfaceLogging.setup(env_params)
         logger.exception("Uncaught exception in luigi")
         sys.exit(retcodes.unhandled_exception)
 
-    task_sets = luigi.execution_summary._summary_dict(worker)
-    root_task = luigi.execution_summary._root_task(worker)
-    non_empty_categories = {k: v for k, v in task_sets.items() if v}.keys()
+    with luigi.cmdline_parser.CmdlineParser.global_instance(argv):
+        task_sets = luigi.execution_summary._summary_dict(worker)
+        root_task = luigi.execution_summary._root_task(worker)
+        non_empty_categories = {k: v for k, v in task_sets.items() if v}.keys()
 
     def has(status):
         assert status in luigi.execution_summary._ORDERED_STATUSES

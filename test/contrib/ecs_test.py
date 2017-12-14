@@ -35,10 +35,11 @@ import unittest
 
 import luigi
 from luigi.contrib.ecs import ECSTask, _get_task_statuses
+from moto import mock_ecs
+from nose.plugins.attrib import attr
 
 try:
     import boto3
-    client = boto3.client('ecs')
 except ImportError:
     raise unittest.SkipTest('boto3 is not installed. ECSTasks require boto3')
 
@@ -73,21 +74,26 @@ class ECSTaskOverrideCommand(ECSTaskNoOutput):
         return [{'name': 'hello-world', 'command': ['/bin/sleep', '10']}]
 
 
+@attr('aws')
 class TestECSTask(unittest.TestCase):
 
+    @mock_ecs
     def setUp(self):
         # Register the test task definition
-        response = client.register_task_definition(**TEST_TASK_DEF)
+        response = boto3.client('ecs').register_task_definition(**TEST_TASK_DEF)
         self.arn = response['taskDefinition']['taskDefinitionArn']
 
+    @mock_ecs
     def test_unregistered_task(self):
         t = ECSTaskNoOutput(task_def=TEST_TASK_DEF)
         luigi.build([t], local_scheduler=True)
 
+    @mock_ecs
     def test_registered_task(self):
         t = ECSTaskNoOutput(task_def_arn=self.arn)
         luigi.build([t], local_scheduler=True)
 
+    @mock_ecs
     def test_override_command(self):
         t = ECSTaskOverrideCommand(task_def_arn=self.arn)
         luigi.build([t], local_scheduler=True)

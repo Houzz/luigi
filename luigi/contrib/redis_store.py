@@ -68,6 +68,7 @@ class RedisTarget(Target):
         self.redis_client = redis.StrictRedis(
             host=self.host,
             port=self.port,
+            password=self.password,
             db=self.db,
             socket_timeout=self.socket_timeout,
         )
@@ -86,7 +87,7 @@ class RedisTarget(Target):
         """
         marker_key = self.marker_key()
         self.redis_client.hset(marker_key, 'update_id', self.update_id)
-        self.redis_client.hset(marker_key, 'date', datetime.datetime.now())
+        self.redis_client.hset(marker_key, 'date', datetime.datetime.now().isoformat())
 
         if self.expire is not None:
             self.redis_client.expire(marker_key, self.expire)

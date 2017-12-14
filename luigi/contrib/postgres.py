@@ -106,11 +106,14 @@ class PostgresTarget(luigi.Target):
     """
     marker_table = luigi.configuration.get_config().get('postgres', 'marker-table', 'table_updates')
 
+    # if not supplied, fall back to default Postgres port
+    DEFAULT_DB_PORT = 5432
+
     # Use DB side timestamps or client side timestamps in the marker_table
     use_db_timestamps = True
 
     def __init__(
-        self, host, database, user, password, table, update_id, port=5432
+        self, host, database, user, password, table, update_id, port=None
     ):
         """
         Args:
@@ -126,7 +129,7 @@ class PostgresTarget(luigi.Target):
             self.host, self.port = host.split(':')
         else:
             self.host = host
-            self.port = port
+            self.port = port or self.DEFAULT_DB_PORT
         self.database = database
         self.user = user
         self.password = password
@@ -161,9 +164,6 @@ class PostgresTarget(luigi.Target):
                     """.format(marker_table=self.marker_table),
                 (self.update_id, self.table,
                  datetime.datetime.now()))
-
-        # make sure update is properly marked
-        assert self.exists(connection)
 
     def exists(self, connection=None):
         if connection is None:
@@ -207,19 +207,25 @@ class PostgresTarget(luigi.Target):
         connection.autocommit = True
         cursor = connection.cursor()
         if self.use_db_timestamps:
-            sql = """ CREATE TABLE IF NOT EXISTS {marker_table} (
+            sql = """ CREATE TABLE {marker_table} (
                       update_id TEXT PRIMARY KEY,
                       target_table TEXT,
                       inserted TIMESTAMP DEFAULT NOW())
                   """.format(marker_table=self.marker_table)
         else:
-            sql = """ CREATE TABLE IF NOT EXISTS {marker_table} (
+            sql = """ CREATE TABLE {marker_table} (
                       update_id TEXT PRIMARY KEY,
                       target_table TEXT,
                       inserted TIMESTAMP);
                   """.format(marker_table=self.marker_table)
 
-        cursor.execute(sql)
+        try:
+            cursor.execute(sql)
+        except psycopg2.ProgrammingError as e:
+            if e.pgcode == psycopg2.errorcodes.DUPLICATE_TABLE:
+                pass
+            else:
+                raise
         connection.close()
 
     def open(self, mode):
@@ -271,7 +277,8 @@ class CopyToTable(rdbms.CopyToTable):
             user=self.user,
             password=self.password,
             table=self.table,
-            update_id=self.update_id
+            update_id=self.update_id,
+            port=self.port
         )
 
     def copy(self, cursor, file):
@@ -320,6 +327,8 @@ class CopyToTable(rdbms.CopyToTable):
                 self.init_copy(connection)
                 self.copy(cursor, tmp_file)
                 self.post_copy(connection)
+                if self.enable_metadata_columns:
+                    self.post_copy_metacolumns(cursor)
             except psycopg2.ProgrammingError as e:
                 if e.pgcode == psycopg2.errorcodes.UNDEFINED_TABLE and attempt == 0:
                     # if first attempt fails with "relation not found", try creating table
@@ -346,6 +355,7 @@ class PostgresQuery(rdbms.Query):
 
     Usage:
     Subclass and override the required `host`, `database`, `user`, `password`, `table`, and `query` attributes.
+    Optionally one can override the `autocommit` attribute to put the connection for the query in autocommit mode.
 
     Override the `run` method if your use case requires some action with the query result.
 
@@ -353,9 +363,9 @@ class PostgresQuery(rdbms.Query):
 
     To customize the query signature as recorded in the database marker table, override the `update_id` property.
     """
-
     def run(self):
         connection = self.output().connect()
+        connection.autocommit = self.autocommit
         cursor = connection.cursor()
         sql = self.query
 
@@ -381,5 +391,6 @@ class PostgresQuery(rdbms.Query):
             user=self.user,
             password=self.password,
             table=self.table,
-            update_id=self.update_id
+            update_id=self.update_id,
+            port=self.port
         )

@@ -16,12 +16,12 @@
 """
 Produces contiguous completed ranges of recurring tasks.
 
-See RangeDaily and RangeHourly for basic usage.
+See ``RangeDaily`` and ``RangeHourly`` for basic usage.
 
 Caveat - if gaps accumulate, their causes (e.g. missing dependencies) going
 unmonitored/unmitigated, then this will eventually keep retrying the same gaps
-over and over and make no progress to more recent times. (See 'task_limit' and
-'reverse' parameters.)
+over and over and make no progress to more recent times. (See ``task_limit``
+and ``reverse`` parameters.)
 TODO foolproof against that kind of misuse?
 """
 
@@ -32,7 +32,9 @@ import warnings
 import operator
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+
+from dateutil.relativedelta import relativedelta
 
 from luigi import six
 
@@ -48,16 +50,16 @@ class RangeEvent(luigi.Event):  # Not sure if subclassing currently serves a pur
     """
     Events communicating useful metrics.
 
-    COMPLETE_COUNT would normally be nondecreasing, and its derivative would
-    describe performance (how many instances complete
+    ``COMPLETE_COUNT`` would normally be nondecreasing, and its derivative
+    would describe performance (how many instances complete
     invocation-over-invocation).
 
-    COMPLETE_FRACTION reaching 1 would be a telling event in case of a backfill
-    with defined start and stop. Would not be strikingly useful for a typical
-    recurring task without stop defined, fluctuating close to 1.
+    ``COMPLETE_FRACTION`` reaching 1 would be a telling event in case of a
+    backfill with defined start and stop. Would not be strikingly useful for a
+    typical recurring task without stop defined, fluctuating close to 1.
 
-    DELAY is measured from the first found missing datehour till (current time
-    + hours_forward), or till stop if it is defined. In hours for Hourly.
+    ``DELAY`` is measured from the first found missing datehour till (current
+    time + hours_forward), or till stop if it is defined. In hours for Hourly.
     TBD different units for other frequencies?
     TODO any different for reverse mode? From first missing till last missing?
     From last gap till stop?
@@ -72,17 +74,18 @@ class RangeBase(luigi.WrapperTask):
     Produces a contiguous completed range of a recurring task.
 
     Made for the common use case where a task is parameterized by e.g.
-    DateParameter, and assurance is needed that any gaps arising from downtime
-    are eventually filled.
+    ``DateParameter``, and assurance is needed that any gaps arising from
+    downtime are eventually filled.
 
     Emits events that one can use to monitor gaps and delays.
 
     At least one of start and stop needs to be specified.
 
     (This is quite an abstract base class for subclasses with different
-    datetime parameter class, e.g. DateParameter, DateHourParameter, ..., and
-    different parameter naming, e.g. days_back/forward, hours_back/forward,
-    ..., as well as different documentation wording, for good user experience.)
+    datetime parameter classes, e.g. ``DateParameter``, ``DateHourParameter``,
+    ..., and different parameter naming, e.g. days_back/forward,
+    hours_back/forward, ..., as well as different documentation wording,
+    to improve user experience.)
 
     Subclasses will need to use the ``of`` parameter when overriding methods.
     """
@@ -463,7 +466,7 @@ class RangeByMinutesBase(RangeBase):
         # Validate that the minutes_interval can divide 60 and it is greater than 0 and lesser than 60
         if not (0 < self.minutes_interval < 60):
             raise ParameterException('minutes-interval must be within 0..60')
-        if (60 / self.minutes_interval) * self.minutes_interval != 60:
+        if 60 % self.minutes_interval != 0:
             raise ParameterException('minutes-interval does not evenly divide 60')
         # start of a complete interval, e.g. 20:13 and the interval is 5 -> 20:10
         start_minute = int(finite_start.minute/self.minutes_interval)*self.minutes_interval
@@ -514,7 +517,7 @@ def _constrain_glob(glob, paths, limit=5):
             return list(current.keys())
         char_sets = {}
         for g, p in six.iteritems(current):
-            char_sets[g] = sorted(set(path[pos] for path in p))
+            char_sets[g] = sorted({path[pos] for path in p})
         if sum(len(s) for s in char_sets.values()) > limit:
             return [g.replace('[0-9]', digit_set_wildcard(char_sets[g]), 1) for g in current]
         for g, s in six.iteritems(char_sets):
@@ -621,8 +624,9 @@ def infer_bulk_complete_from_fs(datetimes, datetime_to_task, datetime_to_re):
     Efficiently determines missing datetimes by filesystem listing.
 
     The current implementation works for the common case of a task writing
-    output to a FileSystemTarget whose path is built using strftime with format
-    like '...%Y...%m...%d...%H...', without custom complete() or exists().
+    output to a ``FileSystemTarget`` whose path is built using strftime with
+    format like '...%Y...%m...%d...%H...', without custom ``complete()`` or
+    ``exists()``.
 
     (Eventually Luigi could have ranges of completion as first-class citizens.
     Then this listing business could be factored away/be provided for
@@ -643,9 +647,83 @@ def infer_bulk_complete_from_fs(datetimes, datetime_to_task, datetime_to_re):
     return missing_datetimes
 
 
+class RangeMonthly(RangeBase):
+    """
+    Produces a contiguous completed range of a monthly recurring task.
+
+    Unlike the Range* classes with shorter intervals, this class does not perform bulk optimisation.
+    It is assumed that the number of months is low enough not to motivate the increased complexity.
+    Hence, there is no class RangeMonthlyBase.
+    """
+    start = luigi.MonthParameter(
+        default=None,
+        description="beginning month, inclusive. Default: None - work backward forever (requires reverse=True)")
+    stop = luigi.MonthParameter(
+        default=None,
+        description="ending month, exclusive. Default: None - work forward forever")
+    months_back = luigi.IntParameter(
+        default=13,  # Little over a year
+        description=("extent to which contiguousness is to be assured into "
+                     "past, in months from current time. Prevents infinite loop "
+                     "when start is none. If the dataset has limited retention"
+                     " (i.e. old outputs get removed), this should be set "
+                     "shorter to that, too, to prevent the oldest outputs "
+                     "flapping. Increase freely if you intend to process old "
+                     "dates - worker's memory is the limit"))
+    months_forward = luigi.IntParameter(
+        default=0,
+        description="extent to which contiguousness is to be assured into future, in months from current time. "
+                    "Prevents infinite loop when stop is none")
+
+    def datetime_to_parameter(self, dt):
+        return date(dt.year, dt.month, 1)
+
+    def parameter_to_datetime(self, p):
+        return datetime(p.year, p.month, 1)
+
+    def datetime_to_parameters(self, dt):
+        """
+        Given a date-time, will produce a dictionary of of-params combined with the ranged task parameter
+        """
+        return self._task_parameters(dt.date())
+
+    def parameters_to_datetime(self, p):
+        """
+        Given a dictionary of parameters, will extract the ranged task parameter value
+        """
+        dt = p[self._param_name]
+        return datetime(dt.year, dt.month, 1)
+
+    def _format_datetime(self, dt):
+        return dt.strftime('%Y-%m')
+
+    def moving_start(self, now):
+        return self._align(now) - relativedelta(months=self.months_back)
+
+    def moving_stop(self, now):
+        return self._align(now) + relativedelta(months=self.months_forward)
+
+    def _align(self, dt):
+        return datetime(dt.year, dt.month, 1)
+
+    def finite_datetimes(self, finite_start, finite_stop):
+        """
+        Simply returns the points in time that correspond to turn of month.
+        """
+        start_date = self._align(finite_start)
+        aligned_stop = self._align(finite_stop)
+        dates = []
+        for m in itertools.count():
+            t = start_date + relativedelta(months=m)
+            if t >= aligned_stop:
+                return dates
+            if t >= finite_start:
+                dates.append(t)
+
+
 class RangeDaily(RangeDailyBase):
     """Efficiently produces a contiguous completed range of a daily recurring
-    task that takes a single DateParameter.
+    task that takes a single ``DateParameter``.
 
     Falls back to infer it from output filesystem listing to facilitate the
     common case usage.
@@ -671,9 +749,9 @@ class RangeDaily(RangeDailyBase):
 
 class RangeHourly(RangeHourlyBase):
     """Efficiently produces a contiguous completed range of an hourly recurring
-    task that takes a single DateHourParameter.
+    task that takes a single ``DateHourParameter``.
 
-    Benefits from bulk_complete information to efficiently cover gaps.
+    Benefits from ``bulk_complete`` information to efficiently cover gaps.
 
     Falls back to infer it from output filesystem listing to facilitate the
     common case usage.
@@ -700,9 +778,9 @@ class RangeHourly(RangeHourlyBase):
 
 class RangeByMinutes(RangeByMinutesBase):
     """Efficiently produces a contiguous completed range of an recurring
-    task every interval minutes that takes a single DateMinuteParameter.
+    task every interval minutes that takes a single ``DateMinuteParameter``.
 
-    Benefits from bulk_complete information to efficiently cover gaps.
+    Benefits from ``bulk_complete`` information to efficiently cover gaps.
 
     Falls back to infer it from output filesystem listing to facilitate the
     common case usage.

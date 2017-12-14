@@ -20,18 +20,22 @@ import os
 import tempfile
 from helpers import unittest
 
+from luigi import six
 import luigi.contrib.hive
 import mock
 from luigi import LocalTarget
 
+from nose.plugins.attrib import attr
 
+
+@attr('apache')
 class HiveTest(unittest.TestCase):
     count = 0
 
     def mock_hive_cmd(self, args, check_return=True):
         self.last_hive_cmd = args
         self.count += 1
-        return "statement{0}".format(self.count)
+        return six.u("statement{0}".format(self.count))
 
     def setUp(self):
         self.run_hive_cmd_saved = luigi.contrib.hive.run_hive
@@ -71,6 +75,7 @@ class HiveTest(unittest.TestCase):
         self.assertTrue(os.path.exists(dirname))
 
 
+@attr('apache')
 class HiveCommandClientTest(unittest.TestCase):
 
     """Note that some of these tests are really for the CDH releases of Hive, to which I do not currently have access.
@@ -261,7 +266,7 @@ class HiveCommandClientTest(unittest.TestCase):
         # I'm testing this again to check the return codes
         # I didn't want to tear up all the existing tests to change how run_hive is mocked
         comm = mock.Mock(name='communicate_mock')
-        comm.return_value = "some return stuff", ""
+        comm.return_value = six.b("some return stuff"), ""
 
         preturn = mock.Mock(name='open_mock')
         preturn.returncode = 0
@@ -274,7 +279,7 @@ class HiveCommandClientTest(unittest.TestCase):
         preturn.returncode = 17
         self.assertRaises(luigi.contrib.hive.HiveCommandError, luigi.contrib.hive.run_hive, ["blah", "blah"])
 
-        comm.return_value = "", "some stderr stuff"
+        comm.return_value = six.b(""), "some stderr stuff"
         returned = luigi.contrib.hive.run_hive(["blah", "blah"], False)
         self.assertEqual("", returned)
 
@@ -286,15 +291,50 @@ class MyHiveTask(luigi.contrib.hive.HiveQueryTask):
         return 'banana banana %s' % self.param
 
 
+@attr('apache')
 class TestHiveTask(unittest.TestCase):
+    task_class = MyHiveTask
 
     @mock.patch('luigi.contrib.hadoop.run_and_track_hadoop_job')
     def test_run(self, run_and_track_hadoop_job):
-        success = luigi.run(['MyHiveTask', '--param', 'foo', '--local-scheduler', '--no-lock'])
+        success = luigi.run([self.task_class.__name__, '--param', 'foo', '--local-scheduler', '--no-lock'])
         self.assertTrue(success)
         self.assertEqual('hive', run_and_track_hadoop_job.call_args[0][0][0])
 
 
+class MyHiveTaskArgs(MyHiveTask):
+
+    def hivevars(self):
+        return {'my_variable1': 'value1', 'my_variable2': 'value2'}
+
+    def hiveconfs(self):
+        return {'hive.additional.conf': 'conf_value'}
+
+
+class TestHiveTaskArgs(TestHiveTask):
+    task_class = MyHiveTaskArgs
+
+    def test_arglist(self):
+        task = self.task_class(param='foo')
+        f_name = 'my_file'
+        runner = luigi.contrib.hive.HiveQueryRunner()
+        arglist = runner.get_arglist(f_name, task)
+
+        f_idx = arglist.index('-f')
+        self.assertEqual(arglist[f_idx + 1], f_name)
+
+        hivevars = ['{}={}'.format(k, v) for k, v in six.iteritems(task.hivevars())]
+        for var in hivevars:
+            idx = arglist.index(var)
+            self.assertEqual(arglist[idx - 1], '--hivevar')
+
+        hiveconfs = ['{}={}'.format(k, v) for k, v in six.iteritems(task.hiveconfs())]
+        for conf in hiveconfs:
+            idx = arglist.index(conf)
+            self.assertEqual(arglist[idx - 1], '--hiveconf')
+
+
+@attr('apache')
 class TestHiveTarget(unittest.TestCase):
 
     def test_hive_table_target(self):

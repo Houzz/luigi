@@ -14,20 +14,23 @@
 .. image:: https://img.shields.io/pypi/l/luigi.svg?style=flat
    :target: https://pypi.python.org/pypi/luigi
 
-Luigi is a Python (2.7, 3.3, 3.4, 3.5) package that helps you build complex pipelines of batch
-jobs. It handles dependency resolution, workflow management, visualization,
-handling failures, command line integration, and much more.
+Luigi is a Python (2.7, 3.6, 3.7 tested) package that helps you build complex
+pipelines of batch jobs. It handles dependency resolution, workflow management,
+visualization, handling failures, command line integration, and much more.
 
 Getting Started
 ---------------
 
 Run ``pip install luigi`` to install the latest stable version from `PyPI
-<https://pypi.python.org/pypi/luigi>`_. Documentation for the latest release is
-hosted `here <https://luigi.readthedocs.io/en/stable/>`__.
+<https://pypi.python.org/pypi/luigi>`_. `Documentation for the latest release
+<https://luigi.readthedocs.io/en/stable/>`__ is hosted on readthedocs.
+
+Run ``pip install luigi[toml]`` to install Luigi with `TOML-based configs
+<https://luigi.readthedocs.io/en/stable/configuration.html>`__ support.
 
 For the bleeding edge code, ``pip install
-git+https://github.com/spotify/luigi.git``. Bleeding edge documentation can be
-found `here <https://luigi.readthedocs.io/en/latest/>`__.
+git+https://github.com/spotify/luigi.git``. `Bleeding edge documentation
+<https://luigi.readthedocs.io/en/latest/>`__ is also available.
 
 Background
 ----------
@@ -46,7 +49,7 @@ data processing, like `Hive <http://hive.apache.org/>`__,
 replace these. Instead it helps you stitch many tasks together, where
 each task can be a `Hive query <https://luigi.readthedocs.io/en/latest/api/luigi.contrib.hive.html>`__,
 a `Hadoop job in Java <https://luigi.readthedocs.io/en/latest/api/luigi.contrib.hadoop_jar.html>`_,
-a  `Spark job in Scala or Python <https://luigi.readthedocs.io/en/latest/api/luigi.contrib.spark.html>`_
+a  `Spark job in Scala or Python <https://luigi.readthedocs.io/en/latest/api/luigi.contrib.spark.html>`_,
 a Python snippet,
 `dumping a table <https://luigi.readthedocs.io/en/latest/api/luigi.contrib.sqla.html>`_
 from a database, or anything else. It's easy to build up
@@ -141,6 +144,15 @@ or held presentations about Luigi:
 * `Groupon <https://www.groupon.com/>`_ / `OrderUp <https://orderup.com>`_ `(alternative implementation) <https://github.com/groupon/luigi-warehouse>`__
 * `Red Hat - Marketing Operations <https://www.redhat.com>`_ `(blog, 2017) <https://github.com/rh-marketingops/rh-mo-scc-luigi>`__
 * `GetNinjas <https://www.getninjas.com.br/>`_ `(blog, 2017) <https://labs.getninjas.com.br/using-luigi-to-create-and-monitor-pipelines-of-batch-jobs-eb8b3cd2a574>`__
+* `voyages-sncf.com <https://www.voyages-sncf.com/>`_ `(presentation, 2017) <https://github.com/voyages-sncf-technologies/meetup-afpy-nantes-luigi>`__
+* `Open Targets <https://www.opentargets.org/>`_ `(blog, 2017) <https://blog.opentargets.org/using-containers-with-luigi>`__
+* `Leipzig University Library <https://ub.uni-leipzig.de>`_ `(presentation, 2016) <https://de.slideshare.net/MartinCzygan/build-your-own-discovery-index-of-scholary-eresources>`__ / `(project) <https://finc.info/de/datenquellen>`__
+* `Synetiq <https://synetiq.net/>`_ `(presentation, 2017) <https://www.youtube.com/watch?v=M4xUQXogSfo>`__
+* `Glossier <https://www.glossier.com/>`_ `(blog, 2018) <https://medium.com/glossier/how-to-build-a-data-warehouse-what-weve-learned-so-far-at-glossier-6ff1e1783e31>`__
+* `Data Revenue <https://www.datarevenue.com/>`_ `(blog, 2018) <https://www.datarevenue.com/en/blog/how-to-scale-your-machine-learning-pipeline>`_
+* `Uppsala University <http://pharmb.io>`_ `(tutorial) <http://uppnex.se/twiki/do/view/Courses/EinfraMPS2015/Luigi.html>`_   / `(presentation, 2015) <https://www.youtube.com/watch?v=f26PqSXZdWM>`_ / `(slides, 2015) <https://www.slideshare.net/SamuelLampa/building-workflows-with-spotifys-luigi>`_ / `(poster, 2015) <https://pharmb.io/poster/2015-sciluigi/>`_ / `(paper, 2016) <https://doi.org/10.1186/s13321-016-0179-6>`_ / `(project) <https://github.com/pharmbio/sciluigi>`_
+* `GIPHY <https://giphy.com/>`_ `(blog, 2019) <https://engineering.giphy.com/luigi-the-10x-plumber-containerizing-scaling-luigi-in-kubernetes/>`__
+* `xtream <https://xtreamers.io/>`__ `(blog, 2019) <https://towardsdatascience.com/lessons-from-a-real-machine-learning-project-part-1-from-jupyter-to-luigi-bdfd0b050ca5>`__
 
 Some more companies are using Luigi but haven't had a chance yet to write about it:
 
@@ -153,6 +165,25 @@ Some more companies are using Luigi but haven't had a chance yet to write about 
 * `OAO <https://adops.com/>`_
 * `Grovo <https://grovo.com/>`_
 * `Weebly <https://www.weebly.com/>`_
+* `Deloitte <https://www.Deloitte.co.uk/>`_
+* `Stacktome <https://stacktome.com/>`_
+* `LINX+Neemu+Chaordic <https://www.chaordic.com.br/>`_
+* `Foxberry <https://www.foxberry.com/>`_
+* `Okko <https://okko.tv/>`_
+* `ISVWorld <http://isvworld.com/>`_
+* `Big Data <https://bigdata.com.br/>`_
+* `Movio <https://movio.co.nz/>`_
+* `Bonnier News <https://www.bonniernews.se/>`_
+* `Starsky Robotics <https://www.starsky.io/>`_
+* `BaseTIS <https://www.basetis.com/>`_
+* `Hopper <https://www.hopper.com/>`_
+* `VOYAGE GROUP/Zucks <https://zucks.co.jp/en/>`_
+* `Textpert <https://www.textpert.ai/>`_
+* `Whizar <https://www.whizar.com/>`_
+* `xtream <https://www.xtreamers.io/>`__
+* `Skyscanner <https://www.skyscanner.net/>`_
+* `Jodel <https://www.jodel.com/>`_
+* `Mekar <https://mekar.id/en/>`_
 
 We're more than happy to have your company added here. Just send a PR on GitHub.
 
@@ -161,8 +192,8 @@ External links
 
 * `Mailing List <https://groups.google.com/d/forum/luigi-user/>`_ for discussions and asking questions. (Google Groups)
 * `Releases <https://pypi.python.org/pypi/luigi>`_ (PyPI)
-* `Source code <https://github.com/spotify/luigi>`_ (Github)
-* `Hubot Integration <https://github.com/houzz/hubot-luigi>`_ plugin for Slack, Hipchat, etc (Github)
+* `Source code <https://github.com/spotify/luigi>`_ (GitHub)
+* `Hubot Integration <https://github.com/houzz/hubot-luigi>`_ plugin for Slack, Hipchat, etc (GitHub)
 
 Authors
 -------

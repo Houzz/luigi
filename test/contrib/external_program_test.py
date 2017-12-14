@@ -16,7 +16,10 @@
 #
 import os
 import shutil
+import subprocess
 import tempfile
+from functools import partial
+from multiprocessing import Value
 
 from helpers import unittest
 import luigi
@@ -25,6 +28,9 @@ from luigi import six
 from luigi.contrib.external_program import ExternalProgramTask, ExternalPythonProgramTask
 from luigi.contrib.external_program import ExternalProgramRunError
 from mock import patch, call
+from subprocess import Popen
+import mock
+from nose.plugins.attrib import attr
 
 BytesIO = six.BytesIO
 
@@ -64,6 +70,14 @@ class TestTouchTask(ExternalProgramTask):
         return luigi.LocalTarget(self.file_path)
 
 
+class TestEchoTask(ExternalProgramTask):
+    MESSAGE = "Hello, world!"
+
+    def program_args(self):
+        return ['echo', self.MESSAGE]
+
+
+@attr('contrib')
 class ExternalProgramTaskTest(unittest.TestCase):
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_run(self, proc):
@@ -113,6 +127,20 @@ class ExternalProgramTaskTest(unittest.TestCase):
 
         self.assertIn(call.info('Program stderr:\nstderr'), logger.mock_calls)
 
+    def test_capture_output_set_to_false_writes_output_to_stdout(self):
+
+        out = tempfile.TemporaryFile()
+
+        def Popen_wrap(args, **kwargs):
+            kwargs.pop('stdout', None)
+            return Popen(args, stdout=out, **kwargs)
+
+        with mock.patch('luigi.contrib.external_program.subprocess.Popen', wraps=Popen_wrap):
+            task = TestEchoTask(capture_output=False)
+            task.run()
+            stdout = task._clean_output_file(out).strip()
+            self.assertEqual(stdout, task.MESSAGE)
+
     @patch('luigi.contrib.external_program.logger')
     @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
@@ -159,6 +187,80 @@ class ExternalProgramTaskTest(unittest.TestCase):
             # clean up temp files even if assertion fails
             shutil.rmtree(tempdir)
 
+    def test_tracking_url_pattern_works_with_capture_output_disabled(self):
+        test_val = Value('i', 0)
+
+        def fake_set_tracking_url(val, url):
+            if url == "TEXT":
+                val.value += 1
+
+        task = TestEchoTask(capture_output=False, stream_for_searching_tracking_url='stdout',
+                            tracking_url_pattern=r"SOME (.*)")
+        task.MESSAGE = "SOME TEXT"
+
+        with mock.patch.object(task, 'set_tracking_url', new=partial(fake_set_tracking_url, test_val)):
+            task.run()
+            self.assertEqual(test_val.value, 1)
+
+    def test_tracking_url_pattern_works_with_capture_output_enabled(self):
+        test_val = Value('i', 0)
+
+        def fake_set_tracking_url(val, url):
+            if url == "THING":
+                val.value += 1
+
+        task = TestEchoTask(capture_output=True, stream_for_searching_tracking_url='stdout',
+                            tracking_url_pattern=r"ANY(.*)")
+        task.MESSAGE = "ANYTHING"
+
+        with mock.patch.object(task, 'set_tracking_url', new=partial(fake_set_tracking_url, test_val)):
+            task.run()
+            self.assertEqual(test_val.value, 1)
+
+    def test_tracking_url_pattern_works_with_stderr(self):
+        test_val = Value('i', 0)
+
+        def fake_set_tracking_url(val, url):
+            if url == "THING_ELSE":
+                val.value += 1
+
+        def Popen_wrap(args, **kwargs):
+            return Popen('>&2 echo "ANYTHING_ELSE"', shell=True, **kwargs)
+
+        task = TestEchoTask(capture_output=True, stream_for_searching_tracking_url='stderr',
+                            tracking_url_pattern=r"ANY(.*)")
+
+        with mock.patch('luigi.contrib.external_program.subprocess.Popen', wraps=Popen_wrap):
+            with mock.patch.object(task, 'set_tracking_url', new=partial(fake_set_tracking_url, test_val)):
+                task.run()
+                self.assertEqual(test_val.value, 1)
+
+    def test_no_url_searching_is_performed_if_pattern_is_not_set(self):
+        def Popen_wrap(args, **kwargs):
+            # stdout should not be replaced with pipe if tracking_url_pattern is not set
+            self.assertNotEqual(kwargs['stdout'], subprocess.PIPE)
+            return Popen(args, **kwargs)
+
+        task = TestEchoTask(capture_output=True, stream_for_searching_tracking_url='stdout')
+
+        with mock.patch('luigi.contrib.external_program.subprocess.Popen', wraps=Popen_wrap):
+            task.run()
+
+    def test_tracking_url_context_works_without_capture_output(self):
+        test_val = Value('i', 0)
+
+        def fake_set_tracking_url(val, url):
+            if url == "world":
+                val.value += 1
+
+        task = TestEchoTask(capture_output=False, stream_for_searching_tracking_url='stdout',
+                            tracking_url_pattern=r"Hello, (.*)!")
+        test_args = list(map(str, task.program_args()))
+        with mock.patch.object(task, 'set_tracking_url', new=partial(fake_set_tracking_url, test_val)):
+            with task._proc_with_tracking_url_context(proc_args=test_args, proc_kwargs={}) as proc:
+                proc.wait()
+        self.assertEqual(test_val.value, 1)
+
 
 class TestExternalPythonProgramTask(ExternalPythonProgramTask):
     virtualenv = '/path/to/venv'
@@ -171,6 +273,7 @@ class TestExternalPythonProgramTask(ExternalPythonProgramTask):
         return luigi.LocalTarget('output')
 
 
+@attr('contrib')
 class ExternalPythonProgramTaskTest(unittest.TestCase):
     @patch.dict('os.environ', {'OTHERVAR': 'otherval'}, clear=True)
     @patch('luigi.contrib.external_program.subprocess.Popen')
@@ -197,7 +300,7 @@ class ExternalPythonProgramTaskTest(unittest.TestCase):
         self.assertTrue(proc_env['PATH'].startswith('/path/to/venv/bin'))
         self.assertTrue(proc_env['PATH'].endswith('/base/path'))
         self.assertIn('VIRTUAL_ENV', proc_env)
-        self.assertEquals(proc_env['VIRTUAL_ENV'], '/path/to/venv')
+        self.assertEqual(proc_env['VIRTUAL_ENV'], '/path/to/venv')
 
     @patch.dict('os.environ', {}, clear=True)
     @patch('luigi.contrib.external_program.subprocess.Popen')

@@ -20,6 +20,7 @@ from helpers import unittest, in_parse
 
 import luigi
 import luigi.interface
+from luigi import six
 
 
 class DateTask(luigi.Task):
@@ -69,6 +70,10 @@ class DateHourParameterTest(unittest.TestCase):
         dh = luigi.DateHourParameter().parse('2013-02-01T18')
         self.assertEqual(dh, datetime.datetime(2013, 2, 1, 18, 0, 0))
 
+    def test_date_to_dh(self):
+        date = luigi.DateHourParameter().normalize(datetime.date(2000, 1, 1))
+        self.assertEqual(date, datetime.datetime(2000, 1, 1, 0))
+
     def test_serialize(self):
         dh = luigi.DateHourParameter().serialize(datetime.datetime(2013, 2, 1, 18, 0, 0))
         self.assertEqual(dh, '2013-02-01T18')
@@ -92,7 +97,11 @@ class DateMinuteParameterTest(unittest.TestCase):
         self.assertEqual(dm, datetime.datetime(2013, 2, 1, 18, 7, 0))
 
     def test_parse_deprecated(self):
-        dm = luigi.DateMinuteParameter().parse('2013-02-01T18H42')
+        if six.PY3:
+            with self.assertWarnsRegex(DeprecationWarning, 'Using "H" between hours and minutes is deprecated, omit it instead.'):
+                dm = luigi.DateMinuteParameter().parse('2013-02-01T18H42')
+        else:
+            dm = luigi.DateMinuteParameter().parse('2013-02-01T18H42')
         self.assertEqual(dm, datetime.datetime(2013, 2, 1, 18, 42, 0))
 
     def test_serialize(self):
@@ -135,6 +144,17 @@ class MonthParameterTest(unittest.TestCase):
         m = luigi.MonthParameter().parse('2015-04')
         self.assertEqual(m, datetime.date(2015, 4, 1))
 
+    def test_construct_month_interval(self):
+        m = MonthTask(luigi.date_interval.Month(2015, 4))
+        self.assertEqual(m.month, datetime.date(2015, 4, 1))
+
+    def test_month_interval_default(self):
+        class MonthDefaultTask(luigi.task.Task):
+            month = luigi.MonthParameter(default=luigi.date_interval.Month(2015, 4))
+
+        m = MonthDefaultTask()
+        self.assertEqual(m.month, datetime.date(2015, 4, 1))
+
     def test_serialize(self):
         m = luigi.MonthParameter().serialize(datetime.date(2015, 4, 3))
         self.assertEqual(m, '2015-04')
@@ -152,6 +172,17 @@ class YearParameterTest(unittest.TestCase):
     def test_parse(self):
         year = luigi.YearParameter().parse('2015')
         self.assertEqual(year, datetime.date(2015, 1, 1))
+
+    def test_construct_year_interval(self):
+        y = YearTask(luigi.date_interval.Year(2015))
+        self.assertEqual(y.year, datetime.date(2015, 1, 1))
+
+    def test_year_interval_default(self):
+        class YearDefaultTask(luigi.task.Task):
+            year = luigi.YearParameter(default=luigi.date_interval.Year(2015))
+
+        m = YearDefaultTask()
+        self.assertEqual(m.year, datetime.date(2015, 1, 1))
 
     def test_serialize(self):
         year = luigi.YearParameter().serialize(datetime.date(2015, 4, 3))

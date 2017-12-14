@@ -21,8 +21,11 @@ This prevents multiple identical workflows to be launched simultaneously.
 """
 from __future__ import print_function
 
+import errno
 import hashlib
 import os
+import sys
+from subprocess import Popen, PIPE
 
 from luigi import six
 
@@ -35,21 +38,43 @@ def getpcmd(pid):
     """
     if os.name == "nt":
         # Use wmic command instead of ps on Windows.
-        cmd = 'wmic path win32_process where ProcessID=%s get Commandline' % (pid, )
+        cmd = 'wmic path win32_process where ProcessID=%s get Commandline 2> nul' % (pid, )
         with os.popen(cmd, 'r') as p:
             lines = [line for line in p.readlines() if line.strip("\r\n ") != ""]
             if lines:
                 _, val = lines
                 return val
+    elif sys.platform == "darwin":
+        # Use pgrep instead of /proc on macOS.
+        pidfile = ".%d.pid" % (pid, )
+        with open(pidfile, 'w') as f:
+            f.write(str(pid))
+        try:
+            p = Popen(['pgrep', '-lf', '-F', pidfile], stdout=PIPE)
+            stdout, _ = p.communicate()
+            line = stdout.decode('utf8').strip()
+            if line:
+                _, scmd = line.split(' ', 1)
+                return scmd
+        finally:
+            os.unlink(pidfile)
     else:
-        cmd = 'ps x -wwo pid,args'
-        with os.popen(cmd, 'r') as p:
-            # Skip the column titles
-            p.readline()
-            for line in p:
-                spid, scmd = line.strip().split(' ', 1)
-                if int(spid) == int(pid):
-                    return scmd
+        # Use the /proc filesystem
+        # At least on android there have been some issues with not all
+        # process infos being readable. In these cases using the `ps` command
+        # worked. See the pull request at
+        # https://github.com/spotify/luigi/pull/1876
+        try:
+            with open('/proc/{0}/cmdline'.format(pid), 'r') as fh:
+                if six.PY3:
+                    return fh.read().replace('\0', ' ').rstrip()
+                else:
+                    return fh.read().replace('\0', ' ').decode('utf8').rstrip()
+        except IOError:
+            # the system may not allow reading the command line
+            # of a process owned by another user
+            pass
+
     # Fallback instead of None, for e.g. Cygwin where -o is an "unknown option" for the ps command:
     return '[PROCESS_WITH_PID={}]'.format(pid)
 
@@ -60,12 +85,7 @@ def get_info(pid_dir, my_pid=None):
         my_pid = os.getpid()
 
     my_cmd = getpcmd(my_pid)
-
-    if six.PY3:
-        cmd_hash = my_cmd.encode('utf8')
-    else:
-        cmd_hash = my_cmd
-
+    cmd_hash = my_cmd.encode('utf8')
     pid_file = os.path.join(pid_dir, hashlib.md5(cmd_hash).hexdigest()) + '.pid'
 
     return my_pid, my_cmd, pid_file
@@ -83,10 +103,14 @@ def acquire_for(pid_dir, num_available=1, kill_signal=None):
 
     my_pid, my_cmd, pid_file = get_info(pid_dir)
 
-    # Check if there is a pid file corresponding to this name
-    if not os.path.exists(pid_dir):
+    # Create a pid file if it does not exist
+    try:
         os.mkdir(pid_dir)
         os.chmod(pid_dir, 0o777)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
+            raise
+        pass
 
     # Let variable "pids" be all pids who exist in the .pid-file who are still
     # about running the same command.
@@ -118,7 +142,7 @@ def _read_pids_file(pid_file):
     # First setup a python 2 vs 3 compatibility
     # http://stackoverflow.com/a/21368622/621449
     try:
-        FileNotFoundError
+        FileNotFoundError  # noqa: F823
     except NameError:
         # Should only happen on python 2
         FileNotFoundError = IOError

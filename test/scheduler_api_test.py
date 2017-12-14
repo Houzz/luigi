@@ -46,6 +46,7 @@ class SchedulerApiTest(unittest.TestCase):
             'disable_window': 10,
             'retry_count': 3,
             'disable_hard_timeout': 60 * 60,
+            'stable_done_cooldown_secs': 0
         }
 
     def tearDown(self):
@@ -101,6 +102,14 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker='X', task_id='A', status=DONE)
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'C')
         self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'B')
+
+    def test_status_wont_override(self):
+        # Worker X is running A
+        # Worker Y wants to override the status to UNKNOWN (e.g. complete is throwing an exception)
+        self.sch.add_task(worker='X', task_id='A')
+        self.assertEqual(self.sch.get_work(worker='X')['task_id'], 'A')
+        self.sch.add_task(worker='Y', task_id='A', status=UNKNOWN)
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNING, '').keys()))
 
     def test_retry(self):
         # Try to build A but fails, will retry after 100s
@@ -437,12 +446,12 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='A_2', status=DONE)
         self.assertEqual({'A_1', 'A_2'}, set(self.sch.task_list(DONE, '').keys()))
 
-    def _start_simple_batch(self, use_max=False, mark_running=True):
+    def _start_simple_batch(self, use_max=False, mark_running=True, resources=None):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
         self.sch.add_task(worker=WORKER, task_id='A_1', family='A', params={'a': '1'},
-                          batchable=True)
+                          batchable=True, resources=resources)
         self.sch.add_task(worker=WORKER, task_id='A_2', family='A', params={'a': '2'},
-                          batchable=True)
+                          batchable=True, resources=resources)
         response = self.sch.get_work(worker=WORKER)
 
         if mark_running:
@@ -535,6 +544,19 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.set_task_status_message('A_1_2', 'test message')
         for task_id in ('A_1', 'A_2', 'A_1_2'):
             self.assertEqual('test message', self.sch.get_task_status_message(task_id)['statusMessage'])
+
+    def test_batch_update_progress(self):
+        self._start_simple_batch()
+        self.sch.set_task_progress_percentage('A_1_2', 30)
+        for task_id in ('A_1', 'A_2', 'A_1_2'):
+            self.assertEqual(30, self.sch.get_task_progress_percentage(task_id)['progressPercentage'])
+
+    def test_batch_decrease_resources(self):
+        self.sch.update_resources(x=3)
+        self._start_simple_batch(resources={'x': 3})
+        self.sch.decrease_running_task_resources('A_1_2', {'x': 1})
+        for task_id in ('A_1', 'A_2', 'A_1_2'):
+            self.assertEqual(2, self.sch.get_running_task_resources(task_id)['resources']['x'])
 
     def test_batch_tracking_url(self):
         self._start_simple_batch()
@@ -915,7 +937,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(worker=WORKER, task_id='E', status=DISABLED)
 
         # scheduler prunes the worker disabled task
-        self.assertEqual(set(['D', 'E']), set(self.sch.task_list(DISABLED, '')))
+        self.assertEqual({'D', 'E'}, set(self.sch.task_list(DISABLED, '')))
         self._test_prune_done_tasks([])
 
     def test_keep_failed_tasks_for_assistant(self):
@@ -1291,30 +1313,26 @@ class SchedulerApiTest(unittest.TestCase):
         self.assertEqual(count, counts.get(name))
 
     def test_update_new_resource(self):
-        self.assertEqual([], self.sch.resource_list())
+        self.validate_resource_count('new_resource', None)  # new_resource is not in the scheduler
         self.sch.update_resource('new_resource', 1)
         self.validate_resource_count('new_resource', 1)
 
     def test_update_existing_resource(self):
-        self.assertEqual([], self.sch.resource_list())
         self.sch.update_resource('new_resource', 1)
         self.sch.update_resource('new_resource', 2)
         self.validate_resource_count('new_resource', 2)
 
     def test_disable_existing_resource(self):
-        self.assertEqual([], self.sch.resource_list())
         self.sch.update_resource('new_resource', 1)
         self.sch.update_resource('new_resource', 0)
         self.validate_resource_count('new_resource', 0)
 
     def test_attempt_to_set_resource_to_negative_value(self):
-        self.assertEqual([], self.sch.resource_list())
         self.sch.update_resource('new_resource', 1)
         self.assertFalse(self.sch.update_resource('new_resource', -1))
         self.validate_resource_count('new_resource', 1)
 
     def test_attempt_to_set_resource_to_non_integer(self):
-        self.assertEqual([], self.sch.resource_list())
         self.sch.update_resource('new_resource', 1)
         self.assertFalse(self.sch.update_resource('new_resource', 1.3))
         self.assertFalse(self.sch.update_resource('new_resource', '1'))
@@ -2575,3 +2593,66 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.forgive_failures(task_id='A')
         self.sch.forgive_failures(task_id='A')
         self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], 'A')
+
+    def test_mark_running_as_done_works(self):
+        # Adding a task, it runs, then force-commiting it sends it to DONE
+        self.setTime(0)
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], 'A')
+        self.setTime(1)
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNING, '').keys()))
+        self.sch.mark_as_done(task_id='A')
+        self.assertEqual({'A'}, set(self.sch.task_list(DONE, '').keys()))
+
+    def test_mark_failed_as_done_works(self):
+        # Adding a task, saying it failed, then force-commiting it sends it to DONE
+        self.setTime(0)
+        self.sch.add_task(worker=WORKER, task_id='A')
+        self.assertEqual(self.sch.get_work(worker=WORKER)['task_id'], 'A')
+        self.sch.add_task(worker=WORKER, task_id='A', status=FAILED)
+        self.setTime(1)
+        self.assertEqual(set(), set(self.sch.task_list(RUNNING, '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(FAILED, '').keys()))
+        self.sch.mark_as_done(task_id='A')
+        self.assertEqual({'A'}, set(self.sch.task_list(DONE, '').keys()))
+
+    @mock.patch('luigi.metrics.NoMetricsCollector')
+    def test_collector_metrics_on_task_started(self, MetricsCollector):
+        from luigi.metrics import MetricsCollectors
+
+        s = Scheduler(metrics_collector=MetricsCollectors.none)
+        s.add_task(worker=WORKER, task_id='A', status=PENDING)
+        s.get_work(worker=WORKER)
+
+        task = s._state.get_task('A')
+        MetricsCollector().handle_task_started.assert_called_once_with(task)
+
+    @mock.patch('luigi.metrics.NoMetricsCollector')
+    def test_collector_metrics_on_task_disabled(self, MetricsCollector):
+        from luigi.metrics import MetricsCollectors
+
+        s = Scheduler(metrics_collector=MetricsCollectors.none, retry_count=0)
+        s.add_task(worker=WORKER, task_id='A', status=FAILED)
+
+        task = s._state.get_task('A')
+        MetricsCollector().handle_task_disabled.assert_called_once_with(task, s._config)
+
+    @mock.patch('luigi.metrics.NoMetricsCollector')
+    def test_collector_metrics_on_task_failed(self, MetricsCollector):
+        from luigi.metrics import MetricsCollectors
+
+        s = Scheduler(metrics_collector=MetricsCollectors.none)
+        s.add_task(worker=WORKER, task_id='A', status=FAILED)
+
+        task = s._state.get_task('A')
+        MetricsCollector().handle_task_failed.assert_called_once_with(task)
+
+    @mock.patch('luigi.metrics.NoMetricsCollector')
+    def test_collector_metrics_on_task_done(self, MetricsCollector):
+        from luigi.metrics import MetricsCollectors
+
+        s = Scheduler(metrics_collector=MetricsCollectors.none)
+        s.add_task(worker=WORKER, task_id='A', status=DONE)
+
+        task = s._state.get_task('A')
+        MetricsCollector().handle_task_done.assert_called_once_with(task)

@@ -25,7 +25,9 @@ function visualiserApp(luigi) {
      */
     function updateVisType(newVisType) {
         $('#toggleVisButtons label').removeClass('active');
-        $('#toggleVisButtons input[value="' + newVisType + '"]').parent().addClass('active');
+        var visTypeInput = $('#toggleVisButtons input[value="' + newVisType + '"]');
+        visTypeInput.parent().addClass('active');
+        visTypeInput.prop('checked', true);
     }
 
     function loadTemplates() {
@@ -64,7 +66,7 @@ function visualiserApp(luigi) {
             taskParams: taskParams,
             displayName: task.display_name,
             priority: task.priority,
-            resources: JSON.stringify(task.resources).replace(/,"/g, ', "'),
+            resources: JSON.stringify(task.resources_running || task.resources).replace(/,"/g, ', "'),
             displayTime: displayTime,
             displayTimestamp: task.last_updated,
             timeRunning: time_running,
@@ -74,6 +76,10 @@ function visualiserApp(luigi) {
             error: (task.status == "FAILED" || re_enable),
             re_enable: re_enable,
             statusMessage: task.status_message
+            mark_as_done: (task.status == "RUNNING" || task.status == "FAILED" || task.status == "DISABLED"),
+            progressPercentage: task.progress_percentage,
+            acceptsMessages: task.accepts_messages,
+            workerIdRunning: task.worker_running,
         };
     }
 
@@ -188,10 +194,40 @@ function visualiserApp(luigi) {
         });
         var taskList = [];
         $.each(counts, function (name) {
-            taskList.push({name: name, count: counts[name]});
+            var dotIndex = name.indexOf('.');
+            var prefix = 'Others';
+            if (dotIndex > 0) {
+                prefix = name.slice(0, dotIndex);
+            }
+            var prefixList = taskList.find(function (pref) {
+                return pref.name == prefix;
+            })
+            if (prefixList) {
+                prefixList.tasks.push({name: name, count: counts[name]});
+            } else {
+                prefixList = {
+                    name: prefix,
+                    tasks: [{name: name, count: counts[name]}]
+                }
+                taskList.push(prefixList);
+            }
+
         });
         taskList.sort(function(a,b){
-          return a.name.localeCompare(b.name);
+            if (a.name == 'Others') {
+                if (b.name == 'Others') {
+                    return 0;
+                }
+                return 1;
+            } else if (b.name == 'Others') {
+                return -1;
+            }
+            return a.name.localeCompare(b.name);
+        });
+        taskList.forEach(function(p){
+            p.tasks.sort(function(a,b){
+                return a.name.localeCompare(b.name);
+            });
         });
         return renderTemplate("sidebarTemplate", {"tasks": taskList});
     }
@@ -383,12 +419,85 @@ function visualiserApp(luigi) {
 
     function showStatusMessage(data) {
         $("#statusMessageModal").empty().append(renderTemplate("statusMessageTemplate", data));
-        $("#statusMessageModal .refresh").on('click', function() {
-            luigi.getTaskStatusMessage(data.taskId, function(data) {
-                $("#statusMessageModal pre").html(data.statusMessage);
-            });
-        }).trigger('click');
         $("#statusMessageModal").modal({});
+        var refreshInterval = setInterval(function() {
+                if ($("#statusMessageModal").is(":hidden"))
+                    clearInterval(refreshInterval);
+                else {
+                    luigi.getTaskStatusMessage(data.taskId, function(data) {
+                        if (data.statusMessage === null)
+                            $("#statusMessageModal pre").hide();
+                        else {
+                            $("#statusMessageModal pre").html(data.statusMessage).show();
+                        }
+                    });
+                    luigi.getTaskProgressPercentage(data.taskId, function(data) {
+                        if (data.progressPercentage === null)
+                            $("#statusMessageModal .progress").hide();
+                        else {
+                            $("#statusMessageModal .progress").show();
+                            $("#statusMessageModal .progress-bar")
+                                .attr('aria-valuenow', data.progressPercentage)
+                                .text(data.progressPercentage + '%')
+                                .css({'width': data.progressPercentage + '%'});
+                        }
+                    });
+                }
+            },
+            500
+        );
+    }
+
+    function showSchedulerMessageModal(data) {
+        var $modal = $("#schedulerMessageModal");
+
+        $modal.empty().append(renderTemplate("schedulerMessageTemplate", data));
+        var $input = $modal.find("#schedulerMessageInput");
+        var $send = $modal.find("#schedulerMessageButton");
+        var $awaitResponse = $modal.find("#schedulerMessageAwaitResponse");
+        var $responseContainer = $modal.find("#schedulerMessageResponse");
+        var $responseSpinner = $responseContainer.find("pre > i");
+        var $responseContent = $responseContainer.find("pre > div");
+
+        $input.on("keypress", function($event) {
+            if (event.keyCode == 13) {
+                $send.trigger("click");
+                $event.preventDefault();
+            }
+        });
+
+        $send.on("click", function($event) {
+            var content = $input.val();
+            var awaitResponse = $awaitResponse.prop("checked");
+            if (content && data.worker) {
+                if (awaitResponse) {
+                    $responseContainer.show();
+                    $responseSpinner.show();
+                    $responseContent.empty();
+                    luigi.sendSchedulerMessage(data.worker, data.taskId, content, function(messageId) {
+                        var interval = window.setInterval(function() {
+                            luigi.getSchedulerMessageResponse(data.taskId, messageId, function(response) {
+                                if (response != null) {
+                                    clearInterval(interval);
+                                    $responseSpinner.hide();
+                                    $responseContent.html(response);
+                                }
+                            });
+                        }, 1000);
+                    });
+                    $event.stopPropagation();
+                } else {
+                    $responseContainer.hide();
+                    luigi.sendSchedulerMessage(data.worker, data.taskId, content);
+                }
+            }
+        });
+
+        $modal.on("shown.bs.modal", function() {
+            $input.focus();
+        });
+
+        $modal.modal({});
     }
 
     function preProcessGraph(dependencyGraph) {
@@ -446,7 +555,7 @@ function visualiserApp(luigi) {
                 }
             } else {
                 $("#searchError").addClass("alert alert-error");
-                $("#searchError").append("Couldn't find task " + taskId);
+                $("#searchError").text("Couldn't find task " + taskId);
             }
             drawGraphETL(dependencyGraph, paint);
             bindGraphEvents();
@@ -466,7 +575,7 @@ function visualiserApp(luigi) {
                 bindGraphEvents();
             } else {
                 $("#searchError").addClass("alert alert-error");
-                $("#searchError").append("Couldn't find task " + taskId);
+                $("#searchError").text("Couldn't find task " + taskId);
             }
         }
 
@@ -527,7 +636,7 @@ function visualiserApp(luigi) {
 
             // Populate fields with values from hash.
             if (fragmentQuery.length) {
-                $('select[name=taskTable_length').val(fragmentQuery.length);
+                $('select[name=taskTable_length]').val(fragmentQuery.length);
             }
             $("#serverSideCheckbox").prop('checked', fragmentQuery.filterOnServer === '1' ? true : false);
             dt.search(fragmentQuery.search__search);
@@ -581,7 +690,7 @@ function visualiserApp(luigi) {
             $(".graph-node-a").click(function(event) {
                 var taskId = $(this).attr("data-task-id");
                 var status = $(this).attr("data-task-status");
-                if (status=="FAILED") {
+                if (status == "FAILED") {
                     event.preventDefault();
                     luigi.getErrorTrace(taskId, function(error) {
                        showErrorTrace(error);
@@ -642,19 +751,19 @@ function visualiserApp(luigi) {
         }
     }
 
-    function getFinishTime(tasks, listId){
-        var times = {};
+    function getDurations(tasks, listId){
+        var durations = {};
         for (var i = 0; i < listId.length; i++) {
             for (var j = 0; j < tasks.length; j++) {
-                if (listId[i]===tasks[j].taskId) {
-                    var finishTime = new Date(tasks[j].time_running*1000);
-                    var startTime = new Date(tasks[j].start_time*1000);
-                    var durationTime = new Date((finishTime - startTime)*1000).getSeconds();
-                    times[listId[i]] = durationTime;
+                if (listId[i] === tasks[j].taskId) {
+                    // The duration of the task from when it started running to when it finished.
+                    var finishTime = new Date(tasks[j].last_updated*1000);
+                    var startTime = new Date(tasks[j].time_running*1000);
+                    durations[listId[i]] = new Date(finishTime - startTime);
                 }
             }
         }
-        return times;
+        return durations;
     }
 
     function getParam(tasks, id){
@@ -729,9 +838,18 @@ function visualiserApp(luigi) {
                         // Destination node may not be in tasks if this is an inverted graph
                         if (taskIdMap[task.inputQueue[i]] !== undefined) {
                             if (task.status === "DONE") {
-                                var durationTime = getFinishTime(tasks, task.inputQueue);
+                                var durations = getDurations(tasks, task.inputQueue);
+                                var duration = durations[task.inputQueue[i]];
+                                var oneDayInMilliseconds = 24 * 60 * 60 * 1000;
+                                var durationLabel;
+                                if (duration.getTime() < oneDayInMilliseconds) {
+                                    // Label task duration in stripped ISO format (hh:mm:ss.f)
+                                    durationLabel = duration.toISOString().substr(11, 12);
+                                } else {
+                                    durationLabel = "> 24h";
+                                }
                                 g.setEdge(task.inputQueue[i], task.taskId, {
-                                    label: durationTime[task.inputQueue[i]] + " secs",
+                                    label: durationLabel,
                                     width: 40
                                 });
                             } else {
@@ -911,7 +1029,19 @@ function visualiserApp(luigi) {
             $('#familySidebar').html(renderSidebar(dt.column(1).data()));
             var selectedFamily = $('#familySidebar .sidebar-menu').find('li[data-task="' + currentFilter.taskFamily + '"]')[0];
             selectSidebarItem(selectedFamily);
-            $('#familySidebar .sidebar-menu').on('click', 'li', function () {
+
+            if (selectedFamily) {
+                var selectedUl = $(selectedFamily).parent();
+                selectedUl.show();
+                selectedUl.prev().addClass('expanded');
+            } else {
+                var others = $('.sidebar-folder:contains(Others)')
+                others.addClass('expanded')
+                others.next().show()
+            }
+
+            $('.sidebar-menu').on('click', 'li:not(.sidebar-folder)', function (e) {
+                e.stopPropagation();
                 if (this.dataset.task) {
                     selectSidebarItem(this);
                     if ($(this).hasClass('active')) {
@@ -921,6 +1051,16 @@ function visualiserApp(luigi) {
                         filterByTaskFamily("", dt);
                     }
                 }
+            });
+
+            $('.sidebar-menu').on('click', '.sidebar-folder', function () {
+                const ul = this.nextElementSibling;
+                $(ul).slideToggle()
+                this.classList.toggle('expanded')
+            })
+
+            $('#clear-task-filter').on('click', function () {
+                filterByTaskFamily("", dt);
             });
 
             if ($.isEmptyObject(missingCategories)) {
@@ -1080,7 +1220,20 @@ function visualiserApp(luigi) {
     $(document).ready(function() {
         loadTemplates();
 
-        luigi.isPaused(createPauseToggle);
+        luigi.hasTaskHistory(function(hasTaskHistory) {
+            if (hasTaskHistory) {
+                $('#topNavbar').append(renderTemplate('topNavbarItem', {
+                    label: "History",
+                    href: "../../history",
+                }).children()[0]);
+            }
+        });
+
+        luigi.isPauseEnabled(function(enabled) {
+            if (enabled) {
+                luigi.isPaused(createPauseToggle);
+            }
+        });
 
         luigi.getWorkerList(function(workers) {
             $("#workerList").append(renderWorkers(workers));
@@ -1109,6 +1262,11 @@ function visualiserApp(luigi) {
             $('.worker-table tbody').on('click', 'td .statusMessage', function() {
                 var data = $(this).data();
                 showStatusMessage(data);
+            });
+
+            $('.worker-table tbody').on('click', 'td .schedulerMessage', function() {
+                var data = $(this).data();
+                showSchedulerMessageModal(data);
             });
         });
 
@@ -1320,6 +1478,11 @@ function visualiserApp(luigi) {
             showStatusMessage(data);
         });
 
+        $('#taskTable tbody').on('click', 'td.details-control .schedulerMessage', function () {
+            var data = $(this).data();
+            showSchedulerMessageModal(data);
+        });
+
         $('.navbar-nav').on('click', 'a', function () {
             var tabName = $(this).data('tab');
             updateSidebar(tabName);
@@ -1446,7 +1609,7 @@ function visualiserApp(luigi) {
                     state.filterOnServer = '1';
                 }
 
-                var family = $('#familySidebar li.active').attr('data-task')
+                var family = $('#familySidebar li.active').attr('data-task');
                 if (family) {
                     state.family = family;
                 } else {
