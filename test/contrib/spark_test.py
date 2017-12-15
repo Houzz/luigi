@@ -103,14 +103,36 @@ class SparkSubmitTaskTest(unittest.TestCase):
         job = TestSparkSubmitTask()
         job.run()
 
-        self.assertEqual(proc.call_args[0][0],
-                         ['ss-stub', '--master', 'yarn-client', '--deploy-mode', 'client', '--name', 'AppName',
-                          '--class', 'org.test.MyClass', '--jars', 'jars/my.jar', '--py-files', 'file1.py,file2.py',
-                          '--files', 'file1,file2', '--archives', 'archive1,archive2', '--conf', 'Prop=Value',
-                          '--properties-file', 'conf/spark-defaults.conf', '--driver-memory', '4G', '--driver-java-options', '-Xopt',
-                          '--driver-library-path', 'library/path', '--driver-class-path', 'class/path', '--executor-memory', '8G',
-                          '--driver-cores', '8', '--supervise', '--total-executor-cores', '150', '--executor-cores', '10',
-                          '--queue', 'queue', '--num-executors', '2', 'file', 'arg1', 'arg2'])
+        self.assertEqual(
+            proc.call_args[0][0],
+            [
+                'ss-stub',
+                '--master', 'yarn-client',
+                '--deploy-mode', 'client',
+                '--name', 'TestSparkSubmitTask()',
+                '--class', 'org.test.MyClass',
+                '--jars', 'jars/my.jar',
+                '--py-files', 'file1.py,file2.py',
+                '--files', 'file1,file2',
+                '--archives', 'archive1,archive2',
+                '--conf', 'Prop=Value',
+                '--properties-file', 'conf/spark-defaults.conf',
+                '--driver-memory', '4G',
+                '--driver-java-options', '-Xopt',
+                '--driver-library-path', 'library/path',
+                '--driver-class-path', 'class/path',
+                '--executor-memory', '8G',
+                '--driver-cores', '8',
+                '--supervise',
+                '--total-executor-cores', '150',
+                '--executor-cores', '10',
+                '--queue', 'queue',
+                '--num-executors', '2',
+                'file',
+                'arg1',
+                'arg2',
+            ],
+        )
 
     @with_config({'spark': {'hadoop-conf-dir': 'path'}})
     @patch('luigi.contrib.external_program.subprocess.Popen')
@@ -129,13 +151,22 @@ class SparkSubmitTaskTest(unittest.TestCase):
         proc.return_value.returncode = 0
         job = TestDefaultSparkSubmitTask()
         job.run()
-        self.assertEqual(proc.call_args[0][0],
-                         ['ss-stub', '--master', 'spark://host:7077', '--jars', 'jar1.jar,jar2.jar',
-                          '--py-files', 'file1.py,file2.py', '--files', 'file1,file2', '--archives', 'archive1',
-                          '--conf', 'prop1=val1', 'test.py'])
+        self.assertEqual(
+            proc.call_args[0][0],
+            [
+                'ss-stub',
+                '--master', 'spark://host:7077',
+                '--name', 'TestDefaultSparkSubmitTask()',
+                '--jars', 'jar1.jar,jar2.jar',
+                '--py-files', 'file1.py,file2.py',
+                '--files', 'file1,file2',
+                '--archives', 'archive1',
+                '--conf', 'prop1=val1',
+                'test.py',
+            ])
 
     @patch('luigi.contrib.external_program.logger')
-    @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
+    @patch('luigi.contrib.external_program.tempfile.NamedTemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_handle_failed_job(self, proc, file, logger):
         proc.return_value.returncode = 1
@@ -152,7 +183,7 @@ class SparkSubmitTaskTest(unittest.TestCase):
             self.fail("Should have thrown ExternalProgramRunError")
 
     @patch('luigi.contrib.external_program.logger')
-    @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
+    @patch('luigi.contrib.external_program.tempfile.NamedTemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_dont_log_stderr_on_success(self, proc, file, logger):
         proc.return_value.returncode = 0
@@ -195,7 +226,7 @@ class PySparkTaskTest(unittest.TestCase):
         job = TestPySparkTask()
         job.run()
         proc_arg_list = proc.call_args[0][0]
-        self.assertEqual(proc_arg_list[0:7], ['ss-stub', '--master', 'spark://host:7077', '--deploy-mode', 'client', '--name', 'TestPySparkTask'])
+        self.assertEqual(proc_arg_list[0:7], ['ss-stub', '--master', 'spark://host:7077', '--deploy-mode', 'client', '--name', 'TestPySparkTask()'])
         self.assertTrue(os.path.exists(proc_arg_list[7]))
         self.assertTrue(proc_arg_list[8].endswith('TestPySparkTask.pickle'))
 
@@ -207,7 +238,7 @@ class PySparkTaskTest(unittest.TestCase):
         luigi.build([job], local_scheduler=True)
         self.assertEqual(proc.call_count, 1)
         proc_arg_list = proc.call_args[0][0]
-        self.assertEqual(proc_arg_list[0:7], ['ss-stub', '--master', 'spark://host:7077', '--deploy-mode', 'client', '--name', 'TestPySparkTask'])
+        self.assertEqual(proc_arg_list[0:7], ['ss-stub', '--master', 'spark://host:7077', '--deploy-mode', 'client', '--name', 'TestPySparkTask()'])
         self.assertTrue(os.path.exists(proc_arg_list[7]))
         self.assertTrue(proc_arg_list[8].endswith('TestPySparkTask.pickle'))
 
@@ -218,7 +249,7 @@ class PySparkTaskTest(unittest.TestCase):
         job = TestPySparkTask()
         job.run()
         proc_arg_list = proc.call_args[0][0]
-        self.assertEqual(proc_arg_list[0:8], ['ss-stub', '--master', 'spark://host:7077', '--deploy-mode', 'cluster', '--name', 'TestPySparkTask', '--files'])
+        self.assertEqual(proc_arg_list[0:8], ['ss-stub', '--master', 'spark://host:7077', '--deploy-mode', 'cluster', '--name', 'TestPySparkTask()', '--files'])
         self.assertTrue(proc_arg_list[8].endswith('TestPySparkTask.pickle'))
         self.assertTrue(os.path.exists(proc_arg_list[9]))
         self.assertEqual('TestPySparkTask.pickle', proc_arg_list[10])
