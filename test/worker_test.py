@@ -1862,14 +1862,17 @@ class UnimportedTask(luigi.Task):
         class AssistantGroupTask(DummyTask):
             assistant_groups = ['group1']
 
+        class DefaultAssistantGroupTask(DummyTask):
+            assistant_groups = None
+
         ag_task = AssistantGroupTask()
-        dummy_task = DummyTask()
+        default_group_task = DefaultAssistantGroupTask()
 
         self.w.add(ag_task)
-        self.w.add(dummy_task)
+        self.w.add(default_group_task)
 
         self.assistant.run()
-        self.assertTrue(dummy_task.complete())
+        self.assertTrue(default_group_task.complete())
         self.assertFalse(ag_task.complete())
 
     @with_config({'worker': {'assistant_groups': '["group1"]'}})
@@ -1883,16 +1886,19 @@ class UnimportedTask(luigi.Task):
         class EmptyAssistantGroupTask(DummyTask):
             assistant_groups = []
 
+        class DefaultAssistantGroupTask(DummyTask):
+            assistant_groups = None
+
         ag1_task = AssistantGroup1Task()
         ag2_task = AssistantGroup2Task()
         eag_task = EmptyAssistantGroupTask()
-        dummy_task = DummyTask()
+        default_group_task = DefaultAssistantGroupTask()
 
         with Worker(scheduler=self.sch, worker_id='X') as w:
             w.add(ag1_task)
             w.add(ag2_task)
             w.add(eag_task)
-            w.add(dummy_task)
+            w.add(default_group_task)
 
         with Worker(scheduler=self.sch, worker_id='Y', assistant=True) as assistant:
             assistant.run()
@@ -1900,7 +1906,7 @@ class UnimportedTask(luigi.Task):
         self.assertTrue(ag1_task.complete())
         self.assertFalse(ag2_task.complete())
         self.assertFalse(eag_task.complete())
-        self.assertTrue(dummy_task.complete())
+        self.assertTrue(default_group_task.complete())
 
     @with_config({'worker': {'assistant_groups': '["group1", "group2"]'}})
     def test_multiple_assistant_groups(self):
@@ -1916,18 +1922,21 @@ class UnimportedTask(luigi.Task):
         class EmptyAssistantGroupTask(DummyTask):
             assistant_groups = []
 
+        class DefaultAssistantGroupTask(DummyTask):
+            assistant_groups = None
+
         ag1_task = AssistantGroup1Task()
         ag2_task = AssistantGroup2Task()
         ag3_task = AssistantGroup3Task()
         eag_task = EmptyAssistantGroupTask()
-        dummy_task = DummyTask()
+        default_group_task = DefaultAssistantGroupTask()
 
         with Worker(scheduler=self.sch, worker_id='X') as w:
             w.add(ag1_task)
             w.add(ag2_task)
             w.add(ag3_task)
             w.add(eag_task)
-            w.add(dummy_task)
+            w.add(default_group_task)
 
         with Worker(scheduler=self.sch, worker_id='Y', assistant=True) as assistant:
             assistant.run()
@@ -1936,7 +1945,7 @@ class UnimportedTask(luigi.Task):
         self.assertTrue(ag2_task.complete())
         self.assertFalse(ag3_task.complete())
         self.assertFalse(eag_task.complete())
-        self.assertTrue(dummy_task.complete())
+        self.assertTrue(default_group_task.complete())
 
     def test_external_tasks_do_not_overwrite_assistant_groups(self):
         class AssistantGroupTask(DummyTask):
