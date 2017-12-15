@@ -1000,17 +1000,25 @@ class WorkerKeepAliveTests(LuigiTestCase):
         })
         w1 = Worker(worker_id='w1', **worker_args)
         w2 = Worker(worker_id='w2', **worker_args)
+
+        class IncompleteTask(Task):
+            def complete(self):
+                return False
+
+            def run(self):
+                pass
+
         with w1 as worker1, w2 as worker2:
-            worker1.add(DummyTask())
+            worker1.add(IncompleteTask())
             t1 = threading.Thread(target=worker1.run)
             t1.start()
 
-            worker2.add(DummyTask())
+            worker2.add(IncompleteTask())
             t2 = threading.Thread(target=worker2.run)
             t2.start()
 
             if task_status:
-                self.sch.add_task(worker='DummyWorker', task_id=DummyTask().task_id, status=task_status)
+                self.sch.add_task(worker='DummyWorker', task_id=IncompleteTask().task_id, status=task_status)
 
             # allow workers to run their get work loops a few times
             time.sleep(0.1)
@@ -1021,7 +1029,7 @@ class WorkerKeepAliveTests(LuigiTestCase):
 
             finally:
                 # mark the task done so the worker threads will die
-                self.sch.add_task(worker='DummyWorker', task_id=DummyTask().task_id, status='DONE')
+                self.sch.add_task(worker='DummyWorker', task_id=IncompleteTask().task_id, status='DONE')
                 t1.join()
                 t2.join()
 
