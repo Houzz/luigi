@@ -386,7 +386,7 @@ class worker(Config):
                              description='If this file changes, stop requesting new work')
 
     max_tasks_per_scheduler = IntParameter(
-        default=10000, description='Number of tasks before we start a new scheduling subprocess')
+        default=0, description='Number of tasks before we start a new scheduling subprocess')
 
     num_scheduling_processes = IntParameter(
         default=multiprocessing.cpu_count(),
@@ -670,11 +670,12 @@ class Worker(object):
         if self._first_task is None and hasattr(task, 'task_id'):
             self._first_task = task.task_id
         self.add_succeeded = True
+        max_tasks = self._config.max_tasks_per_scheduler
         if multiprocess:
             queue = multiprocessing.Manager().Queue()
             pool = multiprocessing.Pool(
                 processes=processes if processes > 0 else None,
-                maxtasksperchild=self._config.max_tasks_per_scheduler,
+                maxtasksperchild=max_tasks if max_tasks > 0 else None,
             )
         else:
             queue = DequeQueue()
