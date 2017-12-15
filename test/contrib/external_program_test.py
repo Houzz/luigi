@@ -75,7 +75,7 @@ class ExternalProgramTaskTest(unittest.TestCase):
                          ['app_path', 'arg1', 'arg2'])
 
     @patch('luigi.contrib.external_program.logger')
-    @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
+    @patch('luigi.contrib.external_program.tempfile.NamedTemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_handle_failed_job(self, proc, file, logger):
         proc.return_value.returncode = 1
@@ -91,7 +91,7 @@ class ExternalProgramTaskTest(unittest.TestCase):
             self.fail('Should have thrown ExternalProgramRunError')
 
     @patch('luigi.contrib.external_program.logger')
-    @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
+    @patch('luigi.contrib.external_program.tempfile.NamedTemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_always_log_stderr_on_failure(self, proc, file, logger):
         proc.return_value.returncode = 1
@@ -103,7 +103,7 @@ class ExternalProgramTaskTest(unittest.TestCase):
         self.assertIn(call.info('Program stderr:\nstderr'), logger.mock_calls)
 
     @patch('luigi.contrib.external_program.logger')
-    @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
+    @patch('luigi.contrib.external_program.tempfile.NamedTemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_log_stderr_on_success_by_default(self, proc, file, logger):
         proc.return_value.returncode = 0
@@ -114,7 +114,7 @@ class ExternalProgramTaskTest(unittest.TestCase):
         self.assertIn(call.info('Program stderr:\nstderr'), logger.mock_calls)
 
     @patch('luigi.contrib.external_program.logger')
-    @patch('luigi.contrib.external_program.tempfile.TemporaryFile')
+    @patch('luigi.contrib.external_program.tempfile.NamedTemporaryFile')
     @patch('luigi.contrib.external_program.subprocess.Popen')
     def test_dont_log_stderr_on_success_if_disabled(self, proc, file, logger):
         proc.return_value.returncode = 0
