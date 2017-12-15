@@ -20,7 +20,7 @@ from helpers import unittest
 
 import luigi.notifications
 import luigi.worker
-from luigi import Parameter, RemoteScheduler, Task
+from luigi import Parameter, Task
 from luigi.worker import Worker
 from mock import Mock
 

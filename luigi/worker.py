@@ -805,7 +805,7 @@ class Worker(object):
             family=task.task_family,
             module=task.task_module,
             batchable=task.batchable,
-            max_batch_size = task.max_batch_size,
+            max_batch_size=task.max_batch_size,
             retry_policy_dict=_get_retry_policy_dict(task),
         )
 

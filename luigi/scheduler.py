@@ -1139,7 +1139,7 @@ class Scheduler(object):
             self.add_worker(worker_id, [
                 ('assistant_groups', assistant_groups), ('assistant', True)])
 
-        batched_params, unbatched_params, batched_tasks, max_batch_size = None, None, [], 1
+        batched_params, unbatched_params, batched_tasks = None, None, []
         best_task = None
         if current_tasks is not None:
             ct_set = set(current_tasks)
