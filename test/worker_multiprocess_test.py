@@ -47,14 +47,13 @@ class DummyTask(Task):
 class MultiprocessWorkerTest(unittest.TestCase):
 
     def run(self, result=None):
-        self.scheduler = RemoteScheduler()
-        self.scheduler.add_worker = Mock()
-        self.scheduler.add_task = Mock()
+        self.scheduler = Mock()
         with Worker(scheduler=self.scheduler, worker_id='X', worker_processes=2) as worker:
             self.worker = worker
             super(MultiprocessWorkerTest, self).run(result)
 
-    def gw_res(self, pending, task_id):
+    @staticmethod
+    def gw_res(pending, task_id):
         return dict(n_pending_tasks=pending,
                     task_id=task_id,
                     running_tasks=0, n_unique_pending=0)
@@ -72,12 +71,13 @@ class MultiprocessWorkerTest(unittest.TestCase):
 
         self.assertTrue(self.worker.add(c))
 
-        self.scheduler.get_work = Mock(side_effect=[self.gw_res(3, a.task_id),
-                                                    self.gw_res(2, b.task_id),
-                                                    self.gw_res(1, c.task_id),
-                                                    self.gw_res(0, None),
-                                                    self.gw_res(0, None)])
-        self.scheduler.remove_worker = Mock()
+        self.scheduler.get_work.side_effect = [
+            self.gw_res(3, a.task_id),
+            self.gw_res(2, b.task_id),
+            self.gw_res(1, c.task_id),
+            self.gw_res(0, None),
+            self.gw_res(0, None),
+        ]
 
         self.assertTrue(self.worker.run())
         self.assertTrue(c.has_run)
@@ -100,12 +100,13 @@ class MultiprocessWorkerTest(unittest.TestCase):
 
         self.assertTrue(self.worker.add(c))
 
-        self.scheduler.get_work = Mock(side_effect=[self.gw_res(3, a.task_id),
-                                                    self.gw_res(2, b.task_id),
-                                                    self.gw_res(1, c.task_id),
-                                                    self.gw_res(0, None),
-                                                    self.gw_res(0, None)])
-        self.scheduler.remove_worker = Mock()
+        self.scheduler.get_work.side_effect = [
+            self.gw_res(3, a.task_id),
+            self.gw_res(2, b.task_id),
+            self.gw_res(1, c.task_id),
+            self.gw_res(0, None),
+            self.gw_res(0, None),
+        ]
 
         self.assertFalse(self.worker.run())
 
