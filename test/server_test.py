@@ -200,7 +200,7 @@ class UNIXServerTest(_ServerTest):
 class INETServerClient(object):
     def __init__(self):
         # Just some port
-        self.port = 8083
+        self.port = 18083
 
     def scheduler(self):
         return luigi.rpc.RemoteScheduler('http://localhost:' + str(self.port))
