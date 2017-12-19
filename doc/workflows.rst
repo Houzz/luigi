@@ -17,7 +17,7 @@ method which returns True if and only if the Target exists.
 
 In practice, implementing Target subclasses is rarely needed.
 Luigi comes with a toolbox of several useful Targets.
-In particular, :class:`~luigi.file.LocalTarget` and :class:`~luigi.contrib.hdfs.target.HdfsTarget`,
+In particular, :class:`~luigi.local_target.LocalTarget` and :class:`~luigi.contrib.hdfs.target.HdfsTarget`,
 but there is also support for other file systems:
 :class:`luigi.contrib.s3.S3Target`,
 :class:`luigi.contrib.ssh.RemoteTarget`,
@@ -26,9 +26,9 @@ but there is also support for other file systems:
 :class:`luigi.contrib.redshift.RedshiftTarget`, and several more.
 
 Most of these targets, are file system-like.
-For instance, :class:`~luigi.file.LocalTarget` and :class:`~luigi.contrib.hdfs.target.HdfsTarget` map to a file on the local drive or a file in HDFS.
+For instance, :class:`~luigi.local_target.LocalTarget` and :class:`~luigi.contrib.hdfs.target.HdfsTarget` map to a file on the local drive or a file in HDFS.
 In addition these also wrap the underlying operations to make them atomic.
-They both implement the :func:`~luigi.file.LocalTarget.open` method which returns a stream object that
+They both implement the :func:`~luigi.local_target.LocalTarget.open` method which returns a stream object that
 could be read (``mode='r'``) from or written to (``mode='w'``).
 
 Luigi comes with Gzip support by providing ``format=format.Gzip``.
