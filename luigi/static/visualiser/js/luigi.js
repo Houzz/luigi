@@ -163,14 +163,24 @@ var LuigiAPI = (function() {
         jsonRPC(this.urlRoot + "/update_resource", data, function(response) {
             callback();
         });
-    }    
+    }
 
     LuigiAPI.prototype.pause = function() {
-        jsonRPC(this.urlRoot + '/pause');
+        jsonRPC(this.urlRoot + '/pause', {}, function(repsonse) {
+            $('#pause').bootstrapToggle('enable');
+            $('#pause').bootstrapToggle('off');
+            $('#pause').bootstrapToggle('disable');
+            $('#pause-form .toggle').removeAttr('disabled');
+        });
     };
 
     LuigiAPI.prototype.unpause = function() {
-        jsonRPC(this.urlRoot + '/unpause');
+        jsonRPC(this.urlRoot + '/unpause', {}, function(response) {
+            $('#pause').bootstrapToggle('enable');
+            $('#pause').bootstrapToggle('on');
+            $('#pause').bootstrapToggle('disable');
+            $('#pause-form .toggle').removeAttr('disabled');
+        });
     };
 
     LuigiAPI.prototype.isPaused = function(callback) {

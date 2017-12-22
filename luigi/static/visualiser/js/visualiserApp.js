@@ -1092,11 +1092,13 @@ function visualiserApp(luigi) {
             onstyle: 'success',
             offstyle: 'danger'
         });
-        $('#pause').change(function() {
-            if (this.checked) {
-                luigi.unpause();
-            } else {
+        $('#pause').bootstrapToggle('disable');
+        $('#pause-form .toggle').removeAttr('disabled');
+        $('#pause-form .toggle').click(function(e) {
+            if ($('#pause-form .toggle.btn-success').length > 0) {
                 luigi.pause();
+            } else {
+                luigi.unpause();
             }
         })
     }
