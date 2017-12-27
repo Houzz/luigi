@@ -22,7 +22,7 @@ from helpers import unittest
 from nose.plugins.attrib import attr
 import luigi.notifications
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, \
-    UNKNOWN, RUNNING, BATCH_RUNNING, UPSTREAM_RUNNING, Scheduler
+    UNKNOWN, RUNNING, BATCH_RUNNING, UPSTREAM_RUNNING, RUNNABLE, Scheduler
 
 luigi.notifications.DEBUG = True
 WORKER = 'myworker'
@@ -164,6 +164,84 @@ class SchedulerApiTest(unittest.TestCase):
                 self.sch.prune()
 
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'A')
+
+    def test_base_task_ready(self):
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True)
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+
+    def test_task_with_done_deps_ready(self):
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+
+    def test_task_not_ready_until_deps_scheduled(self):
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+
+    def test_task_not_ready_until_deps_done(self):
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
+        self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
+        self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+
+    def test_task_no_longer_ready_after_dep_undone(self):
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+
+    def test_non_runnable_task_not_ready(self):
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=False)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+
+    def test_change_runnable_task_to_pending_dependencies(self):
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING)
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1'])
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.sch.add_task(task_id='A', worker=WORKER, runnable=True, deps=['D2'])
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+
+    def test_change_pending_task_to_done_dependencies(self):
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING)
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D2'])
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='A', worker=WORKER, runnable=True, deps=['D1'])
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+
+    def test_failed_task_becomes_ready(self):
+        self.setTime(0)
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='A', worker=WORKER, status=FAILED)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.setTime(1000)
+        self.sch.prune()
+        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+
+    def test_failed_task_becomes_pending(self):
+        self.setTime(0)
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='A', worker=WORKER, status=FAILED)
+        self.assertEqual({}, self.sch.task_list('READY', ''))
+
+        self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
+        self.setTime(1000)
+        self.sch.prune()
+        self.assertEqual({'A', 'D1'}, set(self.sch.task_list('PENDING', '').keys()))
 
     def test_get_work_single_batch_item(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])

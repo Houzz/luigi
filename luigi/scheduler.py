@@ -46,7 +46,7 @@ from luigi import notifications
 from luigi import parameter
 from luigi import task_history as history
 from luigi.task_status import DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDED, UNKNOWN, \
-    BATCH_RUNNING
+    BATCH_RUNNING, RUNNABLE
 from luigi.task import Config
 
 logger = logging.getLogger(__name__)
