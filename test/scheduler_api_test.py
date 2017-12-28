@@ -165,83 +165,100 @@ class SchedulerApiTest(unittest.TestCase):
 
         self.assertEqual(self.sch.get_work(worker='Y')['task_id'], 'A')
 
-    def test_base_task_ready(self):
+    def test_base_task_runnable(self):
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True)
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
-    def test_task_with_done_deps_ready(self):
+    def test_task_with_done_deps_runnable(self):
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
-    def test_task_not_ready_until_deps_scheduled(self):
+    def test_task_not_runnable_until_deps_scheduled(self):
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({}, self.sch.task_list(RUNNABLE, ''))
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({}, self.sch.task_list(RUNNABLE, ''))
         self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
-    def test_task_not_ready_until_deps_done(self):
+    def test_task_no_longer_runnable_after_pending_dep_added(self):
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1'])
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING)
+        self.assertEqual({'A', 'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
+        self.sch.add_task(task_id='A', worker=WORKER, new_deps=['D2'])
+        self.assertEqual({'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
+
+    def test_task_becomes_runnable_when_dep_removed(self):
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
+        self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING, runnable=True)
+        self.assertEqual({'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
+        self.sch.add_task(task_id='A', worker=WORKER, deps=['D1'])
+        self.assertEqual({'A', 'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
+
+    def test_task_not_runnable_until_deps_done(self):
+        self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
+        self.assertEqual({}, self.sch.task_list(RUNNABLE, ''))
         self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
-        self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING)
+        self.assertEqual({'D1', 'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
         self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
-    def test_task_no_longer_ready_after_dep_undone(self):
+    def test_task_no_longer_runnable_after_dep_undone(self):
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1', 'D2'])
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
         self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({'D1'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
-    def test_non_runnable_task_not_ready(self):
+    def test_non_runnable_task_not_runnable(self):
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=False)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({}, self.sch.task_list(RUNNABLE, ''))
 
     def test_change_runnable_task_to_pending_dependencies(self):
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
-        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING)
+        self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING, runnable=True)
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D1'])
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'D2', 'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
         self.sch.add_task(task_id='A', worker=WORKER, runnable=True, deps=['D2'])
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
     def test_change_pending_task_to_done_dependencies(self):
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='D2', worker=WORKER, status=PENDING)
         self.sch.add_task(task_id='A', worker=WORKER, status=PENDING, runnable=True, deps=['D2'])
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.assertEqual({'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
         self.sch.add_task(task_id='A', worker=WORKER, runnable=True, deps=['D1'])
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A', 'D2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
-    def test_failed_task_becomes_ready(self):
+    def test_failed_task_becomes_runnable(self):
         self.setTime(0)
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
-        self.sch.add_task(task_id='A', worker=WORKER, status=FAILED)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='A', worker=WORKER, status=FAILED, deps=['D1', 'D2'])
+        self.assertEqual({}, self.sch.task_list(RUNNABLE, ''))
         self.setTime(1000)
         self.sch.prune()
-        self.assertEqual({'A'}, set(self.sch.task_list('READY', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list(RUNNABLE, '').keys()))
 
     def test_failed_task_becomes_pending(self):
         self.setTime(0)
         self.sch.add_task(task_id='D1', worker=WORKER, status=DONE)
         self.sch.add_task(task_id='D2', worker=WORKER, status=DONE)
-        self.sch.add_task(task_id='A', worker=WORKER, status=FAILED)
-        self.assertEqual({}, self.sch.task_list('READY', ''))
+        self.sch.add_task(task_id='A', worker=WORKER, status=FAILED, deps=['D1', 'D2'])
+        self.assertEqual({}, self.sch.task_list(RUNNABLE, ''))
 
         self.sch.add_task(task_id='D1', worker=WORKER, status=PENDING)
         self.setTime(1000)
         self.sch.prune()
-        self.assertEqual({'A', 'D1'}, set(self.sch.task_list('PENDING', '').keys()))
+        self.assertEqual({'A'}, set(self.sch.task_list('PENDING', '').keys()))
 
     def test_get_work_single_batch_item(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
@@ -656,7 +673,7 @@ class SchedulerApiTest(unittest.TestCase):
         self.sch.add_task(
             worker=WORKER, task_id='A_2', task_family='A', params={'a': '2'}, batchable=True)
 
-        self.assertEqual({'A_2'}, set(self.sch.task_list(PENDING, '').keys()))
+        self.assertEqual({'A_2'}, set(self.sch.task_list(RUNNABLE, '').keys()))
         self.assertEqual({'A_1'}, set(self.sch.task_list(DONE, '').keys()))
 
     def test_resend_batch_on_get_work_retry(self):
@@ -770,14 +787,15 @@ class SchedulerApiTest(unittest.TestCase):
     def test_drop_tracking_url_when_rescheduled_while_not_running(self):
         for status in ('DONE', 'FAILED', 'PENDING'):
             self.sch.add_task(task_id='A', worker='X', status=status, tracking_url='trackme')
-            self.assertEqual('trackme', self.sch.task_list(status, '')['A']['tracking_url'])
+            expected_status = 'RUNNABLE' if status == 'PENDING' else status
+            self.assertEqual('trackme', self.sch.task_list(expected_status, '')['A']['tracking_url'])
 
             self.sch.add_task(task_id='A', worker='Y', status='PENDING')
-            self.assertIsNone(self.sch.task_list('PENDING', '')['A']['tracking_url'])
+            self.assertIsNone(self.sch.task_list(RUNNABLE, '')['A']['tracking_url'])
 
     def test_reset_tracking_url_on_new_run(self):
         self.sch.add_task(task_id='A', worker='X', status='PENDING', tracking_url='trackme')
-        self.assertEqual('trackme', self.sch.task_list('PENDING', '')['A']['tracking_url'])
+        self.assertEqual('trackme', self.sch.task_list(RUNNABLE, '')['A']['tracking_url'])
 
         self.sch.add_task(task_id='A', worker='Y', status='RUNNING')
         self.assertIsNone(self.sch.task_list('RUNNING', '')['A']['tracking_url'])
@@ -806,18 +824,20 @@ class SchedulerApiTest(unittest.TestCase):
 
     def test_last_updated_does_not_change_with_same_status_update(self):
         for t, status in ((100, PENDING), (300, DONE), (500, DISABLED)):
+            expected_status = RUNNABLE if status == PENDING else status
+
             self.setTime(t)
             self.sch.add_task(worker=WORKER, task_id='A', status=status)
-            self.assertEqual(t, self.sch.task_list(status, '')['A']['last_updated'])
+            self.assertEqual(t, self.sch.task_list(expected_status, '')['A']['last_updated'])
 
             self.setTime(t + 100)
             self.sch.add_task(worker=WORKER, task_id='A', status=status)
-            self.assertEqual(t, self.sch.task_list(status, '')['A']['last_updated'])
+            self.assertEqual(t, self.sch.task_list(expected_status, '')['A']['last_updated'])
 
     def test_last_updated_shows_running_start(self):
         self.setTime(100)
         self.sch.add_task(worker=WORKER, task_id='A', status=PENDING)
-        self.assertEqual(100, self.sch.task_list(PENDING, '')['A']['last_updated'])
+        self.assertEqual(100, self.sch.task_list(RUNNABLE, '')['A']['last_updated'])
 
         self.setTime(200)
         self.assertEqual('A', self.sch.get_work(worker=WORKER)['task_id'])
@@ -838,7 +858,7 @@ class SchedulerApiTest(unittest.TestCase):
 
         self.setTime(1000)
         self.sch.prune()
-        self.assertEqual(1000, self.sch.task_list(PENDING, '')['A']['last_updated'])
+        self.assertEqual(1000, self.sch.task_list(RUNNABLE, '')['A']['last_updated'])
 
     def test_timeout(self):
         # A bug that was earlier present when restarting the same flow
@@ -940,7 +960,7 @@ class SchedulerApiTest(unittest.TestCase):
         # resets to PENDING after 100 seconds
         self.setTime(101)
         self.sch.ping(worker='X')  # worker still alive
-        self.assertEqual('PENDING', self.sch.task_list('', '')['A']['status'])
+        self.assertEqual(RUNNABLE, self.sch.task_list('', '')['A']['status'])
 
     def test_assistant_doesnt_keep_alive_task(self):
         self.setTime(0)
@@ -1961,14 +1981,14 @@ class SchedulerApiTest(unittest.TestCase):
         sch = Scheduler(max_shown_tasks=3)
         for c in 'ABCD':
             sch.add_task(worker=WORKER, task_id=c)
-        self.assertEqual(set('ABCD'), set(sch.task_list('PENDING', '', False).keys()))
-        self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', ''))
+        self.assertEqual(set('ABCD'), set(sch.task_list(RUNNABLE, '', False).keys()))
+        self.assertEqual({'num_tasks': 4}, sch.task_list(RUNNABLE, ''))
 
     def test_task_list_within_limit(self):
         sch = Scheduler(max_shown_tasks=4)
         for c in 'ABCD':
             sch.add_task(worker=WORKER, task_id=c)
-        self.assertEqual(set('ABCD'), set(sch.task_list('PENDING', '').keys()))
+        self.assertEqual(set('ABCD'), set(sch.task_list(RUNNABLE, '').keys()))
 
     def test_task_lists_some_beyond_limit(self):
         sch = Scheduler(max_shown_tasks=3)
@@ -1976,7 +1996,7 @@ class SchedulerApiTest(unittest.TestCase):
             sch.add_task(worker=WORKER, task_id=c, status=DONE)
         for c in 'EFG':
             sch.add_task(worker=WORKER, task_id=c)
-        self.assertEqual(set('EFG'), set(sch.task_list('PENDING', '').keys()))
+        self.assertEqual(set('EFG'), set(sch.task_list(RUNNABLE, '').keys()))
         self.assertEqual({'num_tasks': 4}, sch.task_list('DONE', ''))
 
     def test_dynamic_shown_tasks_in_task_list(self):
@@ -1986,8 +2006,8 @@ class SchedulerApiTest(unittest.TestCase):
         for task_id in 'EFG':
             sch.add_task(worker=WORKER, task_id=task_id)
 
-        self.assertEqual(set('EFG'), set(sch.task_list('PENDING', '').keys()))
-        self.assertEqual({'num_tasks': 3}, sch.task_list('PENDING', '', max_shown_tasks=2))
+        self.assertEqual(set('EFG'), set(sch.task_list(RUNNABLE, '').keys()))
+        self.assertEqual({'num_tasks': 3}, sch.task_list(RUNNABLE, '', max_shown_tasks=2))
 
         self.assertEqual({'num_tasks': 4}, sch.task_list('DONE', ''))
         self.assertEqual(set('ABCD'), set(sch.task_list('DONE', '', max_shown_tasks=4).keys()))
@@ -1998,7 +2018,7 @@ class SchedulerApiTest(unittest.TestCase):
         return task_id
 
     def search_pending(self, term, expected_keys):
-        actual_keys = set(self.sch.task_list('PENDING', '', search=term).keys())
+        actual_keys = set(self.sch.task_list(RUNNABLE, '', search=term).keys())
         self.assertEqual(expected_keys, actual_keys)
 
     def test_task_list_filter_by_search_family_name(self):
@@ -2158,23 +2178,23 @@ class SchedulerApiTest(unittest.TestCase):
         sch = Scheduler(max_shown_tasks=3)
         for i in range(4):
             sch.add_task(worker=WORKER, family='Test', params={'p': str(i)}, task_id='Test_%i' % i)
-        self.assertEqual({'num_tasks': -1}, sch.task_list('PENDING', 'FAILED'))
-        self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', ''))
+        self.assertEqual({'num_tasks': -1}, sch.task_list(RUNNABLE, 'FAILED'))
+        self.assertEqual({'num_tasks': 4}, sch.task_list(RUNNABLE, ''))
 
     def test_do_not_prune_on_beyond_limit_check(self):
         sch = Scheduler(max_shown_tasks=3)
         sch.prune = mock.Mock()
         for i in range(4):
             sch.add_task(worker=WORKER, family='Test', params={'p': str(i)}, task_id='Test_%i' % i)
-        self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', ''))
+        self.assertEqual({'num_tasks': 4}, sch.task_list('RUNNABLE', ''))
         sch.prune.assert_not_called()
 
     def test_search_results_beyond_limit(self):
         sch = Scheduler(max_shown_tasks=3)
         for i in range(4):
             sch.add_task(worker=WORKER, family='Test', params={'p': str(i)}, task_id='Test_%i' % i)
-        self.assertEqual({'num_tasks': 4}, sch.task_list('PENDING', '', search='Test'))
-        self.assertEqual(['Test_0'], list(sch.task_list('PENDING', '', search='0').keys()))
+        self.assertEqual({'num_tasks': 4}, sch.task_list(RUNNABLE, '', search='Test'))
+        self.assertEqual(['Test_0'], list(sch.task_list(RUNNABLE, '', search='0').keys()))
 
     def test_priority_update_dependency_chain(self):
         self.sch.add_task(worker=WORKER, task_id='A', priority=10, deps=['B'])
@@ -2223,7 +2243,7 @@ class SchedulerApiTest(unittest.TestCase):
     def test_task_list_no_deps(self):
         self.sch.add_task(worker=WORKER, task_id='B', deps=('A',))
         self.sch.add_task(worker=WORKER, task_id='A')
-        task_list = self.sch.task_list('PENDING', '')
+        task_list = self.sch.task_list(RUNNABLE, '')
         self.assertFalse('deps' in task_list['A'])
 
     def test_task_first_failure_time(self):
