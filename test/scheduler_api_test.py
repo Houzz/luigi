@@ -23,6 +23,7 @@ from nose.plugins.attrib import attr
 import luigi.notifications
 from luigi.scheduler import DISABLED, DONE, FAILED, PENDING, \
     UNKNOWN, RUNNING, BATCH_RUNNING, UPSTREAM_RUNNING, RUNNABLE, Scheduler
+from luigi.six import StringIO
 
 luigi.notifications.DEBUG = True
 WORKER = 'myworker'
@@ -260,6 +261,43 @@ class SchedulerApiTest(unittest.TestCase):
         self.setTime(1000)
         self.sch.prune()
         self.assertEqual({'A'}, set(self.sch.task_list('PENDING', '').keys()))
+
+    @mock.patch('luigi.scheduler.os')
+    @mock.patch('luigi.scheduler.open')
+    def test_load_reverse_dep_graph_from_dump(self, open_fn, os_mock):
+        sch = Scheduler()
+        sch.add_task(task_id='A', worker=WORKER, status=PENDING, deps=['D1', 'D2'])
+        sch.add_task(task_id='D1', worker=WORKER, status=DONE)
+        sch.add_task(task_id='D2', worker=WORKER, status=DONE)
+        self.assertEqual({'A'}, set(sch.task_list(RUNNABLE, '').keys()))
+
+        state_io = StringIO()
+        open_fn.return_value.__enter__.return_value = state_io
+
+        sch.dump()
+        state_io.seek(0)
+
+        os_mock.path.exists.return_value = True
+        sch2 = Scheduler()
+        sch2.load()
+        self.assertEqual({'A'}, set(sch2.task_list(RUNNABLE, '').keys()))
+        sch2.add_task(task_id='D2', worker=WORKER, status=PENDING)
+        self.assertEqual({'D2'}, set(sch2.task_list(RUNNABLE, '').keys()))
+        self.assertEqual({'A'}, set(sch2.task_list(PENDING, '').keys()))
+
+    def test_prune_reverse_graph(self):
+        self.setTime(0)
+        self.sch.add_task(task_id='A', worker=WORKER + '_prune', deps=['B'])
+        self.sch.add_task(task_id='B', worker=WORKER + '_prune', deps=['C'])
+        self.sch.add_task(task_id='B2', worker=WORKER, deps=['C'])
+        self.sch.add_task(task_id='C', worker=WORKER)
+
+        for sch_time in range(100, 10000, 100):
+            self.setTime(sch_time)
+            self.sch.ping(worker=WORKER)
+            self.sch.prune()
+
+        self.assertEqual({'C': {'B2'}, 'B2': set()}, self.sch._state._reverse_graph)
 
     def test_get_work_single_batch_item(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
