@@ -927,7 +927,7 @@ function visualiserApp(luigi) {
             updateTaskCategory(dt, 'UPSTREAM_DISABLED', upstreamDisabledTasks);
         });
 
-        var ajax7 = luigi.getPendingTaskList(function(runnableTasks) {
+        var ajax7 = luigi.getRunnableTaskList(function(runnableTasks) {
             updateTaskCategory(dt, 'RUNNABLE', runnableTasks);
         });
 
