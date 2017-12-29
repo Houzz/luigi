@@ -9,7 +9,8 @@ function visualiserApp(luigi) {
         tableFilter: ""
     };
     var taskIcons = {
-        PENDING: 'pause',
+        RUNNABLE: 'pause',
+        PENDING: 'stop',
         RUNNING: 'play',
         BATCH_RUNNING: 'play',
         DONE: 'check',
@@ -88,6 +89,10 @@ function visualiserApp(luigi) {
         var iconColor;
         switch (category) {
             case 'PENDING':
+                iconClass = 'fa-stop';
+                iconColor = 'orange';
+                break;
+            case 'RUNNABLE':
                 iconClass = 'fa-pause';
                 iconColor = 'yellow';
                 break;
@@ -899,6 +904,7 @@ function visualiserApp(luigi) {
                 'RUNNING',
                 'BATCH_RUNNING',
                 'DONE',
+                'RUNNABLE',
                 'PENDING',
                 'UPSTREAM_DISABLED',
                 'UPSTREAM_FAILED',
@@ -1015,15 +1021,19 @@ function visualiserApp(luigi) {
             updateTaskCategory(dt, 'UPSTREAM_DISABLED', upstreamDisabledTasks);
         });
 
-        var ajax7 = luigi.getPendingTaskList(function(pendingTasks) {
+        var ajax7 = luigi.getPendingTaskList(function(runnableTasks) {
+            updateTaskCategory(dt, 'RUNNABLE', runnableTasks);
+        });
+
+        var ajax8 = luigi.getPendingTaskList(function(pendingTasks) {
             updateTaskCategory(dt, 'PENDING', pendingTasks);
         });
 
-        var ajax8 = luigi.getDoneTaskList(function(doneTasks) {
+        var ajax9 = luigi.getDoneTaskList(function(doneTasks) {
             updateTaskCategory(dt, 'DONE', doneTasks);
         });
 
-        $.when(ajax1, ajax2, ajax3, ajax4, ajax5, ajax6, ajax7, ajax8).done(function () {
+        $.when(ajax1, ajax2, ajax3, ajax4, ajax5, ajax6, ajax7, ajax8, ajax9).done(function () {
             dt.draw();
 
             $('#familySidebar').html(renderSidebar(dt.column(1).data()));
