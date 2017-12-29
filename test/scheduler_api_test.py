@@ -287,17 +287,18 @@ class SchedulerApiTest(unittest.TestCase):
 
     def test_prune_reverse_graph(self):
         self.setTime(0)
-        self.sch.add_task(task_id='A', worker=WORKER + '_prune', deps=['B'])
-        self.sch.add_task(task_id='B', worker=WORKER + '_prune', deps=['C'])
-        self.sch.add_task(task_id='B2', worker=WORKER, deps=['C'])
-        self.sch.add_task(task_id='C', worker=WORKER)
+        sch = Scheduler()
+        sch.add_task(task_id='A', worker=WORKER + '_prune', deps=['B'])
+        sch.add_task(task_id='B', worker=WORKER + '_prune', deps=['C'])
+        sch.add_task(task_id='B2', worker=WORKER, deps=['C'])
+        sch.add_task(task_id='C', worker=WORKER)
 
         for sch_time in range(100, 10000, 100):
             self.setTime(sch_time)
-            self.sch.ping(worker=WORKER)
-            self.sch.prune()
+            sch.ping(worker=WORKER)
+            sch.prune()
 
-        self.assertEqual({'C': {'B2'}, 'B2': set()}, self.sch._state._reverse_graph)
+        self.assertEqual({'C': {'B2'}, 'B2': set()}, sch._state._reverse_graph)
 
     def test_get_work_single_batch_item(self):
         self.sch.add_task_batcher(worker=WORKER, task_family='A', batched_args=['a'])
