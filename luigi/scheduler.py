@@ -1470,10 +1470,7 @@ class Scheduler(object):
         self.prune()
         if not self._state.has_task(task_id):
             return {}
-        inverse_graph = collections.defaultdict(set)
-        for task in self._state.get_active_tasks():
-            for dep in task.deps:
-                inverse_graph[dep].add(task.id)
+        inverse_graph = self._state._reverse_graph
         return self._traverse_graph(
             task_id, dep_func=lambda t: inverse_graph[t.id], include_done=include_done)
 
