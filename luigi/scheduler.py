@@ -460,6 +460,13 @@ class SimpleTaskState(object):
         self._tasks, self._active_workers = state[:2]
         if len(state) >= 3:
             self._task_batchers = state[2]
+        self.reset_reverse_graph()
+
+    def reset_reverse_graph(self):
+        self._reverse_graph = collections.defaultdict(set)
+        for task_id, task in six.iteritems(self._tasks):
+            for dep in task.deps:
+                self._reverse_graph[dep].add(task_id)
 
     def dump(self):
         try:
@@ -680,6 +687,12 @@ class SimpleTaskState(object):
         for task in delete_tasks:
             task_obj = self._tasks.pop(task)
             self._status_tasks[task_obj.status].pop(task)
+            for dep in task_obj.deps:
+                self._reverse_graph[dep].discard(task)
+                if not self._reverse_graph[dep]:
+                    del self._reverse_graph[dep]
+            if not self._reverse_graph[task]:
+                del self._reverse_graph[task]
 
     def get_active_workers(self, last_active_lt=None, last_get_work_gt=None):
         for worker in six.itervalues(self._active_workers):
