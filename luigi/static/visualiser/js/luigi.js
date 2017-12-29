@@ -123,6 +123,12 @@ var LuigiAPI = (function() {
         });
     };
 
+    LuigiAPI.prototype.getRunnableTaskList = function(callback) {
+        return jsonRPC(this.urlRoot + "/task_list", {status: "RUNNABLE", upstream_status: "", search: searchTerm()}, function(response) {
+            callback(flatten(response.response));
+        });
+    };
+
     LuigiAPI.prototype.getDisabledTaskList = function(callback) {
         jsonRPC(this.urlRoot + "/task_list", {status: "DISABLED", upstream_status: "", search: searchTerm()}, function(response) {
             callback(flatten(response.response));
