@@ -983,7 +983,6 @@ class Scheduler(object):
                 self._email_batcher.add_disable(
                     task.pretty_id, task.family, unbatched_params, owners)
 
-
         self._state.set_deps(task, deps, new_deps)
 
         if resources is not None:
