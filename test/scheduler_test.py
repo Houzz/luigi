@@ -16,7 +16,6 @@
 #
 from __future__ import print_function
 
-import itertools
 import pickle
 import tempfile
 import time
