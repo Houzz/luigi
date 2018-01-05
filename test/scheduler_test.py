@@ -16,6 +16,7 @@
 #
 from __future__ import print_function
 
+import itertools
 import pickle
 import tempfile
 import time
@@ -285,7 +286,7 @@ class SchedulerIoTest(unittest.TestCase):
 
 class SchedulerWorkerTest(unittest.TestCase):
     def get_pending_ids(self, worker, state):
-        return {task.id for task in worker.get_tasks(state, 'PENDING')}
+        return {task.id for task in worker.get_tasks(state, 'RUNNABLE')}
 
     def test_get_pending_tasks_with_many_done_tasks(self):
         sch = luigi.scheduler.Scheduler()
