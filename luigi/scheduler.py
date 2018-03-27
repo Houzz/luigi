@@ -50,6 +50,7 @@ from luigi.task_status import DISABLED, DONE, FAILED, PENDING, RUNNING, SUSPENDE
 from luigi.task import Config
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # TODO set this in a config or something
 
 UPSTREAM_READY = 'UPSTREAM_READY'
 UPSTREAM_RUNNING = 'UPSTREAM_RUNNING'
@@ -1104,6 +1105,8 @@ class Scheduler(object):
             if task.worker_running == worker_id and task.batch_id not in running_batch_ids
         ]
         for task in orphaned_tasks:
+            logger.debug('Setting orphaned task {task} from worker {worker} to PENDING'.format(
+                task=task.id, worker=worker_id))
             self._state.set_status(task, PENDING)
 
     def _in_workers(self, worker_id, assistant_groups, task):
@@ -1183,6 +1186,7 @@ class Scheduler(object):
                      'n_pending_last_scheduled': 0,
                      'worker_state': worker.state,
                      }
+            logger.debug('get_work called by disabled worker {}'.format(worker_id))
             return reply
 
         # TODO: allow backward compatibility with old assistants temporarily (Sep 2016)
@@ -1314,6 +1318,9 @@ class Scheduler(object):
 
         else:
             reply['task_id'] = None
+
+        logger.debug('get_work reply to worker {worker}: {reply}'.format(
+            worker=worker_id, reply=reply))
 
         return reply
 
