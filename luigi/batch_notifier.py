@@ -113,7 +113,7 @@ class BatchNotifier(object):
             return six.u('- {}').format(six.u('\n  ').join(lines))
 
     def _owners(self, owners):
-        return self._default_owner | set(owners)
+        return self._default_owner | set(owners or [])
 
     def add_failure(self, task_name, family, unbatched_args, expl, owners):
         key = self._key(task_name, family, unbatched_args)
