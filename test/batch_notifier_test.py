@@ -58,6 +58,15 @@ class BatchNotifierTest(unittest.TestCase):
             '- Task(a=5) (1 failure)'
         )
 
+    def test_handle_owners_is_none(self):
+        bn = BatchNotifier(batch_mode='all')
+        bn.add_failure('Task(a=5)', 'Task', {'a': 5}, 'error', None)
+        bn.send_email()
+        self.check_email_send(
+            'Luigi: 1 failure in the last 60 minutes',
+            '- Task(a=5) (1 failure)'
+        )
+
     def test_do_not_send_single_failure_without_receiver(self):
         self.email().receiver = None
         bn = BatchNotifier(batch_mode='all')
