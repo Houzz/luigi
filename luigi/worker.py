@@ -154,7 +154,7 @@ class TaskProcess(multiprocessing.Process):
                 return None
 
             new_req = flatten(requires)
-            if all(t.complete() for t in new_req):
+            if all(t.actual_complete() for t in new_req):
                 next_send = getpaths(requires)
             else:
                 new_deps = [(t.task_module, t.task_family, t.to_str_params())
@@ -190,7 +190,7 @@ class TaskProcess(multiprocessing.Process):
 
             if _is_external(self.task):
                 # External task
-                if self.task.complete():
+                if self.task.actual_complete():
                     status = DONE
                 else:
                     status = FAILED
