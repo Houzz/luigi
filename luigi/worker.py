@@ -147,7 +147,7 @@ class TaskProcess(multiprocessing.Process):
                 return None
 
             new_req = flatten(requires)
-            if all(t.complete() for t in new_req):
+            if all(t.actual_complete() for t in new_req):
                 next_send = getpaths(requires)
             else:
                 new_deps = [(t.task_module, t.task_family, t.to_str_params())
@@ -173,7 +173,7 @@ class TaskProcess(multiprocessing.Process):
             # checking completeness of self.task so outputs of dependencies are
             # irrelevant.
             if self.check_unfulfilled_deps and not _is_external(self.task):
-                missing = [dep.task_id for dep in self.task.deps() if not dep.complete()]
+                missing = [dep.task_id for dep in self.task.deps() if not dep.actual_complete()]
                 if missing:
                     deps = 'dependency' if len(missing) == 1 else 'dependencies'
                     raise RuntimeError('Unfulfilled %s at run time: %s' % (deps, ', '.join(missing)))
@@ -185,7 +185,7 @@ class TaskProcess(multiprocessing.Process):
                 # External task
                 # TODO(erikbern): We should check for task completeness after non-external tasks too!
                 # This will resolve #814 and make things a lot more consistent
-                if self.task.complete():
+                if self.task.actual_complete():
                     status = DONE
                 else:
                     status = FAILED
