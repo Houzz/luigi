@@ -236,6 +236,8 @@ class TaskProcess(multiprocessing.Process):
         self.task.trigger_event(Event.FAILURE, self.task, ex)
         return self.task.on_failure(ex)
 
+    _PROCESS_TERMINATE_TIMEOUT = 60
+
     def _recursive_terminate(self):
         import psutil
 
@@ -245,7 +247,7 @@ class TaskProcess(multiprocessing.Process):
 
             # terminate parent. Give it a chance to clean up
             super(TaskProcess, self).terminate()
-            parent.wait()
+            parent.wait(timeout=self._PROCESS_TERMINATE_TIMEOUT)
 
             # terminate children
             for child in children:
@@ -255,14 +257,17 @@ class TaskProcess(multiprocessing.Process):
                     continue
         except psutil.NoSuchProcess:
             return
+        except psutil.TimeoutExpired:
+            return
 
     def terminate(self):
         """Terminate this process and its subprocesses."""
         # default terminate() doesn't cleanup child processes, it orphans them.
         try:
-            return self._recursive_terminate()
+            self._recursive_terminate()
         except ImportError:
-            return super(TaskProcess, self).terminate()
+            super(TaskProcess, self).terminate()
+        return not self.is_alive()
 
     @contextlib.contextmanager
     def _forward_attributes(self):
@@ -1082,18 +1087,23 @@ class Worker(object):
         :return:
         """
         for task_id, p in six.iteritems(self._running_tasks):
+            still_running = False
             if not p.is_alive() and p.exitcode:
                 error_msg = 'Task {} died unexpectedly with exit code {}'.format(task_id, p.exitcode)
                 p.task.trigger_event(Event.PROCESS_FAILURE, p.task, error_msg)
             elif p.timeout_time is not None and time.time() > float(p.timeout_time) and p.is_alive():
-                p.terminate()
-                error_msg = 'Task {} timed out after {} seconds and was terminated.'.format(task_id, p.worker_timeout)
-                p.task.trigger_event(Event.TIMEOUT, p.task, error_msg)
+                if p.terminate():
+                    error_msg = 'Task {} timed out after {} seconds and was terminated.'.format(task_id, p.task.worker_timeout)
+                    p.task.trigger_event(Event.TIMEOUT, p.task, error_msg)
+                else:
+                    still_running = True
+                    error_msg = 'Task {} timed out after {} seconds and but failed to terminate.'.format(task_id, p.task.worker_timeout)
             else:
                 continue
 
             logger.info(error_msg)
-            self._task_result_queue.put((task_id, FAILED, error_msg, [], []))
+            if not still_running:
+                self._task_result_queue.put((task_id, FAILED, error_msg, [], []))
 
     def _handle_next_task(self):
         """
