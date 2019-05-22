@@ -109,6 +109,8 @@ class TaskProcess(multiprocessing.Process):
 
     Mainly for convenience since this is run in a separate process. """
 
+    _TIMEOUT_KILL_FACTOR = 3
+
     def __init__(self, task, worker_id, result_queue, status_reporter,
                  use_multiprocessing=False, worker_timeout=0, check_unfulfilled_deps=True):
         super(TaskProcess, self).__init__()
@@ -121,6 +123,9 @@ class TaskProcess(multiprocessing.Process):
         self.timeout_time = time.time() + worker_timeout if worker_timeout else None
         self.use_multiprocessing = use_multiprocessing or self.timeout_time is not None
         self.check_unfulfilled_deps = check_unfulfilled_deps
+        self.kill_time = time.time() + \
+            (worker_timeout * self._TIMEOUT_KILL_FACTOR) \
+            if worker_timeout else None
 
     def _run_get_new_deps(self):
         self.task.set_tracking_url = self.status_reporter.update_tracking_url
@@ -232,13 +237,23 @@ class TaskProcess(multiprocessing.Process):
             children = parent.children(recursive=True)
 
             # terminate parent. Give it a chance to clean up
-            super(TaskProcess, self).terminate()
+            kill = time.time() >= self.kill_time if self.kill_time else False
+            if kill:
+                logger.info(
+                    '[pid %s] Worker %s killing parent process',
+                    os.getpid(), self.worker_id)
+                super(TaskProcess, self).kill()
+            else:
+                super(TaskProcess, self).terminate()
             parent.wait(timeout=self._PROCESS_TERMINATE_TIMEOUT)
 
             # terminate children
             for child in children:
                 try:
-                    child.terminate()
+                    if kill:
+                        child.kill()
+                    else:
+                        child.terminate()
                 except psutil.NoSuchProcess:
                     continue
         except psutil.NoSuchProcess:
@@ -983,22 +998,33 @@ class Worker(object):
         :return:
         """
         for task_id, p in six.iteritems(self._running_tasks):
+            task_prefix = 'Task {} (pid {})'.format(task_id, p.pid)
             still_running = False
             if not p.is_alive() and p.exitcode:
-                error_msg = 'Task {} died unexpectedly with exit code {}'.format(task_id, p.exitcode)
+                error_msg = '{} died unexpectedly with exit code {}'.format(task_prefix, p.exitcode)
                 p.task.trigger_event(Event.PROCESS_FAILURE, p.task, error_msg)
             elif p.timeout_time is not None and time.time() > float(p.timeout_time) and p.is_alive():
                 if p.terminate():
-                    error_msg = 'Task {} timed out after {} seconds and was terminated.'.format(task_id, p.task.worker_timeout)
+                    error_msg = '{} timed out after {} seconds and was terminated.'.format(
+                        task_prefix, p.task.worker_timeout)
                     p.task.trigger_event(Event.TIMEOUT, p.task, error_msg)
                 else:
                     still_running = True
-                    error_msg = 'Task {} timed out after {} seconds and but failed to terminate.'.format(task_id, p.task.worker_timeout)
+                    sec_since_timeout = \
+                        int(round(time.time() - p.timeout_time)) \
+                        if p.timeout_time else 0
+                    error_msg = '{} timed out after {} seconds but failed to terminate, {} seconds overdue'.format(
+                        task_prefix, p.task.worker_timeout, sec_since_timeout)
             else:
                 continue
 
             logger.info(error_msg)
-            if not still_running:
+            if still_running:
+                # If the worker task process does not terminate gracefully we
+                # risk getting the worker killed, so better not take on more
+                # tasks.
+                self._start_phasing_out()
+            else:
                 self._task_result_queue.put((task_id, FAILED, error_msg, [], []))
 
     def _handle_next_task(self):
