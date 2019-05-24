@@ -27,12 +27,13 @@ We use the hypothesis package to do property-based tests.
 
 from __future__ import print_function
 
-import string
-import luigi
+import datetime
 import json
+import string
 
+import luigi
 import hypothesis as hyp
-from hypothesis.extra.datetime import datetimes as hyp_datetimes
+from hypothesis.strategies import datetimes as hyp_datetimes
 
 _no_value = luigi.parameter._no_value
 
@@ -64,7 +65,7 @@ int_parameters_def = _mk_param_strategy(luigi.IntParameter, hyp.strategies.integ
 float_parameters_def = _mk_param_strategy(luigi.FloatParameter,
                                           hyp.strategies.floats(min_value=-1e100, max_value=+1e100), True)
 bool_parameters_def = _mk_param_strategy(luigi.BoolParameter, hyp.strategies.booleans(), True)
-date_parameters_def = _mk_param_strategy(luigi.DateParameter, hyp_datetimes(min_year=1900, timezones=[]), True)
+date_parameters_def = _mk_param_strategy(luigi.DateParameter, hyp_datetimes(min_value=datetime.datetime(1900, 1, 1), timezones=[]), True)
 
 any_default_parameters = hyp.strategies.one_of(
     parameters_def, int_parameters_def, float_parameters_def, bool_parameters_def, date_parameters_def
