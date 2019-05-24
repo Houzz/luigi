@@ -109,7 +109,7 @@ class TaskProcess(multiprocessing.Process):
 
     Mainly for convenience since this is run in a separate process. """
 
-    _TIMEOUT_KILL_FACTOR = 3
+    _TIMEOUT_KILL_FACTOR = 1.5
 
     def __init__(self, task, worker_id, result_queue, status_reporter,
                  use_multiprocessing=False, worker_timeout=0, check_unfulfilled_deps=True):
@@ -229,6 +229,16 @@ class TaskProcess(multiprocessing.Process):
 
     _PROCESS_TERMINATE_TIMEOUT = 60
 
+    def is_alive(self):
+        result = True
+        try:
+            # this only only sends an ignorable signal, simply to check with
+            # the os that the process is still there
+            os.kill(self.pid, 0)
+        except OSError:
+            result = False
+        return result
+
     def _recursive_terminate(self):
         import psutil
 
@@ -240,11 +250,11 @@ class TaskProcess(multiprocessing.Process):
             kill = time.time() >= self.kill_time if self.kill_time else False
             if kill:
                 logger.info(
-                    '[pid %s] Worker %s killing parent process',
-                    os.getpid(), self.worker_id)
-                super(TaskProcess, self).kill()
+                    '[pid %s] Worker %s killing parent process %s',
+                    os.getpid(), self.worker_id, self.pid)
+                parent.kill()
             else:
-                super(TaskProcess, self).terminate()
+                parent.terminate()
             parent.wait(timeout=self._PROCESS_TERMINATE_TIMEOUT)
 
             # terminate children
@@ -255,11 +265,11 @@ class TaskProcess(multiprocessing.Process):
                     else:
                         child.terminate()
                 except psutil.NoSuchProcess:
-                    continue
+                    pass
         except psutil.NoSuchProcess:
-            return
+            pass
         except psutil.TimeoutExpired:
-            return
+            pass
 
     def terminate(self):
         """Terminate this process and its subprocesses."""
@@ -268,7 +278,6 @@ class TaskProcess(multiprocessing.Process):
             self._recursive_terminate()
         except ImportError:
             super(TaskProcess, self).terminate()
-        return not self.is_alive()
 
 
 class TaskStatusReporter(object):
@@ -999,7 +1008,6 @@ class Worker(object):
         """
         for task_id, p in six.iteritems(self._running_tasks):
             task_prefix = 'Task {} (pid {})'.format(task_id, p.pid)
-            still_running = False
             if not p.is_alive() and p.exitcode:
                 error_msg = '{} died unexpectedly with exit code {}'.format(task_prefix, p.exitcode)
                 p.task.trigger_event(Event.PROCESS_FAILURE, p.task, error_msg)
@@ -1009,22 +1017,17 @@ class Worker(object):
                         task_prefix, p.task.worker_timeout)
                     p.task.trigger_event(Event.TIMEOUT, p.task, error_msg)
                 else:
-                    still_running = True
                     sec_since_timeout = \
                         int(round(time.time() - p.timeout_time)) \
                         if p.timeout_time else 0
                     error_msg = '{} timed out after {} seconds but failed to terminate, {} seconds overdue'.format(
-                        task_prefix, p.task.worker_timeout, sec_since_timeout)
+                        task_prefix, int(p.task.worker_timeout),
+                        sec_since_timeout)
             else:
                 continue
 
             logger.info(error_msg)
-            if still_running:
-                # If the worker task process does not terminate gracefully we
-                # risk getting the worker killed, so better not take on more
-                # tasks.
-                self._start_phasing_out()
-            else:
+            if not p.is_alive():
                 self._task_result_queue.put((task_id, FAILED, error_msg, [], []))
 
     def _handle_next_task(self):
