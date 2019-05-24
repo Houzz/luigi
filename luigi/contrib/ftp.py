@@ -142,7 +142,7 @@ class RemoteFileSystem(luigi.target.FileSystem):
 
     def _ftp_exists(self, path, mtime, min_age_seconds):
         dirname, fn = os.path.split(path)
-        files = self.conn.nlst(dirname.replace(' ', '\ '))
+        files = self.conn.nlst(dirname.replace(' ', '\\ '))
 
         exists = False
         if path in files or fn in files:
