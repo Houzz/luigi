@@ -147,7 +147,10 @@ class RemoteFileSystem(luigi.target.FileSystem):
         exists = False
         if path in files or fn in files:
             mdtm = self.conn.sendcmd('MDTM ' + path)
-            modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S")
+            if '.' in mdtm[4:]:
+                modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S.%f")
+            else:
+                modified = datetime.datetime.strptime(mdtm[4:], "%Y%m%d%H%M%S")
             age = datetime.datetime.utcnow() - modified
             exists = age > datetime.timedelta(seconds=min_age_seconds)
 
