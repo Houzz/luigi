@@ -37,7 +37,7 @@ import copy
 import functools
 
 import luigi
-from luigi.import configuration
+from luigi import configuration
 from luigi import six
 from luigi import luigi_state
 from luigi import parameter
