@@ -61,7 +61,7 @@ from luigi.scheduler import WORKER_STATE_ACTIVE, WORKER_STATE_DISABLED
 from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config, Parameter
 from luigi.task_status import RUNNING
-from luigi.parameter import BoolParameter, FloatParameter, IntParameter, ListParameter,
+from luigi.parameter import BoolParameter, FloatParameter, IntParameter, ListParameter, \
     OptionalParameter, Parameter, TimeDeltaParameter
 
 try:
