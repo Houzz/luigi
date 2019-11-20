@@ -767,7 +767,7 @@ class SimpleTaskState(object):
         elif task.status == FAILED:
             self._metrics_collector.handle_task_failed(task)
 
-            
+
 def _reachable_sum(starting_position, dependencies, weights):
     seen = {starting_position}
     queue = collections.deque([starting_position])
@@ -999,7 +999,6 @@ class Scheduler(object):
 
         if batchable is not None:
             task.batchable = batchable
-            task.max_batch_size = max_batch_size
         if assistant_groups is not None:
             task.assistant_groups = assistant_groups
 

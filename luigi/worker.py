@@ -62,7 +62,7 @@ from luigi.target import Target
 from luigi.task import Task, flatten, getpaths, Config, Parameter
 from luigi.task_status import RUNNING
 from luigi.parameter import BoolParameter, FloatParameter, IntParameter, ListParameter, \
-    OptionalParameter, Parameter, TimeDeltaParameter
+    OptionalParameter, TimeDeltaParameter
 
 try:
     import simplejson as json
@@ -1068,11 +1068,6 @@ class Worker(object):
         )
 
     def _run_task(self, task_id):
-        if task_id in self._running_tasks:
-            logger.debug('Got already running task id {} from scheduler, taking a break'.format(task_id))
-            next(self._sleeper())
-            return
-
         task = self._scheduled_tasks[task_id]
 
         if task_id in self._running_tasks:
