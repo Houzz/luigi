@@ -1157,13 +1157,6 @@ class Scheduler(object):
 
     @rpc_method()
     def update_resource(self, resource, amount):
-        if amount < 0 or not isinstance(amount, int):
-            return False
-        self._resources[resource] = amount
-        return True
-
-    @rpc_method()
-    def update_resource(self, resource, amount):
         if not isinstance(amount, int) or amount < 0:
             return False
         self._resources[resource] = amount
