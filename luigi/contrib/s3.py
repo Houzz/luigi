@@ -538,7 +538,7 @@ class S3Client(FileSystem):
                 s3_dir_with_suffix_key = s3_bucket.get_key(key + suffix)
                 if s3_dir_with_suffix_key:
                     return True
-            except:
+            except BaseException:
                 logger.debug('Failed to get s3 key: %s', key + suffix)
 
         # files with this prefix
