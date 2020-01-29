@@ -136,8 +136,8 @@ class S3Client(FileSystem):
         """
         (bucket, key) = self._path_to_bucket_and_key(path)
 
-        # grab and validate the bucket
-        s3_bucket = self.s3.get_bucket(bucket, validate=True)
+        # grab the bucket
+        s3_bucket = self.s3.get_bucket(bucket, validate=False)
 
         # root always exists
         if self._is_root(key):
@@ -494,8 +494,8 @@ class S3Client(FileSystem):
         """
         (bucket, key) = self._path_to_bucket_and_key(path)
 
-        # grab and validate the bucket
-        s3_bucket = self.s3.get_bucket(bucket, validate=True)
+        # grab the bucket
+        s3_bucket = self.s3.get_bucket(bucket, validate=False)
 
         key_path = self._add_path_delimiter(key)
         key_path_len = len(key_path)
@@ -525,9 +525,8 @@ class S3Client(FileSystem):
         Is the parameter S3 path a directory?
         """
         (bucket, key) = self._path_to_bucket_and_key(path)
-
-        # grab and validate the bucket
-        s3_bucket = self.s3.get_bucket(bucket, validate=True)
+        # grab the bucket
+        s3_bucket = self.s3.get_bucket(bucket, validate=False)
 
         # root is a directory
         if self._is_root(key):
@@ -535,9 +534,12 @@ class S3Client(FileSystem):
 
         for suffix in (S3_DIRECTORY_MARKER_SUFFIX_0,
                        S3_DIRECTORY_MARKER_SUFFIX_1):
-            s3_dir_with_suffix_key = s3_bucket.get_key(key + suffix)
-            if s3_dir_with_suffix_key:
-                return True
+            try:
+                s3_dir_with_suffix_key = s3_bucket.get_key(key + suffix)
+                if s3_dir_with_suffix_key:
+                    return True
+            except:
+                logger.debug('Failed to get s3 key: %s', key + suffix)
 
         # files with this prefix
         key_path = self._add_path_delimiter(key)
